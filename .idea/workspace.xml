@@ -4,21 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/coto.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/dia.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/info.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/jumbo.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/scraper.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlit.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vea.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="inicio">
+      <change afterPath="$PROJECT_DIR$/request/cotoRequestJson.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/estructura_coto.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/coto.py" beforeDir="false" afterPath="$PROJECT_DIR$/coto.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/productos_cotodigital.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/productos_cotodigital.xlsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -35,6 +26,18 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;ibarajas248&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/ibarajas248/Scraping-web-de-tiendas-online.git&quot;,
+    &quot;accountId&quot;: &quot;af0e0ae9-d90b-4de9-9567-d36100925378&quot;
+  }
+}</component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 2
 }</component>
@@ -46,7 +49,10 @@
   </component>
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
+    &quot;Python.coto.executor&quot;: &quot;Run&quot;,
+    &quot;Python.cotoRequestJson.executor&quot;: &quot;Run&quot;,
     &quot;Python.dia.executor&quot;: &quot;Run&quot;,
+    &quot;Python.estructura_coto.executor&quot;: &quot;Run&quot;,
     &quot;Python.jumbo.executor&quot;: &quot;Run&quot;,
     &quot;Python.main.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
@@ -93,6 +99,19 @@
       <option name="presentableId" value="Default" />
       <updated>1750105389705</updated>
     </task>
+    <task id="LOCAL-00001" summary="inicio">
+      <option name="closed" value="true" />
+      <created>1753805632159</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1753805632160</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="inicio" />
+    <option name="LAST_COMMIT_MESSAGE" value="inicio" />
   </component>
 </project>
