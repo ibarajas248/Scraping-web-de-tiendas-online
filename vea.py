@@ -22,9 +22,9 @@ options.add_argument("--window-size=1920x1080")
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 wait = WebDriverWait(driver, 10)
 
-base_url = "https://www.vea.com.ar/bebidas?page={}"
+base_url = "https://www.vea.com.ar/almacen?page={}"
 
-for page in range(1, 2):
+for page in range(1, 2000):
     print(f"📄 Página {page}")
     driver.get(base_url.format(page))
 

@@ -4,9 +4,20 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="inicio">
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="request_coto">
+      <change afterPath="$PROJECT_DIR$/request/carrefour/pruebas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/coto/ean.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/dia/dia.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/dia/ean.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/disco/prueba.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/vea/ingresaEAN.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/vea/vea.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/cotoRequestJson.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/cotoRequestJson.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/info.md" beforeDir="false" afterPath="$PROJECT_DIR$/info.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/cotoRequestJson.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/coto/cotoRequestJson.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/estructura_coto.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/estructura_coto.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vea.py" beforeDir="false" afterPath="$PROJECT_DIR$/vea.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vea.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/vea.xlsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -44,18 +55,30 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python.coto.executor&quot;: &quot;Run&quot;,
-    &quot;Python.cotoRequestJson.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dia.executor&quot;: &quot;Run&quot;,
-    &quot;Python.estructura_coto.executor&quot;: &quot;Run&quot;,
-    &quot;Python.jumbo.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.PRUEBA.executor": "Run",
+    "Python.coto.executor": "Run",
+    "Python.cotoRequestJson.executor": "Run",
+    "Python.dia.executor": "Run",
+    "Python.ean.executor": "Run",
+    "Python.estructura_coto.executor": "Run",
+    "Python.jumbo.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.prueba.executor": "Run",
+    "Python.pruebas.executor": "Run",
+    "Python.vea.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "master"
   }
-}</component>
+}]]></component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request\coto" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request\dia" />
+    </key>
+  </component>
   <component name="RunManager">
     <configuration name="main" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
       <module name="scrapingTiendas" />
@@ -112,11 +135,20 @@
       <option name="project" value="LOCAL" />
       <updated>1754455571347</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="request_coto">
+      <option name="closed" value="true" />
+      <created>1754495585644</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1754495585644</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="inicio" />
-    <option name="LAST_COMMIT_MESSAGE" value="inicio" />
+    <MESSAGE value="request_coto" />
+    <option name="LAST_COMMIT_MESSAGE" value="request_coto" />
   </component>
 </project>

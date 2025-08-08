@@ -141,7 +141,7 @@ while pagina < max_paginas:
 if productos:
     df = pd.DataFrame(productos).drop_duplicates(subset=["sku", "nombre"])  # quitar duplicados
     df.to_excel("productos_coto_limpio.xlsx", index=False)
-    with open("productos_coto_limpio.json", "w", encoding="utf-8") as f:
+    with open("../productos_coto_limpio.json", "w", encoding="utf-8") as f:
         json.dump(productos, f, indent=2, ensure_ascii=False)
     print(f"✅ Se descargaron {len(df)} productos únicos y se guardaron en productos_coto_limpio.xlsx")
 else:
