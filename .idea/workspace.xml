@@ -4,20 +4,29 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="request_coto">
-      <change afterPath="$PROJECT_DIR$/request/carrefour/pruebas.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/coto/ean.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/dia/dia.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/dia/ean.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/disco/prueba.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/vea/ingresaEAN.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/vea/vea.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="_">
+      <change afterPath="$PROJECT_DIR$/ean/prueba3.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/ean/pruebas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/notas" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/carrefour/carrefour.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/carrefour/guardaexcel.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/disco/disco.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/hiperlibertad/hiperlibertad.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/jumbo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/jumbo/jumbo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/lacoopeencasa/copeprueba.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/lacoopeencasa/lacoopeencasa.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/anonima.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/prueba.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/prueba_vea.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/info.md" beforeDir="false" afterPath="$PROJECT_DIR$/info.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/cotoRequestJson.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/coto/cotoRequestJson.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/estructura_coto.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/estructura_coto.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vea.py" beforeDir="false" afterPath="$PROJECT_DIR$/vea.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vea.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/vea.xlsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/carrefour/pruebas.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/carrefour/pruebas.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/coto/cotoRequestJson.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/coto/cotoRequestJson.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/dia/dia.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/dia/dia.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/disco/prueba.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/disco/pruebaean.py" beforeDir="false" afterPath="$PROJECT_DIR$/ean/prueba2.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/vea/vea.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/vea/vea.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -58,14 +67,24 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "Python.PRUEBA.executor": "Run",
+    "Python.anonima.executor": "Run",
+    "Python.carrefour.executor": "Run",
+    "Python.copeprueba.executor": "Run",
     "Python.coto.executor": "Run",
     "Python.cotoRequestJson.executor": "Run",
     "Python.dia.executor": "Run",
+    "Python.disco.executor": "Run",
     "Python.ean.executor": "Run",
     "Python.estructura_coto.executor": "Run",
+    "Python.hiperlibertad.executor": "Run",
     "Python.jumbo.executor": "Run",
+    "Python.lacoopeencasa.executor": "Run",
     "Python.main.executor": "Run",
     "Python.prueba.executor": "Run",
+    "Python.prueba2.executor": "Run",
+    "Python.prueba3.executor": "Run",
+    "Python.prueba_vea.executor": "Run",
+    "Python.pruebaean.executor": "Run",
     "Python.pruebas.executor": "Run",
     "Python.vea.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
@@ -74,6 +93,7 @@
 }]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\reportes_excel" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request\coto" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request\dia" />
@@ -143,12 +163,21 @@
       <option name="project" value="LOCAL" />
       <updated>1754495585644</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="_">
+      <option name="closed" value="true" />
+      <created>1754633791645</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1754633791645</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="inicio" />
     <MESSAGE value="request_coto" />
-    <option name="LAST_COMMIT_MESSAGE" value="request_coto" />
+    <MESSAGE value="_" />
+    <option name="LAST_COMMIT_MESSAGE" value="_" />
   </component>
 </project>

@@ -40,7 +40,7 @@ a definir, ejemplo: Listado_MarianoMax_20230328.
 El archivo de salida debe contener las siguientes columnas:
 EAN, Código Interno, Nombre Producto, Categoría,
 Subcategoría, Marca, Fabricante, Precio de Lista, Precio de
-Oferta, tipo de Ofertay URL.
+Oferta, tipo de Ofertay, URL.
 10
 Debemos tener un script flexible que pueda mapear los
 códigos internos a un EAN.
@@ -50,13 +50,13 @@ scrapear.
 Hay tiendas que n informan el codigo ean, se debera realizar un mapero (podria ser tablas de conversion donde los codigos ean se agreguen manualmente una unica vez para que queden relacionados)
 tiendas:
 opcion 1:     orden    web
-1    mas online    masonline.com.ar
-2    Coto    https://www.Cotodigital3.com.ar/
-3    Dia    https://diaonline.Supermercadosdia.com.ar/
-4    Vea    vea.Com.ar
-5    Jumbo    jumbo.Com.ar
-6    Carrefour    carrefour.Com.ar
-7    Disco    disco.Com.ar
+1    mas online    masonline.com.ar ✅
+2    Coto    https://www.Cotodigital3.com.ar/ ✅
+3    Dia    https://diaonline.Supermercadosdia.com.ar/ ✅
+4    Vea    vea.Com.ar ✅
+5    Jumbo    jumbo.Com.ar ✅
+6    Carrefour    carrefour.Com.ar ✅
+7    Disco    disco.Com.ar✅
 8    La Anonima    https://supermercado.Laanonimaonline.com
 9    Libertad    www.Hiperlibertad.com.ar
 10    Cooperativa obrera    https://www.lacoopeencasa.coop

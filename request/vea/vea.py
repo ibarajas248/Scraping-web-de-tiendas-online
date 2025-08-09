@@ -221,12 +221,12 @@ if __name__ == "__main__":
 
         # Excel (xlsxwriter reduce dolores de cabeza)
         try:
-            df.to_excel("vea_productos_categorias.xlsx", index=False, engine="xlsxwriter")
+            df.to_excel("vea.xlsx", index=False, engine="xlsxwriter")
         except Exception:
             # Fallback al engine por defecto si no está xlsxwriter
-            df.to_excel("vea_productos_categorias.xlsx", index=False)
+            df.to_excel("vea.xlsx", index=False)
 
-        print(f"✅ Guardado {len(df)} productos en vea_productos_categorias.xlsx")
+        print(f"✅ Guardado {len(df)} productos en vea.xlsx")
         fin = time.time()
         print(f"⏱️ Tiempo total de ejecución: {fin - inicio:.2f} s")
     else:
