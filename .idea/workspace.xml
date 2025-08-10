@@ -4,29 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="_">
-      <change afterPath="$PROJECT_DIR$/ean/prueba3.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/ean/pruebas.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/notas" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/carrefour/carrefour.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/carrefour/guardaexcel.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/disco/disco.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/hiperlibertad/hiperlibertad.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/jumbo.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/jumbo/jumbo.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lacoopeencasa/copeprueba.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lacoopeencasa/lacoopeencasa.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/anonima.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/prueba.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/prueba_vea.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="2">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/info.md" beforeDir="false" afterPath="$PROJECT_DIR$/info.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/carrefour/pruebas.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/carrefour/pruebas.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/coto/cotoRequestJson.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/coto/cotoRequestJson.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/dia/dia.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/dia/dia.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/disco/prueba.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/disco/pruebaean.py" beforeDir="false" afterPath="$PROJECT_DIR$/ean/prueba2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/vea/vea.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/vea/vea.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -64,33 +43,33 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python.PRUEBA.executor": "Run",
-    "Python.anonima.executor": "Run",
-    "Python.carrefour.executor": "Run",
-    "Python.copeprueba.executor": "Run",
-    "Python.coto.executor": "Run",
-    "Python.cotoRequestJson.executor": "Run",
-    "Python.dia.executor": "Run",
-    "Python.disco.executor": "Run",
-    "Python.ean.executor": "Run",
-    "Python.estructura_coto.executor": "Run",
-    "Python.hiperlibertad.executor": "Run",
-    "Python.jumbo.executor": "Run",
-    "Python.lacoopeencasa.executor": "Run",
-    "Python.main.executor": "Run",
-    "Python.prueba.executor": "Run",
-    "Python.prueba2.executor": "Run",
-    "Python.prueba3.executor": "Run",
-    "Python.prueba_vea.executor": "Run",
-    "Python.pruebaean.executor": "Run",
-    "Python.pruebas.executor": "Run",
-    "Python.vea.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "git-widget-placeholder": "master"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.PRUEBA.executor&quot;: &quot;Run&quot;,
+    &quot;Python.anonima.executor&quot;: &quot;Run&quot;,
+    &quot;Python.carrefour.executor&quot;: &quot;Run&quot;,
+    &quot;Python.copeprueba.executor&quot;: &quot;Run&quot;,
+    &quot;Python.coto.executor&quot;: &quot;Run&quot;,
+    &quot;Python.cotoRequestJson.executor&quot;: &quot;Run&quot;,
+    &quot;Python.dia.executor&quot;: &quot;Run&quot;,
+    &quot;Python.disco.executor&quot;: &quot;Run&quot;,
+    &quot;Python.ean.executor&quot;: &quot;Run&quot;,
+    &quot;Python.estructura_coto.executor&quot;: &quot;Run&quot;,
+    &quot;Python.hiperlibertad.executor&quot;: &quot;Run&quot;,
+    &quot;Python.jumbo.executor&quot;: &quot;Run&quot;,
+    &quot;Python.lacoopeencasa.executor&quot;: &quot;Run&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;Python.prueba.executor&quot;: &quot;Run&quot;,
+    &quot;Python.prueba2.executor&quot;: &quot;Run&quot;,
+    &quot;Python.prueba3.executor&quot;: &quot;Run&quot;,
+    &quot;Python.prueba_vea.executor&quot;: &quot;Run&quot;,
+    &quot;Python.pruebaean.executor&quot;: &quot;Run&quot;,
+    &quot;Python.pruebas.executor&quot;: &quot;Run&quot;,
+    &quot;Python.vea.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\reportes_excel" />
@@ -171,13 +150,22 @@
       <option name="project" value="LOCAL" />
       <updated>1754633791645</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="2">
+      <option name="closed" value="true" />
+      <created>1754777022602</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1754777022602</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="inicio" />
     <MESSAGE value="request_coto" />
     <MESSAGE value="_" />
-    <option name="LAST_COMMIT_MESSAGE" value="_" />
+    <MESSAGE value="2" />
+    <option name="LAST_COMMIT_MESSAGE" value="2" />
   </component>
 </project>
