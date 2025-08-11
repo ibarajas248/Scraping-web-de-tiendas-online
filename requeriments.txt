@@ -1,0 +1,6 @@
+requests
+numpy
+pandas
+xlsxwriter
+mysql-connector-python
+BeautifulSoup

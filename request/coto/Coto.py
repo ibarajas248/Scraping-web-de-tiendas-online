@@ -19,7 +19,7 @@ OUT_XLSX = "coto.xlsx"
 OUT_JSON = "coto.json"
 SLEEP = 0.35
 TIMEOUT = 25
-MAX_PAGINAS = 500
+MAX_PAGINAS = 5
 RETRIES = 3
 
 # Params “seguros” (derivados del navigationState que compartiste)
