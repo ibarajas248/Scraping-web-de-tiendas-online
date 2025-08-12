@@ -84,16 +84,16 @@ opcion 1:     orden    web
 Opcion 2:
 
     Clientes a relevar    web
-1    inc s.A. (0007600)    carrefour.com.ar
-2    COOP.OBR.Lim.de consumo (0003563)    https://www.lacoopeencasa.coop/
-3    COTO C.I.C.S.A. (0007013)    https://www.cotodigital3.com.ar/
-4    CENCOSUD S.A. (0041496)    https://www.jumbo.com.ar/
+1    inc s.A. (0007600)    carrefour.com.ar ✅
+2    COOP.OBR.Lim.de consumo (0003563)    https://www.lacoopeencasa.coop/ ✅
+3    COTO C.I.C.S.A. (0007013)    https://www.cotodigital3.com.ar/ ✅
+4    CENCOSUD S.A. (0041496)    https://www.jumbo.com.ar/ ✅
 5    MILLAN S.A. (0006038)    https://atomoconviene.com/atomo-ecommerce/
-6    la gallega supermercados s.A. (0001764)    www.lagallega.com.ar
+6    la gallega supermercados s.A. (0001764)    www.lagallega.com.ar ✅
 7    S.A. IMP.Y Exp.de la pat. (0004017)    supermercado.laanonimaonline.com
-8    LIBERTAD S.A. (0005320)    www.hiperlibertad.com.ar
-9    la reina s.A. (0011318)    https://www.lareinaonline.com.ar/
-10    dia argentina s.A. (0007583)    https://diaonline.supermercadosdia.com.ar/
+8    LIBERTAD S.A. (0005320)    www.hiperlibertad.com.ar✅
+9    la reina s.A. (0011318)    https://www.lareinaonline.com.ar/✅
+10    dia argentina s.A. (0007583)    https://diaonline.supermercadosdia.com.ar/ ✅
 11    D.rosental e hijos saci (0011176)    https://www.pedidosya.com.ar/restaurantes/rosario/supermercado-dar-centro-2-menu?origin=shop_list
 12    DINOSAURIO S.A. (0036838)    https://www.dinoonline.com.ar/
 13    usina lactea el puente s.A.(1) (0007716)    http://ofertas.lacteoselpuente.com.ar/#listado-de-precios

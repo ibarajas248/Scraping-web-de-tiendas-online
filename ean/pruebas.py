@@ -9,7 +9,7 @@ TIENDAS_VTEX = [
     ("Vea", "www.vea.com.ar"),
     ("DIA", "diaonline.supermercadosdia.com.ar"),
     ("Jumbo", "www.jumbo.com.ar"),
-    ("Disco", "www.disco.com.ar"),
+    ("Disco", "www.disco_falta.com.ar"),
 ]
 
 # Lista fija de EANs

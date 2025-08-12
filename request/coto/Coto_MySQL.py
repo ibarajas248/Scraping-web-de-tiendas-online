@@ -21,7 +21,7 @@ HEADERS = {
 }
 SLEEP = 0.35
 TIMEOUT = 25
-MAX_PAGINAS = 5
+MAX_PAGINAS = 5000
 RETRIES = 3
 
 TIENDA_CODIGO = "coto"
@@ -330,7 +330,7 @@ def main():
         params["Nrpp"] = str(NRPP)
 
         try:
-            data = fetch_json(params)
+            data = fetch_json(params) #conecta a la base de datos
         except Exception as e:
             print(f"[{offset}] ⚠️ {e}")
             break

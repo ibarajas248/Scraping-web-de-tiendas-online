@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 # Requisitos:
-#   pip install selenium webdriver-manager beautifulsoup4 pandas
+#   pip install selenium webdriver-manager beautifulsoup4 pandas mysql-connector-python numpy beautifulsoup4
 
 import time
 import re
+import json
 import pandas as pd
+import numpy as np
+from datetime import datetime
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 from selenium import webdriver
@@ -17,14 +20,17 @@ from selenium.common.exceptions import (
     TimeoutException, NoSuchElementException, StaleElementReferenceException,
     ElementClickInterceptedException, InvalidSelectorException, WebDriverException
 )
+from mysql.connector import Error as MySQLError
+
+from base_datos import get_conn  # debes tenerlo configurado
 
 # ------------------ Config ------------------
 BASE = "https://www.lacoopeencasa.coop"
-CATEGORY = "almacen"
+CATEGORY = "casa-y-jardin"
 CAT_ID = 2
 
 PAGE_START = 1
-PAGE_END = 20000              # sube este valor para cubrir más páginas
+PAGE_END = 20000             # sube este valor para cubrir más páginas
 WAIT = 25
 HUMAN_SLEEP = 0.2
 OUT_XLSX = "la_coope_almacen.xlsx"
@@ -32,6 +38,10 @@ OUT_XLSX = "la_coope_almacen.xlsx"
 CSS_CARD_ANCHOR = "col-listado-articulo a[id^='listadoArt']"
 MONEY_RX = re.compile(r"[^\d,.\-]")
 ID_RX = re.compile(r"/(\d+)(?:$|[/?#])")  # captura el código al final del href (e.g., .../311787)
+
+# ---- Identidad de tienda ----
+TIENDA_CODIGO = "la_coope"
+TIENDA_NOMBRE = "La Coope en Casa"
 
 # ------------------ Driver ------------------
 def make_driver(headless=False):
@@ -41,19 +51,48 @@ def make_driver(headless=False):
     options.add_argument("--start-maximized")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
+    options.add_argument("--headless=new")
     options.add_argument("--lang=es-AR")
     options.add_argument("--window-size=1366,900")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    # Evita "Chrome is being controlled by automated test software"
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.set_page_load_timeout(45)
     return driver
 
+# ------------------ Helpers gen ------------------
+def clean(val):
+    if val is None: return None
+    s = str(val).strip()
+    return s if s else None
+
+def money_to_float(txt: str):
+    """Convierte '$4.099,00' -> 4099.00; devuelve None si no puede."""
+    if not txt:
+        return None
+    t = MONEY_RX.sub("", txt).strip()
+    t = t.replace(".", "").replace(",", ".")
+    try:
+        return float(t)
+    except Exception:
+        return None
+
+def to_price_text(x):
+    if x is None:
+        return None
+    if isinstance(x, (int, float)):
+        v = float(x)
+    else:
+        v = money_to_float(str(x))
+        if v is None:
+            return None
+    if isinstance(v, float) and np.isnan(v):
+        return None
+    return f"{round(float(v), 2)}"
+
 # ------------------ Helpers DOM ------------------
 def wait_cards(driver, timeout=WAIT):
-    """Espera presencia y visibilidad de cards; retorna True/False en vez de lanzar siempre."""
     try:
         WebDriverWait(driver, timeout).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, CSS_CARD_ANCHOR))
@@ -66,7 +105,6 @@ def wait_cards(driver, timeout=WAIT):
         return False
 
 def get_page_cards(driver):
-    """Obtiene (href, title) de cada card; tolerante a StaleElementReference."""
     try:
         anchors = driver.find_elements(By.CSS_SELECTOR, CSS_CARD_ANCHOR)
     except WebDriverException:
@@ -80,9 +118,7 @@ def get_page_cards(driver):
             title = a.get_attribute("title") or a.text.strip()
             if href:
                 items.append((href, (title or "").strip()))
-        except StaleElementReferenceException:
-            continue
-        except WebDriverException:
+        except (StaleElementReferenceException, WebDriverException):
             continue
     return items
 
@@ -97,7 +133,6 @@ def to_relative_path(href: str) -> str:
     return href or ""
 
 def css_escape_attr_value(v: str) -> str:
-    """Escapa para a[href="..."] (maneja comillas y backslashes)."""
     if v is None:
         return ""
     return v.replace("\\", "\\\\").replace('"', r'\"')
@@ -106,7 +141,6 @@ def sel_href_eq(v: str) -> str:
     return f'a[href="{css_escape_attr_value(v)}"]'
 
 def lazy_scroll_find(driver, selector: str, max_steps: int = 10, pause: float = 0.18):
-    """Hace scroll por tramos y retorna el elemento si aparece; maneja InvalidSelector/Stale."""
     try:
         for i in range(max_steps):
             try:
@@ -125,7 +159,6 @@ def lazy_scroll_find(driver, selector: str, max_steps: int = 10, pause: float = 
             except WebDriverException:
                 pass
             time.sleep(pause)
-        # último intento: top de nuevo
         try:
             driver.execute_script("window.scrollTo(0,0);")
         except WebDriverException:
@@ -139,17 +172,9 @@ def lazy_scroll_find(driver, selector: str, max_steps: int = 10, pause: float = 
         return None
 
 def smart_open_product(driver, list_url: str, href: str, timeout: int = 25, retries: int = 2) -> bool:
-    """
-    Abre el producto de la grilla con 3 estrategias y reintentos:
-    1) por href (abs/relativo) + lazy scroll
-    2) por id #listadoArt{codigo}
-    3) fallback: driver.get(href)
-    Retorna True si terminó en /producto/.
-    """
     rel = to_relative_path(href)
     code = product_code_from_href(href)
 
-    # Asegurar que estamos en la grilla correcta
     try:
         if not driver.current_url.startswith(list_url):
             driver.get(list_url)
@@ -160,7 +185,6 @@ def smart_open_product(driver, list_url: str, href: str, timeout: int = 25, retr
 
     for attempt in range(retries + 1):
         mode = None
-        # 1) Intento por href (abs o relativo) con lazy-scroll y selector seguro
         sel_href = f"{sel_href_eq(rel)}, {sel_href_eq(href)}"
         el = lazy_scroll_find(driver, sel_href)
         if el:
@@ -170,15 +194,12 @@ def smart_open_product(driver, list_url: str, href: str, timeout: int = 25, retr
                 driver.execute_script("arguments[0].click();", el)
                 mode = "href"
             except (ElementClickInterceptedException, WebDriverException, StaleElementReferenceException):
-                # fallback a navigate
                 try:
                     driver.get(href)
                     mode = "get"
                 except WebDriverException:
                     mode = "error"
-
         else:
-            # 2) Por id listadoArt{codigo}
             if code:
                 sel_id = f"a#listadoArt{code}, a[id='listadoArt{code}']"
                 el2 = lazy_scroll_find(driver, sel_id)
@@ -194,7 +215,6 @@ def smart_open_product(driver, list_url: str, href: str, timeout: int = 25, retr
                             mode = "get"
                         except WebDriverException:
                             mode = "error"
-            # 3) Fallback: navegar directo si todavía no cambiamos de URL
             if not mode:
                 try:
                     driver.get(href)
@@ -202,16 +222,13 @@ def smart_open_product(driver, list_url: str, href: str, timeout: int = 25, retr
                 except WebDriverException:
                     mode = "error"
 
-        # Esperar que realmente estemos en detalle
         try:
             WebDriverWait(driver, timeout).until(EC.url_contains("/producto/"))
             print(f"      ↪️  abierto por: {mode} (intento {attempt+1})")
             return True
         except TimeoutException:
             print(f"      ⚠️  no abrió detalle (mode={mode}, intento {attempt+1})")
-            # pequeño backoff y reintento
             time.sleep(0.3 + attempt * 0.3)
-            # volver a la grilla si nos quedamos en otro lado
             try:
                 driver.get(list_url)
                 wait_cards(driver, timeout)
@@ -221,17 +238,6 @@ def smart_open_product(driver, list_url: str, href: str, timeout: int = 25, retr
     return False
 
 # ------------------ Helpers parsing ------------------
-def money_to_float(txt: str):
-    """Convierte '$4.099,00' -> 4099.00; devuelve None si no puede."""
-    if not txt:
-        return None
-    t = MONEY_RX.sub("", txt).strip()
-    t = t.replace(".", "").replace(",", ".")
-    try:
-        return float(t)
-    except Exception:
-        return None
-
 def safe_select_text(soup, selector, attr=None):
     el = soup.select_one(selector)
     if not el:
@@ -256,9 +262,8 @@ def extract_product_fields(driver):
         return {}
 
     titulo = safe_select_text(soup, "h1.articulo-detalle-titulo")
-
-    # Marca y categoría
     marca = safe_select_text(soup, ".articulo-detalle-marca h2")
+
     categoria = ""
     try:
         spans = soup.select(".articulo-detalle-marca")
@@ -288,32 +293,155 @@ def extract_product_fields(driver):
     if not imagen_url:
         imagen_url = safe_select_text(soup, ".articulo-detalle-imagen-contenedor img", attr="src")
 
-    url_producto = ""
     try:
         url_producto = driver.current_url
     except WebDriverException:
         url_producto = ""
 
+    # Campos alineados al pipeline de BD
     return {
-        "titulo": titulo,
+        "nombre": titulo,
         "marca": marca,
-        "categoria": categoria,
-        "precio": precio,
+        "categoria": "casa-y-jardin",
+        "subcategoria": categoria,  # esta página no lo muestra claro
+        "precio_lista": precio,              # usamos precio normal como lista
+        "precio_oferta": None,               # si detectas promos, setea aquí
+        "tipo_oferta": "",                   # si detectas texto de promo, setéalo
+        "promo_tipo": "",
+        "precio_regular_promo": "",
+        "precio_descuento": "",
+        "comentarios_promo": "",
+        "codigo_interno": codigo_interno,    # lo usaremos como sku_tienda
+        "ean": None,                         # este site no lo expone
+        "fabricante": "",                    # no disponible
+        "url": url_producto,
+        "imagen_url": imagen_url,
         "precio_txt": precio_txt,
         "precio_unitario": precio_unitario,
         "precio_unitario_txt": precio_unitario_txt,
         "precio_sin_impuestos": precio_sin_impuestos,
         "precio_sin_impuestos_txt": precio_sin_imp_txt,
-        "codigo_interno": codigo_interno,
-        "imagen_url": imagen_url,
-        "url_producto": url_producto
     }
 
+# ------------------ Helpers BD (upserts) ------------------
+def upsert_tienda(cur, codigo: str, nombre: str) -> int:
+    cur.execute(
+        "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
+        "ON DUPLICATE KEY UPDATE nombre=VALUES(nombre)",
+        (codigo, nombre)
+    )
+    cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
+    return cur.fetchone()[0]
+
+def find_or_create_producto(cur, p: dict) -> int:
+    ean = clean(p.get("ean"))
+    if ean:
+        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
+        row = cur.fetchone()
+        if row:
+            pid = row[0]
+            cur.execute("""
+                UPDATE productos SET
+                  nombre = COALESCE(NULLIF(%s,''), nombre),
+                  marca = COALESCE(NULLIF(%s,''), marca),
+                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
+                  categoria = COALESCE(NULLIF(%s,''), categoria),
+                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
+                WHERE id=%s
+            """, (
+                p.get("nombre") or "", p.get("marca") or "", p.get("fabricante") or "",
+                p.get("categoria") or "", p.get("subcategoria") or "", pid
+            ))
+            return pid
+
+    # Sin EAN: match por (nombre, marca)
+    cur.execute("""
+        SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1
+    """, (p.get("nombre") or "", p.get("marca") or ""))
+    row = cur.fetchone()
+    if row:
+        pid = row[0]
+        cur.execute("""
+            UPDATE productos SET
+              ean = COALESCE(NULLIF(%s,''), ean),
+              marca = COALESCE(NULLIF(%s,''), marca),
+              fabricante = COALESCE(NULLIF(%s,''), fabricante),
+              categoria = COALESCE(NULLIF(%s,''), categoria),
+              subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
+            WHERE id=%s
+        """, (
+            p.get("ean") or "", p.get("marca") or "", p.get("fabricante") or "",
+            p.get("categoria") or "", p.get("subcategoria") or "", pid
+        ))
+        return pid
+
+    cur.execute("""
+        INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
+        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
+    """, (
+        p.get("ean") or "", p.get("nombre") or "", p.get("marca") or "",
+        p.get("fabricante") or "", p.get("categoria") or "", p.get("subcategoria") or ""
+    ))
+    return cur.lastrowid
+
+def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: dict) -> int:
+    sku = clean(p.get("codigo_interno"))    # usamos código interno como sku_tienda
+    rec = None                              # La Coope no tiene record_id claro
+
+    if sku:
+        cur.execute("""
+            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
+            VALUES (%s, %s, NULLIF(%s,''), NULL, NULLIF(%s,''), NULLIF(%s,''))
+            ON DUPLICATE KEY UPDATE
+              producto_id=VALUES(producto_id),
+              url_tienda=COALESCE(VALUES(url_tienda), url_tienda),
+              nombre_tienda=COALESCE(VALUES(nombre_tienda), nombre_tienda)
+        """, (tienda_id, producto_id, sku, p.get("url") or "", p.get("nombre") or ""))
+        cur.execute("SELECT id FROM producto_tienda WHERE tienda_id=%s AND sku_tienda=%s LIMIT 1",
+                    (tienda_id, sku))
+        return cur.fetchone()[0]
+
+    # Sin sku: registramos por URL/nombre (menos robusto, pero evita perderlo)
+    cur.execute("""
+        INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
+        VALUES (%s, %s, NULL, NULL, NULLIF(%s,''), NULLIF(%s,''))
+    """, (tienda_id, producto_id, p.get("url") or "", p.get("nombre") or ""))
+    return cur.lastrowid
+
+def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: dict, capturado_en: datetime):
+    # Si no detectamos oferta, guardamos precio_lista y dejamos oferta NULL
+    precio_lista_txt  = to_price_text(p.get("precio_lista"))
+    precio_oferta_txt = to_price_text(p.get("precio_oferta")) if p.get("precio_oferta") is not None else None
+
+    cur.execute("""
+        INSERT INTO historico_precios
+          (tienda_id, producto_tienda_id, capturado_en,
+           precio_lista, precio_oferta, tipo_oferta,
+           promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          precio_lista = VALUES(precio_lista),
+          precio_oferta = VALUES(precio_oferta),
+          tipo_oferta = VALUES(tipo_oferta),
+          promo_tipo = VALUES(promo_tipo),
+          promo_texto_regular = VALUES(promo_texto_regular),
+          promo_texto_descuento = VALUES(promo_texto_descuento),
+          promo_comentarios = VALUES(promo_comentarios)
+    """, (
+        tienda_id, producto_tienda_id, capturado_en,
+        precio_lista_txt, precio_oferta_txt,
+        p.get("tipo_oferta") or None, p.get("promo_tipo") or None,
+        p.get("precio_regular_promo") or None, p.get("precio_descuento") or None,
+        p.get("comentarios_promo") or None
+    ))
+
 # ------------------ Main ------------------
-def run():
-    driver = make_driver(headless=False)  # True si quieres headless
+def run(headless=False):
+    driver = make_driver(headless=headless)
     data = []
     seen_codes = set()
+
+    t0 = time.time()
     try:
         for page in range(PAGE_START, PAGE_END + 1):
             url = f"{BASE}/listado/categoria/{CATEGORY}/{CAT_ID}/pagina--{page}"
@@ -325,12 +453,10 @@ def run():
                 print(f"⚠️  No se pudo cargar la página {page}: {e}")
                 continue
 
-            # Esperar tarjetas
             if not wait_cards(driver):
                 print("⚠️  No se detectaron productos en esta página. Deteniendo.")
                 break
 
-            # pequeño scroll para disparar lazy
             try:
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight * 0.25);")
             except WebDriverException:
@@ -351,10 +477,9 @@ def run():
                     print("   ⚠️  No navegó al detalle (timeout). Sigo con el siguiente.")
                     continue
 
-                # Extraer campos
                 try:
                     row = extract_product_fields(driver)
-                    if not row or not (row.get("titulo") or row.get("codigo_interno")):
+                    if not row or not (row.get("nombre") or row.get("codigo_interno")):
                         print("      ⚠️  Extracción vacía; skipping.")
                     else:
                         code = (row.get("codigo_interno") or "").strip()
@@ -364,12 +489,12 @@ def run():
                             data.append(row)
                             if code:
                                 seen_codes.add(code)
-                            print(f"      ✅ {row.get('titulo','(sin título)')} | ${row.get('precio')} | cod {code or '-'}")
+                            precolog = to_price_text(row.get("precio_lista")) or "-"
+                            print(f"      ✅ {row.get('nombre','(sin título)')} | ${precolog} | cod {code or '-'}")
                 except Exception as e:
                     print(f"      ⚠️  Error extrayendo: {e}")
 
                 time.sleep(HUMAN_SLEEP)
-                # Volver a la grilla con tolerancia
                 try:
                     driver.back()
                     wait_cards(driver)
@@ -383,25 +508,63 @@ def run():
 
             time.sleep(0.4)
 
-        # Exportar
-        if data:
+        # ====== Inserción directa en MySQL ======
+        if not data:
+            print("\nℹ️ No se recolectó ningún dato.")
+            return
+
+        capturado_en = datetime.now()
+
+        conn = None
+        try:
+            conn = get_conn()
+            conn.autocommit = False
+            cur = conn.cursor()
+
+            tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
+
+            insertados = 0
+            for p in data:
+                producto_id = find_or_create_producto(cur, p)
+                pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
+                insert_historico(cur, tienda_id, pt_id, p, capturado_en)
+                insertados += 1
+
+            conn.commit()
+            print(f"\n💾 Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOMBRE} ({capturado_en})")
+
+        except MySQLError as e:
+            if conn: conn.rollback()
+            print(f"❌ Error MySQL: {e}")
+        finally:
+            try:
+                if conn: conn.close()
+            except Exception:
+                pass
+
+        # (opcional) export XLSX como respaldo local
+        try:
             df = pd.DataFrame(data)
             cols = [
-                "titulo","marca","categoria",
-                "precio","precio_txt","precio_unitario","precio_unitario_txt",
+                "nombre","marca","categoria","subcategoria",
+                "precio_lista","precio_txt","precio_unitario","precio_unitario_txt",
                 "precio_sin_impuestos","precio_sin_impuestos_txt",
-                "codigo_interno","imagen_url","url_producto"
+                "codigo_interno","imagen_url","url"
             ]
             df = df.reindex(columns=cols)
             df.to_excel(OUT_XLSX, index=False)
-            print(f"\n💾 Exportado: {OUT_XLSX} | filas: {len(df)}")
-        else:
-            print("\nℹ️ No se recolectó ningún dato.")
+            print(f"💾 Exportado: {OUT_XLSX} | filas: {len(df)}")
+        except Exception as e:
+            print(f"⚠️ Error exportando XLSX: {e}")
+
     finally:
         try:
             driver.quit()
         except Exception:
             pass
 
+    print(f"⏱️ Tiempo total: {time.time() - t0:.2f} s")
+
 if __name__ == "__main__":
-    run()
+    # Cambia a True si lo quieres headless en servidor
+    run(headless=False)

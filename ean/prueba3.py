@@ -221,7 +221,7 @@ def coto_by_ean(
 # =========================
 STORE_FUNCS_EAN = {
     "jumbo": jumbo_by_ean,
-    "disco": disco_by_ean,
+    "disco_falta": disco_by_ean,
     "vea":   vea_by_ean,
     "dia":   dia_by_ean,
     "coto":  coto_by_ean,
@@ -280,7 +280,7 @@ def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["ean"], default="ean", help="Modo (solo 'ean' en esta versión)")
     ap.add_argument("--stores", type=str,
-                    default="jumbo,disco,vea,dia,coto",
+                    default="jumbo,disco_falta,vea,dia,coto",
                     help="Tiendas separadas por coma (default: todas)")
     ap.add_argument("--out", type=str, default=f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
     return ap.parse_args()

@@ -4,3 +4,11 @@ pandas
 xlsxwriter
 mysql-connector-python
 BeautifulSoup
+streamlit
+pandas
+numpy
+SQLAlchemy
+mysql-connector-python
+altair
+openpyxl
+python-dotenv

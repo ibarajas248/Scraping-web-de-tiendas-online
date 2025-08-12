@@ -1,17 +1,15 @@
-"""
-Carrefour AR (VTEX) — Scraper de todas las categorías (rápido y robusto)
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-• Descubre todo el árbol de categorías (category/tree).
-• Paraleliza el scraping por categoría con límite de hilos.
-• Reutiliza conexiones (Session) y aplica retries/backoff.
-• Corta por categoría cuando no hay más páginas (página vacía o < STEP).
-• Deduplica por productId y guarda en CSV (Excel opcional al final).
+"""
+Carrefour AR (VTEX) — Scraper de todas las categorías con salida en:
+EAN, Código Interno, Nombre Producto, Categoría, Subcategoría, Marca,
+Fabricante, Precio de Lista, Precio de Oferta, Tipo de Oferta, URL
 """
 
 import re
 import time
 import logging
-from html import unescape
 from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,7 +21,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # ------------------ Config ------------------
-BASE = "https://www.carrefour.com.ar/api/catalog_system/pub/products/search"
+BASE_API = "https://www.carrefour.com.ar/api/catalog_system/pub/products/search"
+BASE_WEB = "https://www.carrefour.com.ar"
 TREE = "https://www.carrefour.com.ar/api/catalog_system/pub/category/tree/{depth}"
 
 HEADERS = {
@@ -31,17 +30,21 @@ HEADERS = {
     "Accept": "application/json",
 }
 
-STEP = 50              # ítems por página VTEX
-SLEEP_PAGE = 0.25      # pausa entre páginas dentro de una misma categoría
-MAX_OFFSET_HARD = 10000  # salvavidas por si algo queda en loop
-MAX_WORKERS = 6        # hilos (categorías en paralelo). 5–8 suele andar bien
-DEPTH = 10             # profundidad del árbol de categorías
-CLEAN_HTML = True      # limpiar descripciones con HTML
-SAVE_CSV = "carrefour_all_products.csv"
-SAVE_XLSX = None       # Ej: "carrefour.xlsx" si quieres Excel
+STEP = 50               # ítems por página VTEX
+SLEEP_PAGE = 0.25       # pausa entre páginas dentro de una misma categoría
+MAX_OFFSET_HARD = 10000 # salvavidas por si algo queda en loop
+MAX_WORKERS = 6         # hilos (categorías en paralelo). 5–8 suele andar bien
+DEPTH = 10              # profundidad del árbol de categorías
+CLEAN_HTML = False      # (dejado, pero NO lo usamos en la salida)
+SAVE_CSV = None         # si quieres CSV, pon un path. Ej: "carrefour.csv"
+SAVE_XLSX = "carrefour.xlsx"
 
-# Si usas Excel, se aplica formato a columnas de precio automáticamente
-PRICE_COLS = ["price", "listPrice"]
+# Columnas finales y columnas de dinero para formatear
+COLS_FINAL = [
+    "EAN", "Código Interno", "Nombre Producto", "Categoría", "Subcategoría",
+    "Marca", "Fabricante", "Precio de Lista", "Precio de Oferta", "Tipo de Oferta", "URL"
+]
+PRICE_COLS = ["Precio de Lista", "Precio de Oferta"]
 
 # ------------------ Logging ------------------
 logging.basicConfig(
@@ -58,22 +61,31 @@ def sanitize_for_excel(value):
         return ILLEGAL_XLSX.sub("", value)
     return value
 
-def clean_html_text(text: Optional[str]) -> str:
-    if not text:
-        return ""
-    if not CLEAN_HTML:
-        return unescape(text)
-    # Evita parsear si parece que no hay tags
-    t = unescape(text)
-    if "<" in t and ">" in t:
-        try:
-            return BeautifulSoup(t, "html.parser").get_text(" ", strip=True)
-        except Exception:
-            return t
-    return t
-
 def first(lst: Optional[Iterable], default=None):
     return lst[0] if isinstance(lst, list) and lst else default
+
+def split_cat(path: str) -> Tuple[str, str]:
+    """Convierte '/categoria/subcategoria/...' → ('Categoria','Subcategoria')."""
+    if not path:
+        return "", ""
+    parts = [p for p in path.strip("/").split("/") if p]
+    if not parts:
+        return "", ""
+    fix = lambda s: s.replace("-", " ").strip().title()
+    cat = fix(parts[0])
+    sub = fix(parts[1]) if len(parts) > 1 else ""
+    return cat, sub
+
+def tipo_de_oferta(offer: dict, list_price: float, price: float) -> str:
+    try:
+        dh = offer.get("DiscountHighLight") or []
+        if dh and isinstance(dh, list):
+            name = (dh[0].get("Name") or "").strip()
+            if name:
+                return name
+    except Exception:
+        pass
+    return "Descuento" if (price or 0) < (list_price or 0) else "Precio regular"
 
 # ------------------ Sesión HTTP con retries ------------------
 def make_session() -> requests.Session:
@@ -93,54 +105,57 @@ def make_session() -> requests.Session:
 
 SESSION = make_session()
 
-# ------------------ Parseo de producto ------------------
-def parse_product(p: Dict) -> Dict:
+# ------------------ Parseo de producto (solo columnas pedidas) ------------------
+def parse_product_min(p: Dict) -> Dict:
     items = p.get("items") or []
     item0 = items[0] if items else {}
     sellers = item0.get("sellers") or []
     seller0 = sellers[0] if sellers else {}
     offer = seller0.get("commertialOffer") or {}
 
-    img0 = first(item0.get("images") or [])
-    image_url = img0.get("imageUrl") if isinstance(img0, dict) else None
-
+    # Identificadores
     ean = item0.get("ean") or first(p.get("EAN"))
+    codigo_interno = item0.get("itemId") or p.get("productId")
 
-    refid = None
-    for rid in item0.get("referenceId") or []:
-        if isinstance(rid, dict) and rid.get("Key") == "RefId":
-            refid = rid.get("Value") or refid
-
+    # Categoría / Subcategoría: primer path
     categories = p.get("categories") or []
-    leaf_category = None
-    if categories:
-        leaf = categories[0]
-        parts = [s for s in leaf.split("/") if s.strip()]
-        leaf_category = parts[-1] if parts else None
+    cat, sub = ("", "")
+    if categories and isinstance(categories, list) and isinstance(categories[0], str):
+        cat, sub = split_cat(categories[0])
+
+    # URL (preferir linkText; si no, usar p['link'] absoluto)
+    link_text = p.get("linkText")
+    if link_text:
+        url_prod = f"{BASE_WEB}/{link_text}/p"
+    else:
+        url_prod = p.get("link") or ""
+
+    list_price = offer.get("ListPrice") or 0
+    price = offer.get("Price") or 0
 
     return {
-        "productId": p.get("productId"),
-        "productName": p.get("productName"),
-        "brand": p.get("brand"),
-        "brandId": p.get("brandId"),
-        "releaseDate": p.get("releaseDate"),
-        "categoryId": p.get("categoryId"),
-        "leafCategory": leaf_category,
-        "link": p.get("link"),
-        "ean": ean,
-        "refId": refid,
-        "price": offer.get("Price"),
-        "listPrice": offer.get("ListPrice"),
-        "priceValidUntil": offer.get("PriceValidUntil"),
-        "availableQuantity": offer.get("AvailableQuantity"),
-        "isAvailable": offer.get("IsAvailable"),
-        "imageUrl": image_url,
-        "description": clean_html_text(p.get("description")),
-        "color": first(p.get("Color")),
-        "modelo": first(p.get("Modelo")),
-        "tipoProducto": first(p.get("Tipo de producto")),
-        "origen": first(p.get("Origen")),
-        "garantia": first(p.get("Garantía")),
+        # === columnas finales ===
+        "EAN": ean,
+        "Código Interno": codigo_interno,
+        "Nombre Producto": p.get("productName"),
+        "Categoría": cat,
+        "Subcategoría": sub,
+        "Marca": p.get("brand"),
+        "Fabricante": p.get("manufacturer") or "",
+        "Precio de Lista": list_price,
+        "Precio de Oferta": price,
+        "Tipo de Oferta": tipo_de_oferta(offer, list_price, price),
+        "URL": url_prod,
+
+        # --- Campos extra (NO requeridos) → dejados aquí solo COMENTADOS ---
+        # "productId": p.get("productId"),
+        # "brandId": p.get("brandId"),
+        # "availableQuantity": offer.get("AvailableQuantity"),
+        # "isAvailable": offer.get("IsAvailable"),
+        # "priceValidUntil": offer.get("PriceValidUntil"),
+        # "imageUrl": first(item0.get("images") or [], {}).get("imageUrl") if item0.get("images") else None,
+        # "description": BeautifulSoup(p.get("description") or "", "html.parser").get_text(" ", strip=True) if CLEAN_HTML else p.get("description"),
+        # "refId": next((rid.get("Value") for rid in (item0.get("referenceId") or []) if rid.get("Key") == "RefId"), None),
     }
 
 # ------------------ Árbol de categorías ------------------
@@ -189,7 +204,7 @@ def fetch_category(cat_path: str, map_str: str, step: int = STEP) -> List[Dict]:
             logging.warning("Tope de offset alcanzado (%s) en %s", MAX_OFFSET_HARD, cat_path)
             break
 
-        url = f"{BASE}/{cat_path}?_from={offset}&_to={offset + step - 1}&map={map_str}"
+        url = f"{BASE_API}/{cat_path}?_from={offset}&_to={offset + step - 1}&map={map_str}"
         try:
             r = SESSION.get(url, timeout=30)
         except Exception as exc:
@@ -213,9 +228,7 @@ def fetch_category(cat_path: str, map_str: str, step: int = STEP) -> List[Dict]:
         if not data:
             empty_streak += 1
             if empty_streak >= 2:
-                # dos vacías seguidas → cortar
                 break
-            # una vacía puede ser corte natural, intentamos una más
             offset += step
             time.sleep(SLEEP_PAGE)
             continue
@@ -226,7 +239,7 @@ def fetch_category(cat_path: str, map_str: str, step: int = STEP) -> List[Dict]:
             pid = p.get("productId")
             if pid and pid not in seen:
                 seen.add(pid)
-                rows.append(parse_product(p))
+                rows.append(parse_product_min(p))
                 added += 1
 
         offset += step
@@ -234,7 +247,6 @@ def fetch_category(cat_path: str, map_str: str, step: int = STEP) -> List[Dict]:
 
         # Si la página devolvió menos de 'step', probablemente no hay más
         if added < step:
-            # confirmación suave: intentamos una página más
             continue
 
     return rows
@@ -245,32 +257,30 @@ def save_csv(df: pd.DataFrame, path: str):
     logging.info("💾 CSV guardado: %s (%d filas)", path, len(df))
 
 def save_xlsx(df: pd.DataFrame, path: str):
-    # limpieza strings
-    for col in df.select_dtypes(include=["object"]).columns:
-        df[col] = df[col].map(sanitize_for_excel)
+    # ... (tu limpieza previa)
 
-    # formateo precios
-    for col in PRICE_COLS:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").round(2)
-
-    with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Data")
+    # 👉 Desactiva la conversión automática de URLs a hipervínculos
+    with pd.ExcelWriter(
+        path,
+        engine="xlsxwriter",
+        engine_kwargs={"options": {"strings_to_urls": False}}
+    ) as writer:
+        df.to_excel(writer, index=False, sheet_name="productos")
         wb = writer.book
-        ws = writer.sheets["Data"]
-        money_fmt = wb.add_format({"num_format": "#,##0.00"})
-        # ancho y formato de columnas de precio
-        cols = list(df.columns)
-        for c in PRICE_COLS:
-            if c in cols:
-                idx = cols.index(c)
-                ws.set_column(idx, idx, 12, money_fmt)
-        # ajuste simple de anchos (ligero)
-        for i, name in enumerate(cols):
-            if df[name].dtype == object:
-                ws.set_column(i, i, min(60, max(12, int(df[name].astype(str).str.len().quantile(0.9)))))
+        ws = writer.sheets["productos"]
 
-    logging.info("💾 XLSX guardado: %s (%d filas)", path, len(df))
+        money = wb.add_format({"num_format": "0.00"})
+        text  = wb.add_format({"num_format": "@"})
+
+        col_idx = {name: i for i, name in enumerate(df.columns)}
+        if "EAN" in col_idx: ws.set_column(col_idx["EAN"], col_idx["EAN"], 18, text)
+        if "Nombre Producto" in col_idx: ws.set_column(col_idx["Nombre Producto"], col_idx["Nombre Producto"], 52)
+        for c in ["Categoría","Subcategoría","Marca","Fabricante"]:
+            if c in col_idx: ws.set_column(col_idx[c], col_idx[c], 20)
+        for c in ["Precio de Lista","Precio de Oferta"]:
+            if c in col_idx: ws.set_column(col_idx[c], col_idx[c], 14, money)
+        if "URL" in col_idx: ws.set_column(col_idx["URL"], col_idx["URL"], 46)
+
 
 # ------------------ Orquestación ------------------
 def fetch_all_categories(depth: int = DEPTH) -> pd.DataFrame:
@@ -279,9 +289,9 @@ def fetch_all_categories(depth: int = DEPTH) -> pd.DataFrame:
 
     if not cats:
         logging.warning("No se encontraron categorías. Nada para hacer.")
-        return pd.DataFrame()
+        return pd.DataFrame(columns=COLS_FINAL)
 
-    logging.info("🚀 Iniciando scraping paralelo de %d categorías (max_workers=%d)", len(cats), MAX_WORKERS)
+    logging.info("🚀 Scraping paralelo de %d categorías (max_workers=%d)", len(cats), MAX_WORKERS)
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futures = {ex.submit(fetch_category, cat, mp): (cat, mp) for (cat, mp) in cats}
         for fut in as_completed(futures):
@@ -295,10 +305,15 @@ def fetch_all_categories(depth: int = DEPTH) -> pd.DataFrame:
 
     if not all_rows:
         logging.warning("No se obtuvieron filas.")
-        return pd.DataFrame()
+        return pd.DataFrame(columns=COLS_FINAL)
 
-    df = pd.DataFrame(all_rows).drop_duplicates(subset=["productId"])
-    logging.info("✅ Total productos únicos: %d", len(df))
+    df = pd.DataFrame(all_rows)
+    # asegurar columnas y orden final
+    for c in COLS_FINAL:
+        if c not in df.columns:
+            df[c] = pd.NA
+    df = df[COLS_FINAL].drop_duplicates(keep="last")
+    logging.info("✅ Total productos: %d", len(df))
     return df
 
 # ------------------ Main ------------------
