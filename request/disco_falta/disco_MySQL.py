@@ -4,7 +4,7 @@
 import time, re, threading, requests, pandas as pd
 from bs4 import BeautifulSoup
 from html import unescape
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -34,7 +34,7 @@ OUT_XLSX = "disco_formato.xlsx"
 OUT_CSV  = None  # p.ej. "disco_formato.csv"
 
 # Identidad tienda (para DB)
-TIENDA_CODIGO = "disco_falta"
+TIENDA_CODIGO = "disco"
 TIENDA_NOMBRE = "Disco Argentina"
 
 # Inserción histórico por lotes
@@ -79,8 +79,47 @@ def tipo_de_oferta(offer: dict, list_price: float, price: float) -> str:
         pass
     return "Descuento" if (price or 0) < (list_price or 0) else "Precio regular"
 
+def normalize_ean(e: Any) -> Optional[str]:
+    """Deja sólo dígitos; si queda vacío, None."""
+    if e is None: return None
+    s = str(e)
+    digits = re.sub(r"\D+", "", s)
+    return digits if digits else None
+
+def normalize_item_id(v: Any) -> Optional[str]:
+    if v is None: return None
+    s = str(v).strip()
+    return s or None
+
+def normalize_url(u: Any) -> Optional[str]:
+    """Baja a minúsculas, quita query/fragment, deja esquema+host+path."""
+    if u is None: return None
+    s = str(u).strip()
+    if not s: return None
+    try:
+        p = urlparse(s)
+        # Asegura host correcto; si viene ruta relativa, preserva tal cual
+        if not p.scheme or not p.netloc:
+            # si es relativa, sólo normaliza path
+            path = p.path.rstrip("/")
+            return path.lower() or None
+        path = p.path.rstrip("/")
+        base = f"{p.scheme}://{p.netloc}{path}".lower()
+        return base or None
+    except Exception:
+        return s.strip().lower() or None
+
+def build_norm_key(ean: Optional[str], item_id: Optional[str], url: Optional[str]) -> str:
+    """Clave estable: E:ean / I:item_id / U:url_normalizada (sin query)."""
+    e = normalize_ean(ean)
+    if e: return f"E:{e}"
+    i = normalize_item_id(item_id)
+    if i: return f"I:{i}"
+    u = normalize_url(url)
+    return f"U:{u or 'sin-url'}"
+
 def _norm_str(v: Any) -> str:
-    """Normaliza cadenas para claves (trim y None->'')."""
+    """Normaliza cadenas para guardar (trim y None->'')."""
     if v is None: return ""
     try:
         s = str(v).strip()
@@ -158,14 +197,7 @@ def fetch_page_by_path(path_segments, offset, sleep_holder):
         time.sleep(sleep_holder[0]); return []
     return []
 
-# ===================== Clave y parse por SKU =====================
-def build_key(ean: str, item_id: str, url: str) -> str:
-    ean = (ean or "").strip()
-    if ean: return f"E:{ean}"
-    iid = (item_id or "").strip()
-    if iid: return f"I:{iid}"
-    return f"U:{(url or '').strip()}"
-
+# ===================== Parse de producto → filas =====================
 def rows_from_product(p: dict):
     """Devuelve una lista de filas (una por SKU) mapeadas al formato final."""
     rows = []
@@ -178,19 +210,31 @@ def rows_from_product(p: dict):
     base_url = f"{BASE}/{slug}/p" if slug else (p.get("link") or "")
 
     product_name = clean_text_fast(p.get("productName"))
+
     brand = clean_text_fast(p.get("brand"))
-    manufacturer = p.get("manufacturer") or ""
+    manufacturer = _norm_str(p.get("manufacturer"))
 
     for it in (p.get("items") or []):
         sellers = it.get("sellers") or []
         s0 = sellers[0] if sellers else {}
         offer = s0.get("commertialOffer") or {}
-        list_price = float(offer.get("ListPrice") or 0)
-        price      = float(offer.get("Price") or 0)
+
+
+        try:
+            list_price = float(offer.get("PriceWithoutDiscount") or 0)
+        except Exception:
+            list_price = 0.0
+        try:
+            price      = float(offer.get("Price") or 0)
+        except Exception:
+            price = 0.0
+
+        ean_raw = it.get("ean") or first(p.get("EAN"))
+        item_id = it.get("itemId") or p.get("productId")
 
         row = {
-            "EAN": it.get("ean") or first(p.get("EAN")),
-            "Código Interno": it.get("itemId") or p.get("productId"),
+            "EAN": normalize_ean(ean_raw),
+            "Código Interno": normalize_item_id(item_id),
             "Nombre Producto": product_name,
             "Categoría": cat,
             "Subcategoría": sub,
@@ -199,7 +243,7 @@ def rows_from_product(p: dict):
             "Precio de Lista": round(list_price, 2),
             "Precio de Oferta": round(price, 2),
             "Tipo de Oferta": tipo_de_oferta(offer, list_price, price),
-            "URL": base_url,
+            "URL": normalize_url(base_url),
         }
         rows.append(row)
     return rows
@@ -226,7 +270,7 @@ def scrape_category(segs):
         for p in data:
             try:
                 for row in rows_from_product(p):
-                    key = build_key(row["EAN"], row["Código Interno"], row["URL"])
+                    key = build_norm_key(row["EAN"], row["Código Interno"], row["URL"])
                     with SEEN_LOCK:
                         if key in SEEN_KEYS:
                             continue
@@ -258,16 +302,23 @@ def scrape_all(max_workers=MAX_WORKERS, max_depth=MAX_DEPTH):
     # Garantizar columnas/orden
     for c in COLS_FINAL:
         if c not in df.columns: df[c] = pd.NA
+
+    # Tipos
     df["EAN"] = df["EAN"].astype("string")
     for c in ["Precio de Lista","Precio de Oferta"]:
         df[c] = pd.to_numeric(df[c], errors="coerce").round(2)
+
+    # Orden final
     df = df[COLS_FINAL]
     return df
 
-# ===================== Dedupe DataFrame =====================
+# ===================== Dedupe DataFrame (fuerte, clave canónica) =====================
 def dedupe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """1) Elimina duplicados exactos de fila.
-       2) Elimina duplicados por clave (EAN -> Código Interno -> URL)."""
+    """
+    1) Elimina duplicados exactos.
+    2) Construye clave canónica jerárquica (EAN→Código Interno→URL) con normalización fuerte.
+    3) Selecciona la 'mejor' fila por clave (prioriza: tiene EAN, luego Código Interno, luego Precio Oferta > 0).
+    """
     if df is None or df.empty:
         return df
 
@@ -276,17 +327,39 @@ def dedupe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.drop_duplicates(keep="first")
     removed_exact = before - len(df)
 
-    # 2) Clave jerárquica
-    key = df["EAN"].fillna("").astype(str).str.strip()
-    m = key.eq("")
-    key[m] = df.loc[m, "Código Interno"].fillna("").astype(str).str.strip()
-    m = key.eq("")
-    key[m] = df.loc[m, "URL"].fillna("").astype(str).str.strip()
+    # 2) Clave jerárquica normalizada
+    ean_norm = df["EAN"].map(normalize_ean)
+    item_norm = df["Código Interno"].map(normalize_item_id)
+    url_norm = df["URL"].map(normalize_url)
+
+    key = ean_norm.fillna("")
+    m = key.eq("") | key.isna()
+    key = key.astype(str)
+    key[m] = item_norm[m].fillna("").astype(str)
+    m = key.eq("") | key.isna()
+    key[m] = url_norm[m].fillna("").astype(str)
+
     df["_k"] = key
 
+    # 3) Scoring para elegir la mejor fila por clave
+    has_ean  = ean_norm.notna() & (ean_norm.astype(str).str.len() > 0)
+    has_item = item_norm.notna() & (item_norm.astype(str).str.len() > 0)
+    precio_o = pd.to_numeric(df["Precio de Oferta"], errors="coerce").fillna(0)
+
+    df["_score"] = (
+        has_ean.astype(int) * 4
+        + has_item.astype(int) * 2
+        + (precio_o > 0).astype(int) * 1
+    )
+
+    # Ordenamos por clave y score desc + precio desc, y nos quedamos con la primera por clave
+    df = df.sort_values(by=["_k", "_score", "Precio de Oferta"], ascending=[True, False, False])
     before2 = len(df)
-    df = df.drop_duplicates(subset=["_k"]).drop(columns=["_k"])
+    df = df.drop_duplicates(subset=["_k"], keep="first")
     removed_key = before2 - len(df)
+
+    # Limpieza columnas auxiliares
+    df = df.drop(columns=["_k", "_score"], errors="ignore")
 
     print(f"🧹 Dedupe DataFrame: -{removed_exact} exactos, -{removed_key} por clave → {len(df)} filas")
     return df.reset_index(drop=True)
@@ -364,17 +437,14 @@ def get_or_create_producto(cur, cache_ean: dict, cache_nom_marca: dict, row: dic
 
     # --- Caso con EAN ---
     if ean:
-        # cache en memoria
         if ean in cache_ean:
             return cache_ean[ean]
-        # existe en DB?
         cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
         r = cur.fetchone()
         if r:
             pid = r[0]
             cache_ean[ean] = pid
             return pid
-        # no existe -> insertar
         cur.execute("""
             INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
             VALUES (%s,%s,%s,%s,%s,%s)
@@ -396,7 +466,6 @@ def get_or_create_producto(cur, cache_ean: dict, cache_nom_marca: dict, row: dic
     if r:
         pid = r[0]; cache_nom_marca[key] = pid
         return pid
-    # no existe -> insertar
     cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
         VALUES (%s,%s,%s,%s,%s,%s)
@@ -450,7 +519,7 @@ def insertar_df_en_mysql(df: pd.DataFrame,
         print("⚠️ DataFrame vacío: nada para insertar.")
         return
 
-    # Dedupe final por si llega un df externo: garantiza sin repetidos
+    # Dedupe final: garantiza sin repetidos
     df = dedupe_dataframe(df)
 
     # Congelar un timestamp común para el snapshot
@@ -480,7 +549,6 @@ def insertar_df_en_mysql(df: pd.DataFrame,
             # 1) productos
             before_last_id = cur.lastrowid
             pid = get_or_create_producto(cur, cache_ean, cache_nom_marca, row)
-            # heurística: cuenta como nuevo solo si el último INSERT cambió (no es 100% exacto)
             if cur.lastrowid and cur.lastrowid != before_last_id:
                 n_prod_new += 1
 
@@ -532,7 +600,7 @@ if __name__ == "__main__":
     t0 = time.time()
     print("🚀 Iniciando scraping Disco (VTEX)…")
     df = scrape_all(max_workers=MAX_WORKERS, max_depth=MAX_DEPTH)
-    df = postprocess_and_save(df)
+    df = postprocess_and_save(df)  # <-- incluye dedupe fuerte
     print("🗄️ Insertando en MySQL…")
     insertar_df_en_mysql(df)
     print(f"⏱️ Tiempo total: {time.time() - t0:.1f}s")

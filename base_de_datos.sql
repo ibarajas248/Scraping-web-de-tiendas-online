@@ -1,166 +1,78 @@
+CREATE DATABASE IF NOT EXISTS analisis_retail
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_general_ci;
+USE analisis_retail;
 
+-- =====================================
+-- TABLA tiendas (pocas filas)
+-- =====================================
+CREATE TABLE tiendas (
+  id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  codigo VARCHAR(40) NOT NULL,
+  nombre VARCHAR(160) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY codigo (codigo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC;
 
-SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
-START TRANSACTION;
-SET time_zone = "+00:00";
+-- =====================================
+-- TABLA productos (catálogo)
+-- =====================================
+CREATE TABLE productos (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  ean VARCHAR(32) DEFAULT NULL,
+  nombre VARCHAR(360) DEFAULT NULL,
+  marca VARCHAR(120) DEFAULT NULL,
+  fabricante VARCHAR(240) DEFAULT NULL,
+  categoria VARCHAR(120) DEFAULT NULL,
+  subcategoria VARCHAR(120) DEFAULT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_ean (ean),
+  KEY idx_prod_marca (marca)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC;
 
+-- =====================================
+-- TABLA producto_tienda (relación producto <-> tienda)
+-- =====================================
+CREATE TABLE producto_tienda (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  tienda_id SMALLINT UNSIGNED NOT NULL,
+  producto_id INT UNSIGNED NOT NULL,
+  sku_tienda VARCHAR(80) DEFAULT NULL,
+  record_id_tienda VARCHAR(80) DEFAULT NULL,
+  url_tienda VARCHAR(512) DEFAULT NULL,
+  nombre_tienda VARCHAR(360) DEFAULT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_tienda_sku (tienda_id, sku_tienda),
+  UNIQUE KEY uniq_tienda_record (tienda_id, record_id_tienda),
+  KEY idx_tienda_prod (tienda_id, producto_id),
+  KEY fk_pt_producto (producto_id),
+  CONSTRAINT fk_pt_producto FOREIGN KEY (producto_id) REFERENCES productos(id)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_pt_tienda FOREIGN KEY (tienda_id) REFERENCES tiendas(id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC;
 
-/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
-/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
-/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!40101 SET NAMES utf8mb4 */;
-
---
--- Base de datos: `analisis_retail`
---
--- --------------------------------------------------------
---
--- Estructura de tabla para la tabla `historico_precios`
---
-
-CREATE TABLE `historico_precios` (
-  `id` bigint(20) NOT NULL,
-  `tienda_id` int(11) NOT NULL,
-  `producto_tienda_id` bigint(20) NOT NULL,
-  `capturado_en` datetime NOT NULL,
-  `precio_lista` decimal(12,2) DEFAULT NULL,
-  `precio_oferta` decimal(12,2) DEFAULT NULL,
-  `tipo_oferta` varchar(200) DEFAULT NULL,
-  `promo_tipo` varchar(500) DEFAULT NULL,
-  `promo_texto_regular` varchar(500) DEFAULT NULL,
-  `promo_texto_descuento` varchar(500) DEFAULT NULL,
-  `promo_comentarios` varchar(800) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Estructura de tabla para la tabla `productos`
---
-
-CREATE TABLE `productos` (
-  `id` bigint(20) NOT NULL,
-  `ean` varchar(32) DEFAULT NULL,
-  `nombre` varchar(600) DEFAULT NULL,
-  `marca` varchar(200) DEFAULT NULL,
-  `fabricante` varchar(400) DEFAULT NULL,
-  `categoria` varchar(200) DEFAULT NULL,
-  `subcategoria` varchar(200) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Estructura de tabla para la tabla `producto_tienda`
---
-
-CREATE TABLE `producto_tienda` (
-  `id` bigint(20) NOT NULL,
-  `tienda_id` int(11) NOT NULL,
-  `producto_id` bigint(20) NOT NULL,
-  `sku_tienda` varchar(100) DEFAULT NULL,
-  `record_id_tienda` varchar(100) DEFAULT NULL,
-  `url_tienda` varchar(800) DEFAULT NULL,
-  `nombre_tienda` varchar(600) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Estructura de tabla para la tabla `tiendas`
---
-
-CREATE TABLE `tiendas` (
-  `id` int(11) NOT NULL,
-  `codigo` varchar(50) NOT NULL,
-  `nombre` varchar(200) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Índices para tablas volcadas
---
-
---
--- Indices de la tabla `historico_precios`
---
-ALTER TABLE `historico_precios`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `uniq_snapshot` (`tienda_id`,`producto_tienda_id`,`capturado_en`),
-  ADD KEY `idx_cuando` (`capturado_en`),
-  ADD KEY `fk_hp_pt` (`producto_tienda_id`);
-
---
--- Indices de la tabla `productos`
---
-ALTER TABLE `productos`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_prod_ean` (`ean`),
-  ADD KEY `idx_prod_marca` (`marca`);
-
---
--- Indices de la tabla `producto_tienda`
---
-ALTER TABLE `producto_tienda`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `uniq_tienda_sku` (`tienda_id`,`sku_tienda`),
-  ADD UNIQUE KEY `uniq_tienda_record` (`tienda_id`,`record_id_tienda`),
-  ADD KEY `idx_tienda_prod` (`tienda_id`,`producto_id`),
-  ADD KEY `fk_pt_producto` (`producto_id`);
-
---
--- Indices de la tabla `tiendas`
---
-ALTER TABLE `tiendas`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `codigo` (`codigo`);
-
---
--- AUTO_INCREMENT de las tablas volcadas
---
-
---
--- AUTO_INCREMENT de la tabla `historico_precios`
---
-ALTER TABLE `historico_precios`
-  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT de la tabla `productos`
---
-ALTER TABLE `productos`
-  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT de la tabla `producto_tienda`
---
-ALTER TABLE `producto_tienda`
-  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT de la tabla `tiendas`
---
-ALTER TABLE `tiendas`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- Restricciones para tablas volcadas
---
-
---
--- Filtros para la tabla `historico_precios`
---
-ALTER TABLE `historico_precios`
-  ADD CONSTRAINT `fk_hp_pt` FOREIGN KEY (`producto_tienda_id`) REFERENCES `producto_tienda` (`id`),
-  ADD CONSTRAINT `fk_hp_tienda` FOREIGN KEY (`tienda_id`) REFERENCES `tiendas` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
---
--- Filtros para la tabla `producto_tienda`
---
-ALTER TABLE `producto_tienda`
-  ADD CONSTRAINT `fk_pt_producto` FOREIGN KEY (`producto_id`) REFERENCES `productos` (`id`),
-  ADD CONSTRAINT `fk_pt_tienda` FOREIGN KEY (`tienda_id`) REFERENCES `tiendas` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-COMMIT;
-
-/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
-/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
-/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+-- =====================================
+-- TABLA historico_precios (muchos registros)
+-- =====================================
+CREATE TABLE historico_precios (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  tienda_id SMALLINT UNSIGNED NOT NULL,
+  producto_tienda_id INT UNSIGNED NOT NULL,
+  capturado_en DATETIME(0) NOT NULL,
+  precio_lista DECIMAL(10,2) DEFAULT NULL,
+  precio_oferta DECIMAL(10,2) DEFAULT NULL,
+  tipo_oferta VARCHAR(120) DEFAULT NULL,
+  promo_tipo VARCHAR(240) DEFAULT NULL,
+  promo_texto_regular VARCHAR(360) DEFAULT NULL,
+  promo_texto_descuento VARCHAR(360) DEFAULT NULL,
+  promo_comentarios VARCHAR(360) DEFAULT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_snapshot (producto_tienda_id, capturado_en),
+  KEY idx_hp_prod_time (producto_tienda_id, capturado_en),
+  KEY idx_hp_tienda_time (tienda_id, capturado_en),
+  CONSTRAINT fk_hp_pt FOREIGN KEY (producto_tienda_id) REFERENCES producto_tienda(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_hp_tienda FOREIGN KEY (tienda_id) REFERENCES tiendas(id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC;

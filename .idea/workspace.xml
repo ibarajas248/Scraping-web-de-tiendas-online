@@ -4,40 +4,18 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="2">
-      <change afterPath="$PROJECT_DIR$/base_de_datos.sql" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/borrar_registros.sql" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/calculo_memoria_db.sql" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/formato.csv" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/Toledo/Toledo.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/carrefour/carrefour_MySQL.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/carrefour/notas" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/dia/dia_mysql.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/disco_falta/disco.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/disco_falta/disco_MySQL.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/hiperlibertad/hiperlibertad_Mysql.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/laGallega/laGallega.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lacoopeencasa/mysql/almacen.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lacoopeencasa/mysql/bebidas.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lacoopeencasa/mysql/casa-y-jardin.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lacoopeencasa/mysql/frescos.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lacoopeencasa/mysql/limpieza.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lacoopeencasa/mysql/perfumeria.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lareinaonline/laReinaOnline.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="ajustes_bases_de_datos">
+      <change afterPath="$PROJECT_DIR$/consultas.sql" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/carrefour/pruebasMysqlCarrefour.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/coto/cotoMysql2.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/dino/dino2.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/dino/dinoPaginado.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/dino/paginacion/pruebaspaginacion.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/dino.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/base_datos.py" beforeDir="false" afterPath="$PROJECT_DIR$/base_datos.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ean/prueba3.py" beforeDir="false" afterPath="$PROJECT_DIR$/ean/prueba3.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ean/pruebas.py" beforeDir="false" afterPath="$PROJECT_DIR$/ean/pruebas.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/info.md" beforeDir="false" afterPath="$PROJECT_DIR$/info.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requeriments.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requeriments.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/carrefour/carrefour.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/carrefour/carrefour.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/coto/Coto_MySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/coto/Coto_MySQL.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/dia/dia.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/dia/dia.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/disco/disco.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/lacoopeencasa/lacoopeencasa.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/lacoopeencasa/lacoopeencasa.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/streamlit.py" beforeDir="false" afterPath="$PROJECT_DIR$/streamlit.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/base_de_datos.sql" beforeDir="false" afterPath="$PROJECT_DIR$/base_de_datos.sql" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/carrefour/carrefour_MySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/carrefour/carrefour_MySQL.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/disco_falta/disco_MySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/disco_falta/disco_MySQL.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -60,12 +38,12 @@
     &quot;assignee&quot;: &quot;ibarajas248&quot;
   }
 }</component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/ibarajas248/Scraping-web-de-tiendas-online.git",
-    "accountId": "af0e0ae9-d90b-4de9-9567-d36100925378"
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/ibarajas248/Scraping-web-de-tiendas-online.git&quot;,
+    &quot;accountId&quot;: &quot;af0e0ae9-d90b-4de9-9567-d36100925378&quot;
   }
-}]]></component>
+}</component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 2
 }</component>
@@ -88,9 +66,13 @@
     "Python.carrefour_MySQL.executor": "Run",
     "Python.copeprueba.executor": "Run",
     "Python.coto.executor": "Run",
+    "Python.cotoMysql2.executor": "Run",
     "Python.cotoRequestJson.executor": "Run",
     "Python.dia.executor": "Run",
     "Python.dia_mysql.executor": "Run",
+    "Python.dino.executor": "Run",
+    "Python.dino2.executor": "Run",
+    "Python.dinoPaginado.executor": "Run",
     "Python.disco.executor": "Run",
     "Python.disco_MySQL.executor": "Run",
     "Python.ean.executor": "Run",
@@ -108,6 +90,8 @@
     "Python.prueba_vea.executor": "Run",
     "Python.pruebaean.executor": "Run",
     "Python.pruebas.executor": "Run",
+    "Python.pruebasMysqlCarrefour.executor": "Run",
+    "Python.pruebaspaginacion.executor": "Run",
     "Python.vea.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "git-widget-placeholder": "master"
@@ -115,11 +99,11 @@
 }]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request\dino" />
       <recent name="C:\Users\USER\PycharmProjects\Scraping-web-de-tiendas-online" />
       <recent name="C:\Users\USER\PycharmProjects\Scraping-web-de-tiendas-online\request\coto" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\reportes_excel" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request\coto" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request" />
     </key>
   </component>
   <component name="RunManager">
@@ -202,7 +186,15 @@
       <option name="project" value="LOCAL" />
       <updated>1754777022602</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="ajustes_bases_de_datos">
+      <option name="closed" value="true" />
+      <created>1754970660209</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1754970660209</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -210,6 +202,7 @@
     <MESSAGE value="request_coto" />
     <MESSAGE value="_" />
     <MESSAGE value="2" />
-    <option name="LAST_COMMIT_MESSAGE" value="2" />
+    <MESSAGE value="ajustes_bases_de_datos" />
+    <option name="LAST_COMMIT_MESSAGE" value="ajustes_bases_de_datos" />
   </component>
 </project>

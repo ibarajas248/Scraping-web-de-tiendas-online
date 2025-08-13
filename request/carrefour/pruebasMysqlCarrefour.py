@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 from mysql.connector import Error as MySQLError
+from carrefour import fetch_all_categories
 
 from base_datos import get_conn  # <- tu conexión MySQL
 # Importa tu scraper o pega aquí sus funciones y usa fetch_all_categories()
@@ -27,6 +28,7 @@ from base_datos import get_conn  # <- tu conexión MySQL
 # --------- Config tienda ---------
 TIENDA_CODIGO = "carrefour"
 TIENDA_NOMBRE = "Carrefour Argentina"
+
 
 # --------- Helpers numéricos ---------
 def safe_float(x) -> Optional[float]:
@@ -65,6 +67,25 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     )
     cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (clean(codigo),))
     return cur.fetchone()[0]
+# ---- Nuevo helper: a bool seguro (1/0/None) ----
+def to_bool(x) -> Optional[int]:
+    if x is None:
+        return None
+    # numpy.bool_ o bool
+    if isinstance(x, (bool, np.bool_)):
+        return 1 if bool(x) else 0
+    # enteros 1/0
+    if isinstance(x, (int, np.integer)):
+        if x == 1: return 1
+        if x == 0: return 0
+        return None
+    # strings comunes
+    s = str(x).strip().lower()
+    truthy = {"true", "1", "sí", "si", "disponible", "available", "instock", "in stock", "ok"}
+    falsy  = {"false", "0", "no", "agotado", "unavailable", "outofstock", "out of stock"}
+    if s in truthy: return 1
+    if s in falsy:  return 0
+    return None
 
 def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
     ean = clean(p.get("ean"))
@@ -116,43 +137,52 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
     return cur.lastrowid
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
-    sku = clean(p.get("sku"))                 # "Código Interno"
-    record_id = clean(p.get("record_id"))     # opcional si lo incorporas luego
+    sku = clean(p.get("sku"))
+    record_id = clean(p.get("record_id"))
     url = clean(p.get("url")) or ""
     nombre_tienda = clean(p.get("nombre")) or ""
+    is_av = p.get("is_available")  # ya viene 1/0/None por to_bool
 
     if sku:
         cur.execute("""
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
+            INSERT INTO producto_tienda (
+                tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda, is_available
+            )
+            VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), %s)
             ON DUPLICATE KEY UPDATE
-              producto_id=VALUES(producto_id),
-              record_id_tienda=COALESCE(VALUES(record_id_tienda), record_id_tienda),
-              url_tienda=COALESCE(VALUES(url_tienda), url_tienda),
-              nombre_tienda=COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
+              producto_id      = VALUES(producto_id),
+              record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
+              url_tienda       = COALESCE(VALUES(url_tienda), url_tienda),
+              nombre_tienda    = COALESCE(VALUES(nombre_tienda), nombre_tienda),
+              is_available     = COALESCE(VALUES(is_available), is_available)
+        """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda, is_av))
         cur.execute("SELECT id FROM producto_tienda WHERE tienda_id=%s AND sku_tienda=%s LIMIT 1",
                     (tienda_id, sku))
         return cur.fetchone()[0]
 
     if record_id:
         cur.execute("""
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, NULL, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
+            INSERT INTO producto_tienda (
+                tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda, is_available
+            )
+            VALUES (%s, %s, NULL, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), %s)
             ON DUPLICATE KEY UPDATE
-              producto_id=VALUES(producto_id),
-              url_tienda=COALESCE(VALUES(url_tienda), url_tienda),
-              nombre_tienda=COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, record_id, url, nombre_tienda))
+              producto_id   = VALUES(producto_id),
+              url_tienda    = COALESCE(VALUES(url_tienda), url_tienda),
+              nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda),
+              is_available  = COALESCE(VALUES(is_available), is_available)
+        """, (tienda_id, producto_id, record_id, url, nombre_tienda, is_av))
         cur.execute("SELECT id FROM producto_tienda WHERE tienda_id=%s AND record_id_tienda=%s LIMIT 1",
                     (tienda_id, record_id))
         return cur.fetchone()[0]
 
+    # Sin sku ni record_id: también guarda is_available
     cur.execute("""
-        INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-        VALUES (%s, %s, NULL, NULL, NULLIF(%s,''), NULLIF(%s,''))
-    """, (tienda_id, producto_id, url, nombre_tienda))
+        INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda, is_available)
+        VALUES (%s, %s, NULL, NULL, NULLIF(%s,''), NULLIF(%s,''), %s)
+    """, (tienda_id, producto_id, url, nombre_tienda, is_av))
     return cur.lastrowid
+
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
     def to_txt_or_none(x):
@@ -239,7 +269,9 @@ def persist_carrefour_df_to_mysql(df: pd.DataFrame):
                 "precio_oferta":safe_float(val("Precio de Oferta")),
                 "tipo_oferta":  clean(val("Tipo de Oferta")),
                 "url":          clean(val("URL")),
-
+                "is_available": to_bool(
+                    val("isAvailable") or val("Disponible") or val("available") or val("inStock")
+                ),
                 # Identificadores por tienda:
                 "sku":          clean(val("Código Interno")),   # usamos Código Interno como sku_tienda
                 "record_id":    None,
@@ -274,7 +306,7 @@ def persist_carrefour_df_to_mysql(df: pd.DataFrame):
 # ================== Ejemplo de uso (integra con tu scraper) ==================
 if __name__ == "__main__":
     import logging
-    from carrefour import fetch_all_categories  # <-- importa tu función existente
+      # <-- importa tu función existente
 
     t0 = time.time()
     logging.getLogger().setLevel(logging.INFO)
