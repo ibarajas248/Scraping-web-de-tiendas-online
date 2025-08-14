@@ -4,18 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="ajustes_bases_de_datos">
-      <change afterPath="$PROJECT_DIR$/consultas.sql" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/carrefour/pruebasMysqlCarrefour.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/coto/cotoMysql2.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/dino/dino2.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/dino/dinoPaginado.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/dino/paginacion/pruebaspaginacion.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/dino.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="ajustes_bases_de_datos2">
+      <change afterPath="$PROJECT_DIR$/Maestro Productos scraping.xlsx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/app_regiones.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/jumbo/jumboMysql.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/base_de_datos.sql" beforeDir="false" afterPath="$PROJECT_DIR$/base_de_datos.sql" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/carrefour/carrefour_MySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/carrefour/carrefour_MySQL.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/disco_falta/disco_MySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/disco_falta/disco_MySQL.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/streamlit.py" beforeDir="false" afterPath="$PROJECT_DIR$/streamlit.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -60,6 +54,7 @@
     "Python.PRUEBA.executor": "Run",
     "Python.almacen.executor": "Run",
     "Python.anonima.executor": "Run",
+    "Python.app_regiones.executor": "Run",
     "Python.base_datos.executor": "Run",
     "Python.bebidas.executor": "Run",
     "Python.carrefour.executor": "Run",
@@ -80,6 +75,7 @@
     "Python.hiperlibertad.executor": "Run",
     "Python.hiperlibertad_Mysql.executor": "Run",
     "Python.jumbo.executor": "Run",
+    "Python.jumboMysql.executor": "Run",
     "Python.laGallega.executor": "Run",
     "Python.laReinaOnline.executor": "Run",
     "Python.lacoopeencasa.executor": "Run",
@@ -99,11 +95,11 @@
 }]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request\dino" />
       <recent name="C:\Users\USER\PycharmProjects\Scraping-web-de-tiendas-online" />
       <recent name="C:\Users\USER\PycharmProjects\Scraping-web-de-tiendas-online\request\coto" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\reportes_excel" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request\coto" />
     </key>
   </component>
   <component name="RunManager">
@@ -194,7 +190,15 @@
       <option name="project" value="LOCAL" />
       <updated>1754970660209</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="ajustes_bases_de_datos2">
+      <option name="closed" value="true" />
+      <created>1755124656027</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1755124656027</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -203,6 +207,7 @@
     <MESSAGE value="_" />
     <MESSAGE value="2" />
     <MESSAGE value="ajustes_bases_de_datos" />
-    <option name="LAST_COMMIT_MESSAGE" value="ajustes_bases_de_datos" />
+    <MESSAGE value="ajustes_bases_de_datos2" />
+    <option name="LAST_COMMIT_MESSAGE" value="ajustes_bases_de_datos2" />
   </component>
 </project>

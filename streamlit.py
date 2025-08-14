@@ -3,6 +3,9 @@
 # Ejecutar: streamlit run app.py
 
 import io
+import os
+import re
+import unicodedata
 from datetime import datetime, timedelta
 from typing import List, Tuple, Dict
 
@@ -46,10 +49,87 @@ CASE
 END
 """
 
+def _normalize_col(s: str) -> str:
+    s = s.strip().lower()
+    s = ''.join(c for c in unicodedata.normalize('NFKD', s) if not unicodedata.combining(c))
+    s = s.replace("  ", " ").replace("_", " ").strip()
+    return s
+
+def _clean_ean_value(x) -> str | None:
+    if x is None:
+        return None
+    s = str(x).strip()
+    if not s or s.lower() in {"nan", "none"}:
+        return None
+    s = re.sub(r"\D+", "", s)  # sólo dígitos, preserva ceros
+    # Acepta longitudes típicas (ajusta si necesitas)
+    if len(s) in {8, 12, 13, 14}:
+        return s
+    # Si prefieres estrictos, quita la línea de abajo
+    return s if s else None
+
 def to_list_str(s: str) -> List[str]:
     if not s:
         return []
-    return [x.strip() for x in s.replace(";", ",").split(",") if x.strip()]
+    raw = [x.strip() for x in s.replace(";", ",").split(",") if x.strip()]
+    cleaned = [_clean_ean_value(x) for x in raw]
+    return [x for x in cleaned if x]
+
+def read_eans_from_uploaded(file) -> List[str]:
+    """Lee EANs de .txt, .csv, .xlsx, .xls. Detecta columnas como 'Cód.Barras'."""
+    name = getattr(file, "name", "upload")
+    ext = os.path.splitext(name)[1].lower()
+
+    ean_aliases = {
+        "ean", "ean13", "gtin",
+        "cod barras", "cod. barras", "codigo barras", "codigo de barras", "código de barras",
+        "cod.barras", "cód.barras", "cód. barras", "codbarras", "codigo ean", "código ean"
+    }
+
+    if ext in {".txt", ".csv"}:
+        try:
+            content = file.read().decode("utf-8", errors="ignore")
+        except Exception:
+            try:
+                file.seek(0)
+                content = file.read().decode("utf-8", errors="ignore")
+            except Exception:
+                return []
+        return to_list_str(content)
+
+    if ext in {".xlsx", ".xls"}:
+        try:
+            xls = pd.ExcelFile(file)
+            for sh in xls.sheet_names:
+                df = pd.read_excel(xls, sh)
+                if df is None or df.empty:
+                    continue
+                colmap = {c: _normalize_col(str(c)) for c in df.columns}
+                target_col = None
+                # 1) match directo por alias
+                for orig, norm in colmap.items():
+                    norm2 = norm.replace(".", "").replace("-", " ").replace("  ", " ").strip()
+                    if norm in ean_aliases or norm2 in ean_aliases:
+                        target_col = orig
+                        break
+                # 2) fallback: cualquier "cod*barra*"
+                if target_col is None:
+                    for orig in df.columns:
+                        n = _normalize_col(str(orig))
+                        if n.startswith("cod") and "barra" in n:
+                            target_col = orig
+                            break
+                if target_col is None:
+                    continue
+                vals = df[target_col].tolist()
+                cleaned = [_clean_ean_value(v) for v in vals]
+                cleaned = [v for v in cleaned if v]
+                if cleaned:
+                    return cleaned
+        except Exception:
+            return []
+
+    return []
 
 def df_to_excel_bytes(df: pd.DataFrame, sheet_name="data") -> bytes:
     output = io.BytesIO()
@@ -132,16 +212,22 @@ subs_sel = st.sidebar.multiselect("Subcategorías", subs_df["subcategoria"].toli
 marcas_df = get_marcas()
 marcas_sel = st.sidebar.multiselect("Marcas", marcas_df["marca"].tolist(), default=[])
 
+# Carga de EANs: texto + archivo (txt/csv/xlsx/xls)
 ean_input = st.sidebar.text_area("EANs (coma o salto de línea)", "")
-ean_file = st.sidebar.file_uploader("Subir archivo EANs (.txt, .csv)", type=["txt", "csv"])
+ean_file = st.sidebar.file_uploader("Subir EANs (.txt, .csv, .xlsx, .xls)", type=["txt", "csv", "xlsx", "xls"])
+
 ean_list = to_list_str(ean_input)
 if ean_file is not None:
-    try:
-        content = ean_file.read().decode("utf-8", errors="ignore")
-        ean_list += to_list_str(content)
-    except Exception:
-        st.sidebar.error("No se pudo leer el archivo de EANs.")
-ean_list = list(dict.fromkeys(ean_list))
+    extra = read_eans_from_uploaded(ean_file)
+    if not extra:
+        st.sidebar.error("No se pudieron leer EANs del archivo subido.")
+    else:
+        ean_list += extra
+
+# Deduplicar preservando orden
+_seen = set()
+ean_list = [x for x in ean_list if not (x in _seen or _seen.add(x))]
+st.sidebar.caption(f"EANs cargados: **{len(ean_list)}**")
 
 use_effective = st.sidebar.toggle("Usar precio efectivo (oferta si válida)", value=True)
 sample_limit = st.sidebar.number_input("Límite de filas para vistas tabulares", 1000, 200000, 5000, step=500)
@@ -181,7 +267,7 @@ def build_where(base_alias: str = "h") -> Tuple[str, Dict]:
     return " AND ".join(where_parts), params
 
 # ---------- Panel ----------
-st.markdown("## 📊 Panel de Investigación de Mercado")
+st.markdown("##  Panel de Investigación de Mercado")
 
 where_str, where_params = build_where("h")
 
@@ -219,8 +305,8 @@ def get_kpis(where_str: str, params: Dict):
     WITH ult AS (
       SELECT DATE(h.capturado_en) AS d, h.tienda_id, h.producto_tienda_id, MAX(h.capturado_en) AS maxc
       FROM historico_precios h
-      JOIN producto_tienda pt ON pt.id = h.producto_tienda_id
-      JOIN productos p ON p.id = pt.producto_id
+      JOIN producto_tienda pt ON pt.id=h.producto_tienda_id
+      JOIN productos p ON p.id=pt.producto_id
       WHERE {where_str}
       GROUP BY DATE(h.capturado_en), h.tienda_id, h.producto_tienda_id
     ),
@@ -268,174 +354,11 @@ else:
     ).properties(height=350)
     st.altair_chart(chart, use_container_width=True)
 
-# ---------- Dispersión actual por producto ----------
-st.subheader("💡 Dispersión de precios (último snapshot por tienda) de un producto")
-producto_q = st.text_input("Buscar por EAN exacto o parte del nombre (mín. 3 caracteres)", "")
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_product_dispersion(query: str, where_str: str, params: Dict, effective: bool):
-    price_expr = EFFECTIVE_PRICE_EXPR if effective else "h.precio_lista"
-    filt = ""
-    p = params.copy()
-    if query and query.strip():
-        if query.strip().isdigit():
-            filt = " AND (p.ean = :ean_exact)"
-            p["ean_exact"] = query.strip()
-        else:
-            filt = " AND (p.nombre LIKE :likeq OR pt.nombre_tienda LIKE :likeq)"
-            p["likeq"] = f"%{query.strip()}%"
 
-    q = f"""
-    WITH ult AS (
-      SELECT h.tienda_id, h.producto_tienda_id, MAX(h.capturado_en) AS maxc
-      FROM historico_precios h
-      JOIN producto_tienda pt ON pt.id=h.producto_tienda_id
-      JOIN productos p ON p.id=pt.producto_id
-      WHERE {where_str} {filt}
-      GROUP BY h.tienda_id, h.producto_tienda_id
-    )
-    SELECT t.nombre AS tienda,
-           p.ean, COALESCE(pt.nombre_tienda, p.nombre) AS nombre_producto,
-           {price_expr} AS precio, h.precio_lista, h.precio_oferta,
-           h.tipo_oferta, h.promo_texto_regular, h.promo_texto_descuento, pt.url_tienda
-    FROM ult u
-    JOIN historico_precios h ON h.tienda_id=u.tienda_id AND h.producto_tienda_id=u.producto_tienda_id AND h.capturado_en=u.maxc
-    JOIN producto_tienda pt ON pt.id=u.producto_tienda_id
-    JOIN productos p ON p.id=pt.producto_id
-    JOIN tiendas t ON t.id=u.tienda_id
-    WHERE {where_str}
-    ORDER BY precio ASC
-    """
-    return read_df(q, p)
-
-if producto_q and len(producto_q.strip()) >= 3:
-    disp = get_product_dispersion(producto_q, where_str, where_params, use_effective)
-    if disp.empty:
-        st.info("Sin coincidencias para ese producto con los filtros actuales.")
-    else:
-        a, b = st.columns([1,1])
-        with a:
-            st.dataframe(disp, use_container_width=True)
-            st.download_button("⬇️ Descargar CSV (dispersión)", disp.to_csv(index=False).encode("utf-8"),
-                               file_name="dispersion_producto.csv", mime="text/csv")
-        with b:
-            st.altair_chart(
-                alt.Chart(disp).mark_bar().encode(
-                    x=alt.X("precio:Q", bin=alt.Bin(maxbins=30), title="Precio"),
-                    y=alt.Y("count():Q", title="Productos"),
-                    tooltip=[alt.Tooltip("count()", title="Cantidad")]
-                ).properties(height=300),
-                use_container_width=True
-            )
-
-# ---------- Análisis de promociones ----------
-st.subheader("🏷️ Análisis de promociones")
-@st.cache_data(ttl=300, show_spinner=False)
-def get_promos(where_str: str, params: Dict):
-    q = f"""
-    WITH ult AS (
-      SELECT DATE(h.capturado_en) AS d, h.tienda_id, h.producto_tienda_id, MAX(h.capturado_en) AS maxc
-      FROM historico_precios h
-      JOIN producto_tienda pt ON pt.id=h.producto_tienda_id
-      JOIN productos p ON p.id=pt.producto_id
-      WHERE {where_str}
-      GROUP BY DATE(h.capturado_en), h.tienda_id, h.producto_tienda_id
-    )
-    SELECT u.d, t.nombre AS tienda,
-           AVG(CASE WHEN h.precio_oferta IS NOT NULL AND h.precio_oferta>0
-                    AND (h.precio_lista IS NULL OR h.precio_oferta<=h.precio_lista)
-                    THEN 1 ELSE 0 END) AS share_oferta,
-           AVG(CASE WHEN h.precio_oferta IS NOT NULL AND h.precio_oferta>0 AND h.precio_lista>0
-                    AND h.precio_oferta<=h.precio_lista
-                    THEN (h.precio_lista - h.precio_oferta)/h.precio_lista END) AS descuento_promedio
-    FROM ult u
-    JOIN historico_precios h ON h.tienda_id=u.tienda_id AND h.producto_tienda_id=u.producto_tienda_id AND h.capturado_en=u.maxc
-    JOIN tiendas t ON t.id=u.tienda_id
-    JOIN producto_tienda pt ON pt.id=u.producto_tienda_id
-    JOIN productos p ON p.id=pt.producto_id
-    WHERE {where_str}
-    GROUP BY u.d, t.nombre
-    ORDER BY u.d, t.nombre
-    """
-    return read_df(q, params)
-
-promos = get_promos(where_str, where_params)
-if promos.empty:
-    st.info("No hay datos de promociones para este período/filtros.")
-else:
-    l, r = st.columns(2)
-    with l:
-        st.altair_chart(
-            alt.Chart(promos).mark_line(point=True).encode(
-                x=alt.X("d:T", title="Fecha"),
-                y=alt.Y("share_oferta:Q", title="Share en oferta"),
-                color="tienda",
-                tooltip=["tienda", alt.Tooltip("d:T"), alt.Tooltip("share_oferta:Q")]
-            ).properties(height=300),
-            use_container_width=True
-        )
-    with r:
-        st.altair_chart(
-            alt.Chart(promos).mark_line(point=True).encode(
-                x=alt.X("d:T", title="Fecha"),
-                y=alt.Y("descuento_promedio:Q", title="Descuento promedio"),
-                color="tienda",
-                tooltip=["tienda", alt.Tooltip("d:T"), alt.Tooltip("descuento_promedio:Q")]
-            ).properties(height=300),
-            use_container_width=True
-        )
-
-# ---------- Top variaciones ----------
-st.subheader("📉📈 Top variaciones en el período (por producto_tienda)")
-@st.cache_data(ttl=300, show_spinner=False)
-def get_variaciones(where_str: str, params: Dict, effective: bool):
-    price_expr = EFFECTIVE_PRICE_EXPR if effective else "h.precio_lista"
-    q = f"""
-    WITH first_last AS (
-      SELECT
-        h.tienda_id, h.producto_tienda_id,
-        SUBSTRING_INDEX(GROUP_CONCAT(CAST({price_expr} AS CHAR) ORDER BY h.capturado_en ASC), ',', 1) AS primero,
-        SUBSTRING_INDEX(GROUP_CONCAT(CAST({price_expr} AS CHAR) ORDER BY h.capturado_en DESC), ',', 1) AS ultimo
-      FROM historico_precios h
-      JOIN producto_tienda pt ON pt.id=h.producto_tienda_id
-      JOIN productos p ON p.id=pt.producto_id
-      WHERE {where_str}
-      GROUP BY h.tienda_id, h.producto_tienda_id
-    )
-    SELECT t.nombre AS tienda, p.ean, COALESCE(pt.nombre_tienda, p.nombre) AS producto,
-           CAST(primero AS DECIMAL(12,4)) AS precio_ini,
-           CAST(ultimo  AS DECIMAL(12,4)) AS precio_fin,
-           (CAST(ultimo AS DECIMAL(12,4)) - CAST(primero AS DECIMAL(12,4))) AS delta_abs,
-           CASE WHEN CAST(primero AS DECIMAL(12,4))>0 THEN
-              (CAST(ultimo AS DECIMAL(12,4)) - CAST(primero AS DECIMAL(12,4))) / CAST(primero AS DECIMAL(12,4))
-           END AS delta_pct
-    FROM first_last fl
-    JOIN producto_tienda pt ON pt.id=fl.producto_tienda_id
-    JOIN productos p ON p.id=pt.producto_id
-    JOIN tiendas t ON t.id=fl.tienda_id
-    """
-    return read_df(q, params)
-
-var_df = get_variaciones(where_str, where_params, use_effective)
-if var_df.empty:
-    st.info("Sin variaciones calculables.")
-else:
-    up = var_df.sort_values("delta_pct", ascending=False).head(20)
-    down = var_df.sort_values("delta_pct", ascending=True).head(20)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Top subidas (Δ%)**")
-        st.dataframe(up, use_container_width=True, height=350)
-    with c2:
-        st.markdown("**Top bajas (Δ%)**")
-        st.dataframe(down, use_container_width=True, height=350)
-
-    st.download_button("⬇️ Descargar variaciones (CSV)", var_df.to_csv(index=False).encode("utf-8"),
-                       file_name="variaciones_periodo.csv", mime="text/csv")
 
 # ---------- Comparador de canastas ----------
-st.subheader("🧺 Comparador de canastas (por EAN)")
+st.subheader(" Comparador de canastas (solo ean coincidentes)")
 st.caption("Carga EANs en la barra lateral (texto o archivo). Calcula precio total por tienda al último snapshot dentro del rango.")
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -465,87 +388,126 @@ def get_basket(eans: List[str], where_str: str, params: Dict, effective: bool):
     JOIN tiendas t ON t.id=u.tienda_id
     """
     return read_df(q, p)
-
 basket = get_basket(ean_list, where_str, where_params, use_effective)
+
 if not ean_list:
     st.info("Agrega EANs en la barra lateral para comparar canastas.")
 elif basket.empty:
     st.warning("No se encontraron esos EANs con los filtros actuales.")
 else:
-    totales = basket.groupby("tienda", as_index=False)["precio"].sum().rename(columns={"precio": "total_canasta"})
-    a, b = st.columns([1,1])
-    with a:
-        st.dataframe(totales.sort_values("total_canasta"), use_container_width=True)
-        st.download_button("⬇️ Descargar totales (CSV)", totales.to_csv(index=False).encode("utf-8"),
-                           file_name="totales_canasta.csv", mime="text/csv")
-    with b:
-        st.altair_chart(
-            alt.Chart(totales).mark_bar().encode(
-                x=alt.X("tienda:N", sort="-y", title="Tienda"),
-                y=alt.Y("total_canasta:Q", title="Total canasta"),
-                tooltip=["tienda", alt.Tooltip("total_canasta:Q", title="Total")]
-            ).properties(height=300),
-            use_container_width=True
-        )
-    with st.expander("Detalle de canasta por tienda"):
-        st.dataframe(basket, use_container_width=True)
-
-# ---------- Índice de precios vs tienda base ----------
-st.subheader("📌 Índice de precios por tienda vs tienda base")
-tienda_base = st.selectbox("Tienda base para índice (100 al inicio)", tiendas_sel_nombres or tiendas_df["nombre"].tolist())
-if daily.empty or not tienda_base:
-    st.info("Selecciona datos/tienda para calcular índice.")
-else:
-    piv = daily.pivot_table(index="d", columns="tienda", values="precio_promedio", aggfunc="mean")
-    piv = piv.dropna(how="all")
-    if tienda_base not in piv.columns:
-        st.warning("La tienda base no tiene datos en el rango.")
+    # --- 1) Tiendas relevantes con datos
+    tiendas_relevantes = sorted(set(tiendas_sel_nombres) & set(basket["tienda"].unique()))
+    if not tiendas_relevantes:
+        st.warning("No hay coincidencias en las tiendas seleccionadas.")
     else:
-        base_series = piv[tienda_base].dropna()
-        if base_series.empty:
-            st.warning("La tienda base no tiene datos válidos.")
+        # --- 2) EANs presentes en TODAS las tiendas relevantes
+        presencia = (
+            basket.loc[basket["tienda"].isin(tiendas_relevantes), ["tienda", "ean"]]
+            .drop_duplicates()
+        )
+        conteo_por_ean = presencia.groupby("ean")["tienda"].nunique()
+        eans_comunes = set(conteo_por_ean[conteo_por_ean == len(tiendas_relevantes)].index)
+
+        if not eans_comunes:
+            st.warning("No hay productos que estén presentes en todas las tiendas seleccionadas.")
         else:
-            base0 = base_series.iloc[0]
-            idx = (piv / base0) * 100.0
-            idx = idx.reset_index().melt("d", var_name="tienda", value_name="indice")
-            st.altair_chart(
-                alt.Chart(idx.dropna()).mark_line().encode(
-                    x=alt.X("d:T", title="Fecha"),
-                    y=alt.Y("indice:Q", title=f"Índice (base {tienda_base}=100)"),
-                    color="tienda",
-                    tooltip=["tienda", alt.Tooltip("d:T"), alt.Tooltip("indice:Q")]
-                ).properties(height=320),
-                use_container_width=True
+            # --- 3) Filtrar solo a los EANs coincidentes
+            basket_comun = basket[
+                basket["ean"].isin(eans_comunes) & basket["tienda"].isin(tiendas_relevantes)
+            ].copy()
+
+            # --- 4) Totales por tienda
+            totales = (
+                basket_comun
+                .groupby("tienda", as_index=False)
+                .agg(total_canasta=("precio", "sum"))
             )
 
+            # --- 5) UI
+            st.caption(f"Productos coincidentes en todas las tiendas: **{len(eans_comunes)}**")
+            a, b = st.columns([1, 1])
+
+            with a:
+                st.dataframe(
+                    totales.sort_values("total_canasta"),
+                    use_container_width=True
+                )
+                st.download_button(
+                    "⬇️ Descargar totales CSV",
+                    totales.to_csv(index=False).encode("utf-8"),
+                    file_name="totales_canasta_coincidentes.csv",
+                    mime="text/csv"
+                )
+
+            with b:
+                st.altair_chart(
+                    alt.Chart(totales).mark_bar().encode(
+                        x=alt.X("tienda:N", sort="-y", title="Tienda"),
+                        y=alt.Y("total_canasta:Q", title="Total canasta (coincidentes)"),
+                        tooltip=[
+                            "tienda",
+                            alt.Tooltip("total_canasta:Q", title="Total")
+                        ]
+                    ).properties(height=300),
+                    use_container_width=True
+                )
+
+            with st.expander("Detalle de canasta por tienda (solo coincidentes)"):
+                st.dataframe(basket_comun, use_container_width=True)
+
+
+
+
+
 # ---------- Tabla detalle ----------
-st.subheader("📋 Tabla detalle (último snapshot por día/tienda/producto_tienda)")
+st.subheader("Tabla Reporte")
 @st.cache_data(ttl=300, show_spinner=False)
 def get_detail(where_str: str, params: Dict, effective: bool, limit: int):
     price_expr = EFFECTIVE_PRICE_EXPR if effective else "h.precio_lista"
     q = f"""
-    WITH ult AS (
-      SELECT DATE(h.capturado_en) AS d, h.tienda_id, h.producto_tienda_id, MAX(h.capturado_en) AS maxc
+    SELECT
+      s.ean,
+      s.producto,
+      s.categoria,
+      s.subcategoria,
+       s.marca,
+      DATE(s.capturado_en) AS d,
+      t.nombre AS tienda,
+      
+      
+      
+      s.precio_lista, s.precio_oferta, s.precio_efectivo,
+      s.tipo_oferta, s.promo_texto_regular, s.promo_texto_descuento,
+      s.sku_tienda, s.record_id_tienda, s.url_tienda
+    FROM (
+      SELECT
+        h.tienda_id,
+        p.ean,
+        COALESCE(pt.nombre_tienda, p.nombre) AS producto,
+        p.marca, p.categoria, p.subcategoria,
+        h.precio_lista, h.precio_oferta,
+        {price_expr} AS precio_efectivo,
+        h.tipo_oferta, h.promo_texto_regular, h.promo_texto_descuento,
+        pt.sku_tienda, pt.record_id_tienda, pt.url_tienda,
+        h.capturado_en,
+        ROW_NUMBER() OVER (
+          PARTITION BY h.tienda_id, p.ean
+          ORDER BY h.capturado_en DESC
+        ) AS rn
       FROM historico_precios h
-      JOIN producto_tienda pt ON pt.id=h.producto_tienda_id
-      JOIN productos p ON p.id=pt.producto_id
+      JOIN producto_tienda pt ON pt.id = h.producto_tienda_id
+      JOIN productos p        ON p.id  = pt.producto_id
       WHERE {where_str}
-      GROUP BY DATE(h.capturado_en), h.tienda_id, h.producto_tienda_id
-    )
-    SELECT u.d, t.nombre AS tienda, p.ean, COALESCE(pt.nombre_tienda, p.nombre) AS producto,
-           p.marca, p.categoria, p.subcategoria,
-           h.precio_lista, h.precio_oferta, {price_expr} AS precio_efectivo,
-           h.tipo_oferta, h.promo_texto_regular, h.promo_texto_descuento,
-           pt.sku_tienda, pt.record_id_tienda, pt.url_tienda
-    FROM ult u
-    JOIN historico_precios h ON h.tienda_id=u.tienda_id AND h.producto_tienda_id=u.producto_tienda_id AND h.capturado_en=u.maxc
-    JOIN tiendas t ON t.id=u.tienda_id
-    JOIN producto_tienda pt ON pt.id=u.producto_tienda_id
-    JOIN productos p ON p.id=pt.producto_id
-    ORDER BY u.d DESC, t.nombre
+    ) AS s
+    JOIN tiendas t ON t.id = s.tienda_id
+    WHERE s.rn = 1
+    ORDER BY t.nombre, s.ean
     LIMIT {int(limit)}
     """
     return read_df(q, params)
+
+
+
 
 detail = get_detail(where_str, where_params, use_effective, sample_limit)
 st.dataframe(detail, use_container_width=True, height=350)
@@ -555,15 +517,3 @@ st.download_button("⬇️ Descargar detalle (XLSX)", df_to_excel_bytes(detail),
                    file_name="detalle_snapshots.xlsx",
                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-# ---------- Notas ----------
-with st.expander("ℹ️ Notas y recomendaciones"):
-    st.markdown("""
-- **Precio efectivo**: usa `precio_oferta` si existe, es >0 y no supera el `precio_lista`; si no, usa `precio_lista`.
-- **Snapshots**: se toma el **último registro por día/tienda/producto_tienda** para evitar duplicados intradiarios.
-- **Rendimiento**: índices recomendados
-  - `historico_precios(tienda_id, capturado_en)`
-  - `historico_precios(producto_tienda_id, capturado_en)`
-  - `producto_tienda(producto_id)`
-- **Fechas**: `capturado_en` se guarda en UTC; aquí se muestra como fecha UTC.
-- **Canastas**: si un EAN falta en una tienda, no suma en el total de esa tienda.
-""")
