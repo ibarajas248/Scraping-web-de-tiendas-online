@@ -95,7 +95,7 @@ Opcion 2:
 9    la reina s.A. (0011318)    https://www.lareinaonline.com.ar/✅
 10    dia argentina s.A. (0007583)    https://diaonline.supermercadosdia.com.ar/ ✅
 11    D.rosental e hijos saci (0011176)    https://www.pedidosya.com.ar/restaurantes/rosario/supermercado-dar-centro-2-menu?origin=shop_list
-12    DINOSAURIO S.A. (0036838)    https://www.dinoonline.com.ar/
+12    DINOSAURIO S.A. (0036838)    https://www.dinoonline.com.ar/✅
 13    usina lactea el puente s.A.(1) (0007716)    http://ofertas.lacteoselpuente.com.ar/#listado-de-precios
 14    ALBERDI S.A.(N) (COMODIN I) (0014674)    https://www.comodinencasa.com.ar/
 15    Cyre (5812)    https://www.cordiez.com.ar/

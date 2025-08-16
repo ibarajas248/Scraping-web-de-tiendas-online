@@ -12,3 +12,8 @@ mysql-connector-python
 altair
 openpyxl
 python-dotenv
+requests
+pandas
+openpyxl
+rapidfuzz
+pip install scikit-learn rapidfuzz

@@ -4,11 +4,22 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="ajustes_bases_de_datos2">
-      <change afterPath="$PROJECT_DIR$/Maestro Productos scraping.xlsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/app_regiones.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/jumbo/jumboMysql.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="prueba interfaz">
+      <change afterPath="$PROJECT_DIR$/eanconfig.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/Toledo/ToledoMySQL.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/alvear/alvear.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/alvear/alvearMySQL.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/comodin/comodin.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/comodin/comodinMySQL.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/cordiez/cordiez.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/cordiez/cordiezMysql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/laGallega/mysql/gallega1.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/lareinaonline/reinaMysql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/vea/veaMysql.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/base_de_datos.sql" beforeDir="false" afterPath="$PROJECT_DIR$/base_de_datos.sql" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/info.md" beforeDir="false" afterPath="$PROJECT_DIR$/info.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requeriments.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requeriments.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/streamlit.py" beforeDir="false" afterPath="$PROJECT_DIR$/streamlit.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -53,13 +64,19 @@
     "Python.Coto_MySQL.executor": "Run",
     "Python.PRUEBA.executor": "Run",
     "Python.almacen.executor": "Run",
+    "Python.alvear.executor": "Run",
+    "Python.alvearMySQL.executor": "Run",
     "Python.anonima.executor": "Run",
     "Python.app_regiones.executor": "Run",
     "Python.base_datos.executor": "Run",
     "Python.bebidas.executor": "Run",
     "Python.carrefour.executor": "Run",
     "Python.carrefour_MySQL.executor": "Run",
+    "Python.comodin.executor": "Run",
+    "Python.comodinMySQL.executor": "Run",
     "Python.copeprueba.executor": "Run",
+    "Python.cordiez.executor": "Run",
+    "Python.cordiezMysql.executor": "Run",
     "Python.coto.executor": "Run",
     "Python.cotoMysql2.executor": "Run",
     "Python.cotoRequestJson.executor": "Run",
@@ -72,6 +89,7 @@
     "Python.disco_MySQL.executor": "Run",
     "Python.ean.executor": "Run",
     "Python.estructura_coto.executor": "Run",
+    "Python.gallega1.executor": "Run",
     "Python.hiperlibertad.executor": "Run",
     "Python.hiperlibertad_Mysql.executor": "Run",
     "Python.jumbo.executor": "Run",
@@ -198,7 +216,15 @@
       <option name="project" value="LOCAL" />
       <updated>1755124656027</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="prueba interfaz">
+      <option name="closed" value="true" />
+      <created>1755149254144</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1755149254144</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -208,6 +234,7 @@
     <MESSAGE value="2" />
     <MESSAGE value="ajustes_bases_de_datos" />
     <MESSAGE value="ajustes_bases_de_datos2" />
-    <option name="LAST_COMMIT_MESSAGE" value="ajustes_bases_de_datos2" />
+    <MESSAGE value="prueba interfaz" />
+    <option name="LAST_COMMIT_MESSAGE" value="prueba interfaz" />
   </component>
 </project>

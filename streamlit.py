@@ -42,8 +42,8 @@ def read_df(q: str, params: Dict | None = None) -> pd.DataFrame:
 # ---------- Helpers ----------
 EFFECTIVE_PRICE_EXPR = """
 CASE
-  WHEN h.precio_oferta IS NOT NULL AND h.precio_oferta > 0
-       AND (h.precio_lista IS NULL OR h.precio_oferta <= h.precio_lista)
+  WHEN h.precio_oferta IS NOT NULL AND h.precio_oferta>0 AND h.precio_lista IS NOT NULL AND h.precio_oferta < h.precio_lista
+
     THEN h.precio_oferta
   ELSE h.precio_lista
 END
@@ -314,10 +314,15 @@ def get_kpis(where_str: str, params: Dict):
       SELECT u.d, u.tienda_id, u.producto_tienda_id,
              h.precio_lista, h.precio_oferta,
              {EFFECTIVE_PRICE_EXPR} AS precio_efectivo,
-             (h.precio_oferta IS NOT NULL AND h.precio_oferta>0 AND (h.precio_lista IS NULL OR h.precio_oferta<=h.precio_lista)) AS en_oferta
+             (h.precio_oferta IS NOT NULL 
+              AND h.precio_oferta>0 
+              AND h.precio_lista IS NOT NULL 
+              AND h.precio_oferta < h.precio_lista) AS en_oferta
       FROM ult u
       JOIN historico_precios h
-        ON h.tienda_id=u.tienda_id AND h.producto_tienda_id=u.producto_tienda_id AND h.capturado_en=u.maxc
+        ON h.tienda_id=u.tienda_id 
+       AND h.producto_tienda_id=u.producto_tienda_id 
+       AND h.capturado_en=u.maxc
     )
     SELECT
       COUNT(*) AS observaciones,
@@ -328,6 +333,7 @@ def get_kpis(where_str: str, params: Dict):
     FROM snap
     """
     return read_df(q, params)
+
 
 kpis = get_kpis(where_str, where_params)
 c1, c2, c3, c4, c5 = st.columns(5)
