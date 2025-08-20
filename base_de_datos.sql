@@ -223,3 +223,57 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+
+
+
+
+---------shecduler------
+
+-- 🔓 Asegúrate de que el scheduler de eventos esté activado
+-- 🔓 Asegúrate de que el scheduler de eventos esté activado
+SET GLOBAL event_scheduler = ON;
+
+-- 📌 Evento que se ejecuta cada 30 minutos
+DELIMITER //
+CREATE EVENT IF NOT EXISTS ev_fix_precios
+ON SCHEDULE EVERY 30 MINUTE
+STARTS CURRENT_TIMESTAMP
+ON COMPLETION PRESERVE
+DO
+BEGIN
+    -- Cambiar precio_lista = 0 a NULL
+    UPDATE historico_precios
+    SET precio_lista = NULL
+    WHERE precio_lista = 0;
+
+    -- Cambiar precio_oferta = 0 a NULL
+    UPDATE historico_precios
+    SET precio_oferta = NULL
+    WHERE precio_oferta = 0;
+END//
+DELIMITER ;
+
+
+DELIMITER //
+CREATE EVENT IF NOT EXISTS ev_cleanup_historico
+ON SCHEDULE EVERY 1 DAY
+STARTS CURRENT_TIMESTAMP
+ON COMPLETION PRESERVE
+DO
+BEGIN
+    DECLARE db_size_gb DECIMAL(10,2);
+
+    -- Calcula el tamaño de la BD en GB
+    SELECT SUM(data_length + index_length) / (1024*1024*1024)
+    INTO db_size_gb
+    FROM information_schema.tables
+    WHERE table_schema = 'analisis_retail';
+
+    -- Si pesa más de 10 GB → borrar registros viejos
+    IF db_size_gb > 10 THEN
+        DELETE FROM historico_precios
+        WHERE capturado_en < NOW() - INTERVAL 6 MONTH;
+    END IF;
+END//
+DELIMITER ;

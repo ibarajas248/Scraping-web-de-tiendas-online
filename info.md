@@ -90,16 +90,16 @@ Opcion 2:
 4    CENCOSUD S.A. (0041496)    https://www.jumbo.com.ar/ ✅
 5    MILLAN S.A. (0006038)    https://atomoconviene.com/atomo-ecommerce/
 6    la gallega supermercados s.A. (0001764)    www.lagallega.com.ar ✅
-7    S.A. IMP.Y Exp.de la pat. (0004017)    supermercado.laanonimaonline.com
+7    S.A. IMP.Y Exp.de la pat. (0004017)    supermercado.laanonimaonline.com ✅
 8    LIBERTAD S.A. (0005320)    www.hiperlibertad.com.ar✅
 9    la reina s.A. (0011318)    https://www.lareinaonline.com.ar/✅
 10    dia argentina s.A. (0007583)    https://diaonline.supermercadosdia.com.ar/ ✅
 11    D.rosental e hijos saci (0011176)    https://www.pedidosya.com.ar/restaurantes/rosario/supermercado-dar-centro-2-menu?origin=shop_list
 12    DINOSAURIO S.A. (0036838)    https://www.dinoonline.com.ar/✅
 13    usina lactea el puente s.A.(1) (0007716)    http://ofertas.lacteoselpuente.com.ar/#listado-de-precios
-14    ALBERDI S.A.(N) (COMODIN I) (0014674)    https://www.comodinencasa.com.ar/
-15    Cyre (5812)    https://www.cordiez.com.ar/
-16    Antoniazzi (1133)    www.alvearonline.com.ar
+14    ALBERDI S.A.(N) (COMODIN I) (0014674)    https://www.comodinencasa.com.ar/✅
+15    Cyre (5812)    https://www.cordiez.com.ar/✅
+16    Antoniazzi (1133)    www.alvearonline.com.ar✅
 17    supermercados el abastecedor s.A. (0041320)    https://www.elabastecedor.com.ar/index.php
 18    la genovesa supermercado s.A. (0025968)    https://www.lagenovesadigital.com.ar/Home
 19    SUP.MAY.YAGUAR S.A. (0002404)    shop.yaguar.com.ar

@@ -9,9 +9,9 @@ import numpy as np
 import requests
 from mysql.connector import Error as MySQLError
 
-from base_datos import get_conn  # <- tu conexión MySQL
+from base_datos import get_conn  # asegúrate de configurarlo
 
-# =================== Config ===================
+# ------------ Config ------------ #
 SITE_BASE = "https://www.cotodigital.com.ar"
 URL_BASE = f"{SITE_BASE}/sitios/cdigi/categoria"
 NRPP = 50
@@ -21,8 +21,8 @@ HEADERS = {
 }
 SLEEP = 0.35
 TIMEOUT = 25
+MAX_PAGINAS = 5000
 RETRIES = 3
-MAX_PAGINAS = 5
 
 TIENDA_CODIGO = "coto"
 TIENDA_NOMBRE = "Coto Digital"
@@ -33,63 +33,35 @@ BASE_PARAMS = {
     "format": "json"
 }
 
-# =================== Utils ===================
-_price_clean_re = re.compile(r"[^\d,.\-]")
-_slug_nonword = re.compile(r"[^a-zA-Z0-9\s-]")
-_slug_spaces = re.compile(r"[\s\-]+")
-_NULLLIKE = {"", "null", "none", "nan", "na"}
-
 def clean(val):
-    """Normaliza texto: trim, colapsa espacios, filtra null-likes."""
-    if val is None:
-        return None
+    if val is None: return None
     s = str(val).strip()
-    s = re.sub(r"\s+", " ", s)
-    return None if s.lower() in _NULLLIKE else s
-
-def get_first(x, default=""):
-    """Devuelve string desde list/tuple/str/None, tomando el primer elemento si es lista."""
-    if x is None:
-        return default
-    if isinstance(x, (list, tuple)):
-        return str(x[0]) if x else default
-    return str(x)
+    return s if s else None
 
 def get_attr(attrs: dict, key: str, default: str = "") -> str:
-    """Lee keys tipo 'product.displayName' desde attributes (Endeca)."""
-    if not isinstance(attrs, dict):
-        return default
-    v = attrs.get(key)
-    return get_first(v, default)
-
-def get_any(attrs: dict, keys: List[str], default: str = "") -> str:
-    """Devuelve el primer valor no vacío para las keys dadas."""
-    for k in keys:
-        v = get_attr(attrs, k, None)
-        if v not in (None, ""):
-            return v
+    if not isinstance(attrs, dict): return default
+    v = attrs.get(key, [""])
+    if isinstance(v, list) and v:
+        return v[0]
     return default
 
 def parse_json_field(value):
-    """Si el valor es str y contiene JSON, lo decodifica; si ya es dict/list, lo devuelve."""
-    if value is None:
-        return value
-    if isinstance(value, (dict, list)):
-        return value
+    if value is None: return value
+    if isinstance(value, (dict, list)): return value
     try:
         return json.loads(value)
     except Exception:
         return value
 
+_price_clean_re = re.compile(r"[^\d,.\-]")
+
 def parse_price(val) -> float:
-    """Parsea números con separadores locales; devuelve float o np.nan."""
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return np.nan
     if isinstance(val, (int, float)):
         return float(val)
     s = str(val).strip()
-    if not s:
-        return np.nan
+    if not s: return np.nan
     s = _price_clean_re.sub("", s)
     if "," in s and "." in s:
         s = s.replace(".", "").replace(",", ".")
@@ -100,50 +72,7 @@ def parse_price(val) -> float:
     except Exception:
         return np.nan
 
-def slugify(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-    text = _slug_nonword.sub("", text)
-    return _slug_spaces.sub("-", text.strip().lower())
-
-def best_category(attrs: Dict[str, Any]) -> Tuple[str, str]:
-    """Intenta usar allAncestors.displayName y cae a campos de respaldo."""
-    anc = attrs.get("allAncestors.displayName", [])
-    if isinstance(anc, list) and anc:
-        clean_list = [str(x).strip() for x in anc if str(x).strip().lower() != "cotodigital"]
-        if len(clean_list) >= 2:
-            return clean_list[0], clean_list[-1]
-        if len(clean_list) == 1:
-            return clean_list[0], ""
-    cat = get_any(attrs, ["product.LDEPAR", "product.category", "parentCategory.displayName"])
-    sub = get_any(attrs, ["product.FAMILIA", "product.subcategory", "product.category"])
-    return clean(cat), clean(sub)
-
-def extract_fabricante(dto_caract: Any) -> str:
-    """Busca FABRICANTE/ELABORADO POR/FABRICADO POR/PROVEEDOR en dtoCaracteristicas."""
-    if not isinstance(dto_caract, list):
-        return ""
-    keys = {"FABRICANTE", "ELABORADO POR", "FABRICADO POR", "PROVEEDOR"}
-    for c in dto_caract:
-        n = str(c.get("nombre", "")).strip().upper()
-        d = str(c.get("descripcion", "")).strip()
-        if n in keys and d:
-            return d
-    return ""
-
-def build_product_url(attrs: Dict[str, Any], rec: Dict[str, Any]) -> str:
-    name = get_attr(attrs, "product.displayName")
-    record_id = get_attr(attrs, "record.id")
-    if name and record_id:
-        return f"{SITE_BASE}/sitios/cdigi/productos/{slugify(name)}/_/R-{record_id}?Dy=1&idSucursal=200"
-    # Fallback: detailsAction.recordState
-    record_state = (((rec.get("detailsAction") or {}).get("recordState") or "")).split("?", 1)[0]
-    if record_state:
-        path = record_state if record_state.startswith("/") else f"/{record_state}"
-        return f"{SITE_BASE}{path}"
-    return ""
-
 def extract_records_tree(root) -> List[dict]:
-    """Extrae todos los 'records' recorriendo el árbol JSON (Endeca)."""
     found = []
     def walk(node):
         if isinstance(node, dict):
@@ -157,8 +86,48 @@ def extract_records_tree(root) -> List[dict]:
     walk(root)
     return found
 
+def extract_fabricante(dto_caract: Any) -> str:
+    if not isinstance(dto_caract, list): return ""
+    keys = {"FABRICANTE", "ELABORADO POR", "FABRICADO POR", "PROVEEDOR"}
+    for c in dto_caract:
+        n = str(c.get("nombre", "")).strip().upper()
+        d = str(c.get("descripcion", "")).strip()
+        if n in keys and d:
+            return d
+    return ""
+
+_slug_nonword = re.compile(r"[^a-zA-Z0-9\s-]")
+_slug_spaces = re.compile(r"[\s\-]+")
+
+def slugify(text: str) -> str:
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    text = _slug_nonword.sub("", text)
+    return _slug_spaces.sub("-", text.strip().lower())
+
+def best_category(attrs: Dict[str, Any]) -> Tuple[str, str]:
+    anc = attrs.get("allAncestors.displayName", [])
+    if isinstance(anc, list) and anc:
+        clean_list = [str(x).strip() for x in anc if str(x).strip().lower() != "cotodigital"]
+        if len(clean_list) >= 2:
+            return clean_list[0], clean_list[-1]
+        if len(clean_list) == 1:
+            return clean_list[0], ""
+    cat = get_attr(attrs, "product.LDEPAR") or get_attr(attrs, "product.category")
+    sub = get_attr(attrs, "product.FAMILIA") or get_attr(attrs, "parentCategory.displayName") or ""
+    return cat, sub
+
+def build_product_url(attrs: Dict[str, Any], rec: Dict[str, Any]) -> str:
+    name = get_attr(attrs, "product.displayName")
+    record_id = get_attr(attrs, "record.id")
+    if name and record_id:
+        return f"{SITE_BASE}/sitios/cdigi/productos/{slugify(name)}/_/R-{record_id}?Dy=1&idSucursal=200"
+    record_state = ((rec.get("detailsAction", {}) or {}).get("recordState") or "").split("?", 1)[0]
+    if record_state:
+        path = record_state if record_state.startswith("/") else f"/{record_state}"
+        return f"{SITE_BASE}/sitios/cdigi/producto{path}"
+    return ""
+
 def parse_record(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Construye el dict del producto desde un 'record' Endeca."""
     if not isinstance(rec, dict) or "attributes" not in rec:
         return None
     attrs = rec["attributes"]
@@ -167,90 +136,60 @@ def parse_record(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     dto_caract = parse_json_field(get_attr(attrs, "product.dtoCaracteristicas"))
     dto_desc   = parse_json_field(get_attr(attrs, "product.dtoDescuentos"))
 
-    # EAN (puede venir en distintos campos/formatos)
-    ean_any = get_any(attrs, [
-        "product.eanPrincipal",
-        "product.EAN",
-        "product.ean",
-        "sku.ean",
-        "product.dtoCodigosBarras"
-    ])
-    ean_parsed = parse_json_field(ean_any)
-    if isinstance(ean_parsed, list) and ean_parsed:
-        ean = str(ean_parsed[0])
-    else:
-        ean = str(ean_any or "").strip()
+    precio_lista = dto_price.get("precioLista") if isinstance(dto_price, dict) else ""
+    precio_final = dto_price.get("precio") if isinstance(dto_price, dict) else ""
 
-    # ---- Precios ----
-    precio_lista = ""
-    precio_final = ""
-
-    if isinstance(dto_price, dict):
-        precio_lista = dto_price.get("precioLista", "")
-
-    # Si hay promo, tomar precioDescuento
     promo_tipo = ""
     precio_regular_promo = ""
     precio_descuento = ""
     comentarios_promo = ""
-
     if isinstance(dto_desc, list) and dto_desc:
         promos_txt = [str(d.get("textoDescuento", "")).strip() for d in dto_desc if d]
         promo_tipo = "; ".join([p for p in promos_txt if p])
         d0 = (dto_desc[0] or {})
         precio_regular_promo = str(d0.get("textoPrecioRegular", "")).replace("Precio Contado:", "").strip()
-        precio_descuento = d0.get("precioDescuento", "").replace("$", "").strip()
+        precio_descuento = d0.get("precioDescuento", "")
         comentarios_promo = str(d0.get("comentarios", "")).strip()
-
-        # ⚡ prioridad al precioDescuento
-        precio_final = precio_descuento
-    else:
-        # si no hay promo, caer al dtoPrice
-        precio_final = dto_price.get("precio", "") if isinstance(dto_price, dict) else ""
 
     fabricante = extract_fabricante(dto_caract)
     categoria, subcategoria = best_category(attrs)
 
     p = {
-        "sku":        clean(get_any(attrs, ["sku.repositoryId", "sku.id", "sku.repositoryid"])),
-        "record_id":  clean(get_attr(attrs, "record.id")),
-        "ean":        clean(ean),
-        "nombre":     clean(get_any(attrs, ["product.displayName", "product.description"])),
-        "marca":      clean(get_any(attrs, ["product.brand", "product.MARCA"])),
+        "sku": clean(get_attr(attrs, "sku.repositoryId")),
+        "record_id": clean(get_attr(attrs, "record.id")),
+        "ean": clean(get_attr(attrs, "product.eanPrincipal")),
+        "nombre": clean(get_attr(attrs, "product.displayName")),
+        "marca": clean(get_attr(attrs, "product.brand") or get_attr(attrs, "product.MARCA")),
         "fabricante": clean(fabricante),
-        "precio_lista":   clean(precio_lista),
-        "precio_oferta":  clean(precio_final),   # 👈 ahora guarda 799.72
-        "tipo_oferta":    clean(get_any(attrs, ["product.tipoOferta", "product.TipoOferta"])),
-        "promo_tipo":     clean(promo_tipo),
+        "precio_lista": clean(precio_lista),
+        "precio_oferta": clean(precio_final),
+        "tipo_oferta": clean(get_attr(attrs, "product.tipoOferta")),
+        "promo_tipo": clean(promo_tipo),
         "precio_regular_promo": clean(precio_regular_promo),
-        "precio_descuento":     clean(precio_descuento),
-        "comentarios_promo":    clean(comentarios_promo),
-        "categoria":    clean(categoria),
+        "precio_descuento": clean(precio_descuento),
+        "comentarios_promo": clean(comentarios_promo),
+        "categoria": clean(categoria),
         "subcategoria": clean(subcategoria),
-        "url":          clean(build_product_url(attrs, rec)),
+        "url": clean(build_product_url(attrs, rec)),
     }
-
-    # Registro válido si trae al menos un identificador o precio
-    if p["sku"] or p["record_id"] or p["precio_lista"] or p["precio_oferta"]:
+    if p["sku"] or p["precio_lista"] or p["precio_oferta"]:
         return p
     return None
 
-
 def fetch_json(params: Dict[str, str]) -> Dict[str, Any]:
-    """GET con reintentos; devuelve JSON de Endeca."""
     last_exc = None
     for _ in range(RETRIES):
         try:
             r = requests.get(URL_BASE, params=params, headers=HEADERS, timeout=TIMEOUT)
             if r.status_code == 200:
                 return r.json()
-            last_exc = RuntimeError(f"HTTP {r.status_code}: {r.text[:200]}")
+            last_exc = RuntimeError(f"HTTP {r.status_code}")
         except Exception as e:
             last_exc = e
         time.sleep(0.4)
     raise last_exc or RuntimeError("Error de red")
 
-# ================ MySQL helpers (upserts) ================
+# ------------ Helpers BD (upserts) ------------ #
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute(
         "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
@@ -281,76 +220,70 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
             ))
             return pid
 
-    # Evitar "pegar" por (nombre, marca) si marca viene vacía
-    nombre = clean(p.get("nombre")) or ""
-    marca  = clean(p.get("marca")) or ""
-    if nombre and marca:
-        cur.execute("""SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1""",
-                    (nombre, marca))
-        row = cur.fetchone()
-        if row:
-            pid = row[0]
-            cur.execute("""
-                UPDATE productos SET
-                  ean = COALESCE(NULLIF(%s,''), ean),
-                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
-                  categoria = COALESCE(NULLIF(%s,''), categoria),
-                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
-                WHERE id=%s
-            """, (
-                p.get("ean") or "", p.get("fabricante") or "",
-                p.get("categoria") or "", p.get("subcategoria") or "", pid
-            ))
-            return pid
+    cur.execute("""
+        SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1
+    """, (p.get("nombre") or "", p.get("marca") or ""))
+    row = cur.fetchone()
+    if row:
+        pid = row[0]
+        cur.execute("""
+            UPDATE productos SET
+              ean = COALESCE(NULLIF(%s,''), ean),
+              marca = COALESCE(NULLIF(%s,''), marca),
+              fabricante = COALESCE(NULLIF(%s,''), fabricante),
+              categoria = COALESCE(NULLIF(%s,''), categoria),
+              subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
+            WHERE id=%s
+        """, (
+            p.get("ean") or "", p.get("marca") or "", p.get("fabricante") or "",
+            p.get("categoria") or "", p.get("subcategoria") or "", pid
+        ))
+        return pid
 
     cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
         VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
     """, (
-        p.get("ean") or "", nombre, marca,
+        p.get("ean") or "", p.get("nombre") or "", p.get("marca") or "",
         p.get("fabricante") or "", p.get("categoria") or "", p.get("subcategoria") or ""
     ))
     return cur.lastrowid
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
-    """Upsert que devuelve ID con LAST_INSERT_ID para evitar SELECT extra."""
     sku = clean(p.get("sku"))
     rec = clean(p.get("record_id"))
-    url = p.get("url") or ""
-    nombre_tienda = p.get("nombre") or ""
 
-    # Preferimos clave única por SKU si existe
     if sku:
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
             ON DUPLICATE KEY UPDATE
-              id = LAST_INSERT_ID(id),
-              producto_id = VALUES(producto_id),
-              record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
-              url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
-              nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, sku, rec, url, nombre_tienda))
-        return cur.lastrowid
+              producto_id=VALUES(producto_id),
+              record_id_tienda=COALESCE(VALUES(record_id_tienda), record_id_tienda),
+              url_tienda=COALESCE(VALUES(url_tienda), url_tienda),
+              nombre_tienda=COALESCE(VALUES(nombre_tienda), nombre_tienda)
+        """, (tienda_id, producto_id, sku, rec, p.get("url") or "", p.get("nombre") or ""))
+        cur.execute("SELECT id FROM producto_tienda WHERE tienda_id=%s AND sku_tienda=%s LIMIT 1",
+                    (tienda_id, sku))
+        return cur.fetchone()[0]
 
-    # Si no hay SKU, usamos record_id
     if rec:
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, NULL, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
             ON DUPLICATE KEY UPDATE
-              id = LAST_INSERT_ID(id),
-              producto_id = VALUES(producto_id),
-              url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
-              nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, rec, url, nombre_tienda))
-        return cur.lastrowid
+              producto_id=VALUES(producto_id),
+              url_tienda=COALESCE(VALUES(url_tienda), url_tienda),
+              nombre_tienda=COALESCE(VALUES(nombre_tienda), nombre_tienda)
+        """, (tienda_id, producto_id, rec, p.get("url") or "", p.get("nombre") or ""))
+        cur.execute("SELECT id FROM producto_tienda WHERE tienda_id=%s AND record_id_tienda=%s LIMIT 1",
+                    (tienda_id, rec))
+        return cur.fetchone()[0]
 
-    # Último recurso (sin llaves naturales) - no hay ON DUPLICATE posible
     cur.execute("""
-        INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
-        VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
-    """, (tienda_id, producto_id, url, nombre_tienda))
+        INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
+        VALUES (%s, %s, NULL, NULL, NULLIF(%s,''), NULLIF(%s,''))
+    """, (tienda_id, producto_id, p.get("url") or "", p.get("nombre") or ""))
     return cur.lastrowid
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
@@ -358,7 +291,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
         v = parse_price(x)
         if x is None: return None
         if isinstance(v, float) and np.isnan(v): return None
-        return f"{round(float(v), 2)}"  # guardamos como VARCHAR
+        return f"{round(float(v), 2)}"  # guardamos como texto (VARCHAR)
 
     cur.execute("""
         INSERT INTO historico_precios
@@ -382,7 +315,6 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
         p.get("comentarios_promo") or None
     ))
 
-# =================== Main ===================
 def main():
     productos: List[Dict[str, Any]] = []
     seen_keys = set()
@@ -398,7 +330,7 @@ def main():
         params["Nrpp"] = str(NRPP)
 
         try:
-            data = fetch_json(params)
+            data = fetch_json(params) #conecta a la base de datos
         except Exception as e:
             print(f"[{offset}] ⚠️ {e}")
             break
@@ -409,11 +341,9 @@ def main():
         nuevos = 0
         for rec in extract_records_tree(data):
             p = parse_record(rec)
-            if not p:
-                continue
+            if not p: continue
             key = p.get("sku") or p.get("record_id") or (p.get("nombre"), p.get("url"))
-            if key in seen_keys:
-                continue
+            if key in seen_keys: continue
             seen_keys.add(key)
             productos.append(p)
             nuevos += 1
@@ -436,12 +366,12 @@ def main():
         print("⚠️ No se descargaron productos.")
         return
 
-    # ====== Inserción en MySQL ======
+    # ====== Inserción directa en MySQL ======
     capturado_en = datetime.now()
 
     conn = None
     try:
-        conn = get_conn()
+        conn, tunnel = get_conn()
         conn.autocommit = False
         cur = conn.cursor()
 
@@ -449,9 +379,6 @@ def main():
 
         insertados = 0
         for p in productos:
-            # Logs mínimos para diagnóstico
-            # print(f"→ PT upsert sku={p.get('sku')} rec={p.get('record_id')} url={p.get('url')}")
-            # print(f"→ HIST precios: lista={p.get('precio_lista')} oferta={p.get('precio_oferta')} tipo={p.get('tipo_oferta')}")
             producto_id = find_or_create_producto(cur, p)
             pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
             insert_historico(cur, tienda_id, pt_id, p, capturado_en)
@@ -465,11 +392,14 @@ def main():
         print(f"❌ Error MySQL: {e}")
     finally:
         try:
+            if cur: cur.close()
             if conn: conn.close()
+            if tunnel: tunnel.close()
         except Exception:
             pass
 
-    print(f"⏱️ Tiempo total: {time.time() - t0:.2f} s")
+
+#print(f"⏱️ Tiempo total: {time.time() - t0:.2f} s")
 
 if __name__ == "__main__":
     main()

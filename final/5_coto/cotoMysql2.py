@@ -8,6 +8,12 @@ from typing import Dict, Any, List, Tuple, Optional
 import numpy as np
 import requests
 from mysql.connector import Error as MySQLError
+import sys, os
+
+# añade la carpeta raíz (2 niveles más arriba) al sys.path
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+)
 
 from base_datos import get_conn  # <- tu conexión MySQL
 
@@ -22,7 +28,7 @@ HEADERS = {
 SLEEP = 0.35
 TIMEOUT = 25
 RETRIES = 3
-MAX_PAGINAS = 5
+MAX_PAGINAS = 5000
 
 TIENDA_CODIGO = "coto"
 TIENDA_NOMBRE = "Coto Digital"
