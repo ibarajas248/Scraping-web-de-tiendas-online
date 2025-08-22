@@ -20,11 +20,11 @@ import numpy as np
 import pandas as pd
 from mysql.connector import Error as MySQLError
 import sys, os
-'''
+
 # añade la carpeta raíz (2 niveles más arriba) al sys.path
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-)'''
+)
 from base_datos import get_conn  # <- tu conexión MySQL
 
 

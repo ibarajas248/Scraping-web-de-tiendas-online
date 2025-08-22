@@ -13,6 +13,12 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from mysql.connector import Error as MySQLError
+import sys, os
+
+# añade la carpeta raíz (2 niveles más arriba) al sys.path
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+)
 
 from base_datos import get_conn  # <- tu conexión MySQL
 

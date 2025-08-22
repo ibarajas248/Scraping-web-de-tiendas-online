@@ -28,6 +28,13 @@ JOIN (
 WHERE hp.tienda_id = 1;
 
 
+-- ver cuanto ocupa en memoria
+
+
+SELECT table_schema AS "Base de Datos",
+       ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS "Tamaño (MB)"
+FROM information_schema.tables
+GROUP BY table_schema;
 -- Último precio por producto_tienda
 
 -- Obtiene el último snapshot de precio registrado para cada producto_tienda en una tienda:

@@ -220,7 +220,7 @@ def parse_product_min(p: Dict) -> Dict:
     brand = p.get("brand")
     manufacturer = p.get("manufacturer") or ""
 
-    # ---- Salida final ----
+
     return {
         "EAN": ean,
         "Código Interno": codigo_interno,

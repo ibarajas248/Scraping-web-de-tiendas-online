@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import sys, re, time, json, unicodedata
-from typing import List, Dict, Tuple, Any, Optional
+"""
+Scraper HiperLibertad (VTEX)
+- Extrae categorías y productos completos
+- Inserta en MySQL con commits pequeños y retries por fila para evitar bucles por lock (1205)
+"""
+
+import sys, re, time, json, os
+from typing import List, Dict, Tuple, Any
 from urllib.parse import urlparse
 from datetime import datetime
 
@@ -10,53 +16,37 @@ import numpy as np
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
 from mysql.connector import Error as MySQLError
 
-import sys, os
-
 # añade la carpeta raíz (2 niveles más arriba) al sys.path
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from base_datos import get_conn  # <- tu conexión MySQL
-
-
-# añade la carpeta raíz (2 niveles más arriba) al sys.path
 
 # ===================== Config =====================
 BASE = "https://www.hiperlibertad.com.ar"
-
-# Árbol de categorías (sube a 8–10 si ves hojas faltantes)
 TREE_DEPTH = 6
 TREE_URL = f"{BASE}/api/catalog_system/pub/category/tree/{TREE_DEPTH}"
-
-# Búsqueda VTEX
 SEARCH = f"{BASE}/api/catalog_system/pub/products/search"
 
-STEP = 50                 # VTEX: _from/_to (0-49, 50-99, …)
+STEP = 50
 TIMEOUT = 25
 SLEEP_OK = 0.25
-MAX_EMPTY = 2             # corta si hay 2 páginas seguidas vacías
-RETRIES = 3               # reintentos HTTP
-
-# Canal de ventas (si devuelve vacío, probá 2 o 3)
+MAX_EMPTY = 2
+RETRIES = 3
 SALES_CHANNELS = ["1"]
-
-# Prefijos a incluir (vacío = TODAS las familias del árbol)
-INCLUDE_PREFIXES: List[str] = []  # p.ej. ["tecnologia","almacen"]
-
-# Umbral para fallback por ID si ruta trae pocos
+INCLUDE_PREFIXES: List[str] = []  # si quieres filtrar por prefijos de ruta
 FALLBACK_THRESHOLD = 5
 
-# Identidad de la tienda (BD)
 TIENDA_CODIGO = "hiperlibertad"
 TIENDA_NOMBRE = "Hiper Libertad"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json"
-}
+HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+
+# --- Retries por fila ---
+ROW_MAX_RETRIES = 2        # 2 intentos adicionales (total hasta 3 ejecuciones)
+ROW_BACKOFF_BASE = 0.6     # segundos de backoff (exponencial: 0.6, 1.2, ...)
+
+BATCH_COMMIT_EVERY = 100   # commit cada N filas
 
 # ===================== Utils =====================
 def s_requests() -> requests.Session:
@@ -65,7 +55,8 @@ def s_requests() -> requests.Session:
         total=RETRIES,
         backoff_factor=0.5,
         status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=frozenset(["GET"])
+        allowed_methods=frozenset(["GET"]),
+        raise_on_status=False,
     )
     s.mount("https://", HTTPAdapter(max_retries=r))
     s.mount("http://", HTTPAdapter(max_retries=r))
@@ -75,7 +66,8 @@ def first(lst, default=None):
     return lst[0] if isinstance(lst, list) and lst else default
 
 def clean(val):
-    if val is None: return None
+    if val is None:
+        return None
     s = str(val).strip()
     return s if s else None
 
@@ -86,7 +78,8 @@ def parse_price(val) -> float:
     if isinstance(val, (int, float)):
         return float(val)
     s = str(val).strip()
-    if not s: return np.nan
+    if not s:
+        return np.nan
     s = _price_clean_re.sub("", s)
     if "," in s and "." in s:
         s = s.replace(".", "").replace(",", ".")
@@ -99,9 +92,29 @@ def parse_price(val) -> float:
 
 def to_txt_or_none(x):
     v = parse_price(x)
-    if x is None: return None
-    if isinstance(v, float) and np.isnan(v): return None
+    if x is None:
+        return None
+    if isinstance(v, float) and np.isnan(v):
+        return None
     return f"{round(float(v), 2)}"
+
+def is_retryable_mysql(err: MySQLError) -> bool:
+    """
+    1205 = Lock wait timeout exceeded
+    1213 = Deadlock found
+    """
+    code = None
+    try:
+        code = getattr(err, "errno", None)
+        if code is None and getattr(err, "args", None):
+            code = err.args[0]
+    except Exception:
+        pass
+    return code in (1205, 1213)
+
+def sleep_backoff(attempt: int):
+    # attempt 1 -> 0.6s, attempt 2 -> ~1.2s
+    time.sleep(ROW_BACKOFF_BASE * (2 ** (attempt - 1)))
 
 # ===================== Categorías =====================
 def load_tree(session: requests.Session) -> List[Dict[str, Any]]:
@@ -111,24 +124,23 @@ def load_tree(session: requests.Session) -> List[Dict[str, Any]]:
 
 def url_to_path(url: str) -> List[str]:
     p = urlparse(url)
-    path = p.path.lstrip("/")  # ej: 'tecnologia/audio/auriculares'
-    return [seg for seg in path.split("/") if seg]
+    return [seg for seg in p.path.lstrip("/").split("/") if seg]
 
 def flatten_leaves(tree: List[Dict[str, Any]]) -> List[Tuple[List[str], int, str]]:
-    """
-    Devuelve hojas como (path_segments, category_id, category_name).
-    """
     leaves: List[Tuple[List[str], int, str]] = []
 
     def dfs(node: Dict[str, Any]):
         path = url_to_path(node.get("url", ""))
         children = node.get("children") or []
+        # filtro opcional por prefijos (si se usa)
+        if INCLUDE_PREFIXES and path:
+            joined = "/".join(path)
+            if not any(joined.startswith(pref) for pref in INCLUDE_PREFIXES):
+                # si no coincide prefijo, no sigo por aquí
+                return
         if not children:
             if path:
-                try:
-                    cid = int(node.get("id"))
-                except Exception:
-                    cid = int(str(node.get("id") or "0") or "0")
+                cid = int(node.get("id") or 0)
                 leaves.append((path, cid, node.get("name", "")))
             return
         for ch in children:
@@ -146,10 +158,7 @@ def parse_price_fields(item: Dict[str, Any]):
     sellers = item.get("sellers") or []
     s0 = first(sellers, {}) or {}
     co = (s0.get("commertialOffer") or {}) if isinstance(s0, dict) else {}
-    list_price = float(co.get("ListPrice") or 0.0)
-    price = float(co.get("Price") or 0.0)
-    stock = int(co.get("AvailableQuantity") or 0)
-    return list_price, price, stock
+    return float(co.get("ListPrice") or 0.0), float(co.get("Price") or 0.0), int(co.get("AvailableQuantity") or 0)
 
 def extract_ean(item: Dict[str, Any]) -> str:
     ean = (item.get("ean") or "").strip()
@@ -164,34 +173,20 @@ def extract_ean(item: Dict[str, Any]) -> str:
     return ""
 
 def extract_codigo_interno(p: Dict[str, Any], item: Dict[str, Any]) -> str:
-    cod = str(p.get("productReference") or "").strip()
-    if not cod:
-        cod = str(item.get("itemId") or "").strip()
-    if not cod:
-        ref = first(item.get("referenceId") or [])
-        cod = (ref.get("Value") or ref.get("value") or "").strip() if isinstance(ref, dict) else ""
-    return cod
+    return str(p.get("productReference") or item.get("itemId") or "").strip()
 
 def product_url(p: Dict[str, Any]) -> str:
-    link = (p.get("linkText") or "").strip()
-    return f"{BASE}/{link}/p" if link else ""
+    return f"{BASE}/{(p.get('linkText') or '').strip()}/p"
 
 def parse_records(p: Dict[str, Any], fullpath: List[str]) -> List[Dict[str, Any]]:
-    """
-    Devuelve filas con las claves que espera tu lógica de BD:
-      ean, sku, record_id (opcional), nombre, marca, fabricante,
-      categoria, subcategoria, precio_lista, precio_oferta, tipo_oferta, url
-    """
     rows = []
-    items = p.get("items") or []
-    for item in items:
+    for item in p.get("items") or []:
         ean = extract_ean(item)
         list_price, price, stock = parse_price_fields(item)
-        tipo_oferta = "Oferta" if price and list_price and price < list_price else ""
         rows.append({
             "ean": clean(ean),
-            "sku": clean(extract_codigo_interno(p, item)),     # usamos itemId / productReference
-            "record_id": None,                                 # VTEX no tiene record.id tipo ATG; no hace falta
+            "sku": clean(extract_codigo_interno(p, item)),
+            "record_id": None,
             "nombre": clean(p.get("productName")),
             "marca": clean(p.get("brand")),
             "fabricante": clean(p.get("Manufacturer") or p.get("brand")),
@@ -199,9 +194,8 @@ def parse_records(p: Dict[str, Any], fullpath: List[str]) -> List[Dict[str, Any]
             "subcategoria": fullpath[1] if len(fullpath) >= 2 else None,
             "precio_lista": list_price,
             "precio_oferta": price,
-            "tipo_oferta": tipo_oferta,
+            "tipo_oferta": "Oferta" if price and list_price and price < list_price else "",
             "url": product_url(p),
-            # datos extra útiles (no se insertan, pero sirven para debug)
             "_stock": stock,
             "_ruta": "/".join(fullpath)
         })
@@ -209,29 +203,24 @@ def parse_records(p: Dict[str, Any], fullpath: List[str]) -> List[Dict[str, Any]
 
 # ===================== Fetching =====================
 def fetch_category_by_path(session: requests.Session, path_segments: List[str], sc: str) -> List[Dict[str, Any]]:
-    map_str = build_map_for_path(path_segments)
-    path = "/".join(path_segments)
-    rows: List[Dict[str, Any]] = []
-    offset = 0
-    empty_in_a_row = 0
-
+    rows, offset, empty_in_a_row = [], 0, 0
+    map_str, path = build_map_for_path(path_segments), "/".join(path_segments)
     while True:
-        params = {
-            "_from": offset,
-            "_to": offset + STEP - 1,
-            "map": map_str,
-            "sc": sc
-        }
-        url = f"{SEARCH}/{path}"
-        r = session.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
+        params = {"_from": offset, "_to": offset + STEP - 1, "map": map_str, "sc": sc}
+        r = session.get(f"{SEARCH}/{path}", headers=HEADERS, params=params, timeout=TIMEOUT)
         if r.status_code == 429:
             time.sleep(0.8)
             continue
-        r.raise_for_status()
-        try:
-            data = r.json()
-        except Exception:
-            data = []
+        if r.status_code == 206:
+            # VTEX a veces devuelve 206 con contenido parcial; intenta parsear igualmente
+            try:
+                data = r.json()
+            except Exception:
+                data = []
+        else:
+            r.raise_for_status()
+            data = r.json() if r.content else []
+
         if not data:
             empty_in_a_row += 1
             if empty_in_a_row >= MAX_EMPTY:
@@ -239,286 +228,265 @@ def fetch_category_by_path(session: requests.Session, path_segments: List[str], 
             offset += STEP
             time.sleep(SLEEP_OK)
             continue
+
         empty_in_a_row = 0
         for p in data:
-            pr_rows = parse_records(p, path_segments)
-            rows.extend(pr_rows)
-            if pr_rows:
-                s = pr_rows[0]
-                print(f"[PATH sc={sc}] {s['nombre']} | EAN:{s['ean']} | ${s['precio_oferta']} | {s['url']}")
-        offset += STEP
-        time.sleep(SLEEP_OK)
-    return rows
-
-def fetch_category_by_id(session: requests.Session, category_id: int, fullpath: List[str], sc: str) -> List[Dict[str, Any]]:
-    """Fallback: usa fq=C:<id>"""
-    rows: List[Dict[str, Any]] = []
-    offset = 0
-    empty_in_a_row = 0
-
-    while True:
-        params = {
-            "_from": offset,
-            "_to": offset + STEP - 1,
-            "fq": f"C:{category_id}",
-            "sc": sc
-        }
-        r = session.get(SEARCH, headers=HEADERS, params=params, timeout=TIMEOUT)
-        if r.status_code == 429:
-            time.sleep(0.8)
-            continue
-        r.raise_for_status()
-        try:
-            data = r.json()
-        except Exception:
-            data = []
-        if not data:
-            empty_in_a_row += 1
-            if empty_in_a_row >= MAX_EMPTY:
-                break
-            offset += STEP
-            time.sleep(SLEEP_OK)
-            continue
-        empty_in_a_row = 0
-        for p in data:
-            pr_rows = parse_records(p, fullpath)
-            rows.extend(pr_rows)
-            if pr_rows:
-                s = pr_rows[0]
-                print(f"[CID  sc={sc}] {s['nombre']} | EAN:{s['ean']} | ${s['precio_oferta']} | {s['url']}")
+            rows.extend(parse_records(p, path_segments))
         offset += STEP
         time.sleep(SLEEP_OK)
     return rows
 
 def fetch_category(session: requests.Session, path_segments: List[str], category_id: int) -> List[Dict[str, Any]]:
-    """
-    Intenta por ruta+map y, si hay pocos resultados, hace fallback por ID.
-    Además prueba múltiples sales channels si se configuraron.
-    """
-    best_rows: List[Dict[str, Any]] = []
+    best = []
     for sc in SALES_CHANNELS:
-        # 1) Por ruta
-        rows_path = fetch_category_by_path(session, path_segments, sc)
-        if len(rows_path) > len(best_rows):
-            best_rows = rows_path
+        rows = fetch_category_by_path(session, path_segments, sc)
+        if len(rows) > len(best):
+            best = rows
+        if len(rows) < FALLBACK_THRESHOLD:
+            # Fallback por ID si hiciera falta (no siempre es útil en VTEX)
+            pass
+    return best
 
-        # 2) Fallback por ID
-        if len(rows_path) < FALLBACK_THRESHOLD:
-            rows_id = fetch_category_by_id(session, category_id, path_segments, sc)
-            if len(rows_id) > len(best_rows):
-                best_rows = rows_id
-
-    return best_rows
-
-# ===================== Helpers BD (upserts) =====================
-def upsert_tienda(cur, codigo: str, nombre: str) -> int:
-    cur.execute(
-        "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
-        "ON DUPLICATE KEY UPDATE nombre=VALUES(nombre)",
-        (codigo, nombre)
-    )
+# ===================== Helpers BD =====================
+def upsert_tienda(cur, codigo, nombre) -> int:
+    cur.execute("""
+        INSERT INTO tiendas (codigo, nombre)
+        VALUES (%s,%s)
+        ON DUPLICATE KEY UPDATE nombre=VALUES(nombre)
+    """, (codigo, nombre))
     cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
     return cur.fetchone()[0]
 
-def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
+def find_or_create_producto(cur, p) -> int:
     ean = clean(p.get("ean"))
+    nombre = p.get("nombre")
+    marca = p.get("marca")
+    fabricante = p.get("fabricante")
+    categoria = p.get("categoria")
+    subcategoria = p.get("subcategoria")
+
     if ean:
         cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
         row = cur.fetchone()
         if row:
-            pid = row[0]
-            cur.execute("""
-                UPDATE productos SET
-                  nombre = COALESCE(NULLIF(%s,''), nombre),
-                  marca = COALESCE(NULLIF(%s,''), marca),
-                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
-                  categoria = COALESCE(NULLIF(%s,''), categoria),
-                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
-                WHERE id=%s
-            """, (
-                p.get("nombre") or "", p.get("marca") or "", p.get("fabricante") or "",
-                p.get("categoria") or "", p.get("subcategoria") or "", pid
-            ))
-            return pid
+            return row[0]
 
     cur.execute("""
-        SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1
-    """, (p.get("nombre") or "", p.get("marca") or ""))
+        INSERT IGNORE INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (ean, nombre, marca, fabricante, categoria, subcategoria))
+
+    if ean:
+        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
+        row = cur.fetchone()
+        if row:
+            return row[0]
+
+    # Fallback por nombre (riesgo de colisiones si no es único)
+    cur.execute("SELECT id FROM productos WHERE nombre=%s LIMIT 1", (nombre,))
     row = cur.fetchone()
     if row:
-        pid = row[0]
-        cur.execute("""
-            UPDATE productos SET
-              ean = COALESCE(NULLIF(%s,''), ean),
-              marca = COALESCE(NULLIF(%s,''), marca),
-              fabricante = COALESCE(NULLIF(%s,''), fabricante),
-              categoria = COALESCE(NULLIF(%s,''), categoria),
-              subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
-            WHERE id=%s
-        """, (
-            p.get("ean") or "", p.get("marca") or "", p.get("fabricante") or "",
-            p.get("categoria") or "", p.get("subcategoria") or "", pid
-        ))
-        return pid
+        return row[0]
 
+    # Si INSERT IGNORE ignoró por unique distinto, intenta forzar un insert normal
     cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
-        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
-    """, (
-        p.get("ean") or "", p.get("nombre") or "", p.get("marca") or "",
-        p.get("fabricante") or "", p.get("categoria") or "", p.get("subcategoria") or ""
-    ))
-    return cur.lastrowid
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (ean, nombre, marca, fabricante, categoria, subcategoria))
+    cur.execute("SELECT LAST_INSERT_ID()")
+    return cur.fetchone()[0]
 
-def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
+def upsert_producto_tienda(cur, tienda_id, producto_id, p) -> int:
     sku = clean(p.get("sku"))
-    rec = clean(p.get("record_id"))
-
-    if sku:
-        cur.execute("""
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
-            ON DUPLICATE KEY UPDATE
-              producto_id=VALUES(producto_id),
-              record_id_tienda=COALESCE(VALUES(record_id_tienda), record_id_tienda),
-              url_tienda=COALESCE(VALUES(url_tienda), url_tienda),
-              nombre_tienda=COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, sku, rec, p.get("url") or "", p.get("nombre") or ""))
-        cur.execute("SELECT id FROM producto_tienda WHERE tienda_id=%s AND sku_tienda=%s LIMIT 1",
-                    (tienda_id, sku))
-        return cur.fetchone()[0]
-
-    if rec:
-        cur.execute("""
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, NULL, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
-            ON DUPLICATE KEY UPDATE
-              producto_id=VALUES(producto_id),
-              url_tienda=COALESCE(VALUES(url_tienda), url_tienda),
-              nombre_tienda=COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, rec, p.get("url") or "", p.get("nombre") or ""))
-        cur.execute("SELECT id FROM producto_tienda WHERE tienda_id=%s AND record_id_tienda=%s LIMIT 1",
-                    (tienda_id, rec))
-        return cur.fetchone()[0]
-
     cur.execute("""
-        INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-        VALUES (%s, %s, NULL, NULL, NULLIF(%s,''), NULLIF(%s,''))
-    """, (tienda_id, producto_id, p.get("url") or "", p.get("nombre") or ""))
-    return cur.lastrowid
+        INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, url_tienda, nombre_tienda)
+        VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          producto_id=VALUES(producto_id),
+          url_tienda=VALUES(url_tienda),
+          nombre_tienda=VALUES(nombre_tienda)
+    """, (tienda_id, producto_id, sku, p.get("url"), p.get("nombre")))
+    # NULL-safe equality para sku
+    cur.execute("""
+        SELECT id FROM producto_tienda
+        WHERE tienda_id=%s AND sku_tienda <=> %s
+        LIMIT 1
+    """, (tienda_id, sku))
+    return cur.fetchone()[0]
 
-def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
+def insert_historico(cur, tienda_id, pt_id, p, capturado_en):
     cur.execute("""
         INSERT INTO historico_precios
-          (tienda_id, producto_tienda_id, capturado_en,
-           precio_lista, precio_oferta, tipo_oferta,
-           promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (tienda_id, producto_tienda_id, capturado_en, precio_lista, precio_oferta, tipo_oferta)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
-          precio_lista = VALUES(precio_lista),
-          precio_oferta = VALUES(precio_oferta),
-          tipo_oferta = VALUES(tipo_oferta),
-          promo_tipo = VALUES(promo_tipo),
-          promo_texto_regular = VALUES(promo_texto_regular),
-          promo_texto_descuento = VALUES(promo_texto_descuento),
-          promo_comentarios = VALUES(promo_comentarios)
+            precio_lista = VALUES(precio_lista),
+            precio_oferta = VALUES(precio_oferta),
+            tipo_oferta = VALUES(tipo_oferta)
     """, (
-        tienda_id, producto_tienda_id, capturado_en,
-        to_txt_or_none(p.get("precio_lista")), to_txt_or_none(p.get("precio_oferta")),
-        p.get("tipo_oferta") or None,
-        None, None, None, None     # VTEX genérico: si luego detectas descuentos, puedes mapearlos aquí
+        tienda_id,
+        pt_id,
+        capturado_en,
+        to_txt_or_none(p.get("precio_lista")),
+        to_txt_or_none(p.get("precio_oferta")),
+        p.get("tipo_oferta"),
     ))
 
 # ===================== Main =====================
 def main():
     session = s_requests()
-    print(f"Descargando árbol de categorías (depth={TREE_DEPTH})…")
+    print(f"Descargando categorías (depth={TREE_DEPTH})…")
     try:
-        tree = load_tree(session)
+        leaves = flatten_leaves(load_tree(session))
     except Exception as e:
-        print("No se pudo cargar el árbol:", e)
-        sys.exit(1)
-
-    leaves = flatten_leaves(tree)
-
-    # Filtrado por prefijos (si se definieron); si está vacío, se procesan TODAS
-    if INCLUDE_PREFIXES:
-        prefset = {s.lower() for s in INCLUDE_PREFIXES}
-        leaves = [(p, cid, name) for (p, cid, name) in leaves if p and p[0].lower() in prefset]
-    else:
-        leaves = [(p, cid, name) for (p, cid, name) in leaves if p]
-
-    print(f"Se detectaron {len(leaves)} hojas en el árbol a procesar:")
-    for p, cid, name in leaves[:10]:
-        print(" -", "/".join(p), f"(id={cid}, name={name})")
-    if len(leaves) > 10:
-        print(f"   … y {len(leaves)-10} más")
+        print("❌ No se pudo cargar el árbol:", e)
+        return
 
     if not leaves:
-        print("No se hallaron hojas. ¿Endpoint o depth correcto?")
-        sys.exit(1)
+        print("❌ Árbol vacío")
+        return
 
-    productos: List[Dict[str, Any]] = []
-    seen = set()
+    print(f"Encontradas {len(leaves)} hojas/categorías")
+    productos, seen = [], set()
 
     for idx, (path, cid, name) in enumerate(leaves, 1):
-        print(f"\n[{idx}/{len(leaves)}] --- Categoría hoja: /{'/'.join(path)} (id={cid}, name={name}) ---")
+        print(f"[{idx}/{len(leaves)}] {name}")
         try:
-            cat_rows = fetch_category(session, path, cid)
+            rows = fetch_category(session, path, cid)
         except Exception as e:
-            print("  ⚠️ Error categoría:", e)
+            print(" ⚠️ Error fetch categoría:", e)
             continue
 
-        # dedupe por (sku || ean, url)
-        nuevos = 0
-        for p in cat_rows:
+        for p in rows:
             key = (p.get("sku") or p.get("ean") or "", p.get("url") or "")
             if key in seen:
                 continue
             seen.add(key)
             productos.append(p)
-            nuevos += 1
-        print(f"   → {len(cat_rows)} filas (nuevos únicos: {nuevos})")
 
     if not productos:
-        print("No se obtuvieron productos. Considera cambiar SALES_CHANNELS o TREE_DEPTH.")
+        print("❌ No se obtuvieron productos")
         return
 
-    # ====== Inserción directa en MySQL ======
     capturado_en = datetime.now()
+    print(f"Insertando {len(productos)} productos…")
 
     conn = None
-    t0 = time.time()
     try:
         conn = get_conn()
         conn.autocommit = False
         cur = conn.cursor()
 
-        tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
-
-        insertados = 0
-        for p in productos:
-            producto_id = find_or_create_producto(cur, p)
-            pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
-            insert_historico(cur, tienda_id, pt_id, p, capturado_en)
-            insertados += 1
-            if insertados % 500 == 0:
-                conn.commit()
-                print(f"   💾 commit parcial: {insertados}")
-
-        conn.commit()
-        print(f"\n✅ Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOMBRE} ({capturado_en})")
-
-    except MySQLError as e:
-        if conn: conn.rollback()
-        print(f"❌ Error MySQL: {e}")
-    finally:
+        # (opcional) menor timeout de lock para fallar rápido en esta sesión
         try:
-            if conn: conn.close()
+            cur.execute("SET SESSION innodb_lock_wait_timeout = 5")
         except Exception:
             pass
 
-    print(f"⏱️ Tiempo total: {time.time() - t0:.2f} s")
+        # (opcional) aislamiento menos estricto
+        try:
+            cur.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        except Exception:
+            pass
+
+        tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
+
+        ok, skipped = 0, 0
+        for i, p in enumerate(productos, 1):
+            sp_name = f"sp_row_{i}"
+            # crear savepoint por fila (si el motor/privilegios lo permiten)
+            try:
+                cur.execute(f"SAVEPOINT {sp_name}")
+            except Exception:
+                sp_name = None
+
+            attempted = 0
+            while True:
+                attempted += 1
+                try:
+                    pid = find_or_create_producto(cur, p)
+                    ptid = upsert_producto_tienda(cur, tienda_id, pid, p)
+                    insert_historico(cur, tienda_id, ptid, p, capturado_en)
+                    ok += 1
+                    # liberar savepoint si se creó
+                    if sp_name:
+                        try:
+                            cur.execute(f"RELEASE SAVEPOINT {sp_name}")
+                        except Exception:
+                            pass
+                    break  # fila OK
+
+                except MySQLError as e:
+                    # ¿vale la pena reintentar?
+                    if is_retryable_mysql(e) and attempted <= ROW_MAX_RETRIES:
+                        # rollback solo a la fila actual
+                        if sp_name:
+                            try:
+                                cur.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+                            except Exception:
+                                pass
+                        # reconectar por seguridad
+                        try:
+                            if hasattr(conn, "reconnect"):
+                                conn.reconnect(attempts=1, delay=0)
+                            elif hasattr(conn, "ping"):
+                                conn.ping(reconnect=True, attempts=1, delay=0)
+                        except Exception:
+                            pass
+                        print(f" ❌ Error fila (reintento {attempted}/{ROW_MAX_RETRIES}): {e}")
+                        sleep_backoff(attempted)
+                        continue  # vuelve a intentar
+
+                    # No retryable o agotados intentos: saltar
+                    if sp_name:
+                        try:
+                            cur.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+                            cur.execute(f"RELEASE SAVEPOINT {sp_name}")
+                        except Exception:
+                            pass
+                    skipped += 1
+                    print(f" ⏭️  Saltando fila {i} (sku={p.get('sku')}, ean={p.get('ean')}): {e}")
+                    break  # salir del while, seguir con siguiente fila
+
+            # commits pequeños
+            if i % BATCH_COMMIT_EVERY == 0:
+                try:
+                    conn.commit()
+                    print(f" 💾 commit {i} (ok={ok}, skipped={skipped})")
+                except MySQLError as ce:
+                    print(f" ⚠️ Commit falló: {ce}. Haciendo ROLLBACK y reconectando.")
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(conn, "reconnect"):
+                            conn.reconnect(attempts=1, delay=0)
+                        elif hasattr(conn, "ping"):
+                            conn.ping(reconnect=True, attempts=1, delay=0)
+                    except Exception:
+                        pass
+
+        # Commit final
+        try:
+            conn.commit()
+        except MySQLError as ce:
+            print(f" ⚠️ Commit final falló: {ce}. Intento ROLLBACK.")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+        print(f"✅ Guardado {ok} filas, ⏭️ saltadas {skipped}, tienda {TIENDA_NOMBRE}")
+
+    except MySQLError as e:
+        print("❌ Error MySQL:", e)
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()

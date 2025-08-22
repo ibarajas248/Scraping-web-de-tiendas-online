@@ -28,23 +28,31 @@ import numpy as np
 import pandas as pd
 from bs4 import BeautifulSoup
 
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver import Chrome
+
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.webdriver import WebDriver as Chrome
+
 from mysql.connector import Error as MySQLError
+
+import sys, os
+
 # añade la carpeta raíz (2 niveles más arriba) al sys.path
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+)
 
-
-from base_datos import get_conn  # <- tu conexión MySQL
+from base_datos import get_conn   # <- tu conexión MySQL
 
 # ===================== Config =====================
-BASE_URL = "https://www.comodinencasa.com.ar/almacen"
+BASE_URL = "https://www.comodinencasa.com.ar/electro"
+
 
 
 TIENDA_CODIGO = "comodin"
@@ -58,25 +66,51 @@ OUT_XLSX = "comodin_items.xlsx"   # opcional, deja la export
 SAVE_EXCEL = True
 
 # ===================== Selenium =====================
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.webdriver import WebDriver as Chrome
+
 def make_driver(headless: bool = True) -> Chrome:
     opts = Options()
     if headless:
-        opts.add_argument("--headless=new")
+        opts.add_argument("--headless")   # modo headless clásico → más estable en VPS
+
+    # Flags críticos en VPS
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
-    opts.add_argument("--window-size=1400,1000")
+    opts.add_argument("--window-size=1920,1080")
     opts.add_argument("--lang=es-AR")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+
+    # User-Agent realista (ajústalo al de tu navegador local)
     opts.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/126.0.0.0 Safari/537.36"
+        "Chrome/126.0.6478.182 Safari/537.36"
     )
-    service = Service(ChromeDriverManager().install())
+
+    # Stealth básico
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option("useAutomationExtension", False)
+
+    # Fuerza usar Chromium del sistema
+    opts.binary_location = "/usr/bin/chromium-browser"
+    service = Service("/usr/bin/chromedriver")
+
     driver = webdriver.Chrome(service=service, options=opts)
+
+    # Parche para ocultar webdriver
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    })
+
     driver.set_page_load_timeout(60)
     driver.implicitly_wait(5)
     return driver
+
+
 
 def wait_for_any_product(driver: Chrome, timeout: int = 20):
     WebDriverWait(driver, timeout).until(

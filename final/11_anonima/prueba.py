@@ -4,12 +4,11 @@
 """
 La Anónima (categoría -> detalle) → MySQL, sin Selenium (httpx + BS4)
 
-- Usa httpx + BeautifulSoup.
-- Inserta/actualiza datos en MySQL.
-- Soporte para proxy vía variable de entorno RES_PROXY.
+- Reutiliza la misma lógica de inserción que tu script con Selenium.
+- Lee HTML server-rendered (no hay que ejecutar JS).
 """
 
-import re, time, html, random, os, sys
+import re, time, html, random
 from typing import List, Dict, Optional, Any, Tuple
 from urllib.parse import urljoin
 from datetime import datetime
@@ -17,12 +16,8 @@ from datetime import datetime
 import numpy as np
 import httpx
 from bs4 import BeautifulSoup
-from mysql.connector import Error as MySQLError
 
-# añade la carpeta raíz (2 niveles más arriba) al sys.path
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-)
+from mysql.connector import Error as MySQLError
 from base_datos import get_conn  # tu función de conexión
 
 # ================= Config scraping =================
@@ -30,21 +25,16 @@ BASE = "https://supermercado.laanonimaonline.com"
 START = f"{BASE}/almacen/n1_1/pag/1/"
 
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/123.0.0.0 Safari/537.36",
     "Accept-Language": "es-AR,es;q=0.9",
-    "Connection": "keep-alive",
-    "Referer": "https://supermercado.laanonimaonline.com/",
 }
 TIMEOUT = 20.0
 RETRY = 3
-SLEEP_BETWEEN_PRODUCTS = (0.25, 0.6)
+SLEEP_BETWEEN_PRODUCTS = (0.25, 0.6)  # min, max
 SLEEP_BETWEEN_PAGES = (0.6, 1.2)
-MAX_PAGES: Optional[int] = None
+MAX_PAGES: Optional[int] = None  # None = recorrer todas
 
 TIENDA_CODIGO = "laanonima"
 TIENDA_NOMBRE = "La Anónima Online"
@@ -56,10 +46,8 @@ def get(client: httpx.Client, url: str) -> httpx.Response:
             r = client.get(url, timeout=TIMEOUT)
             if r.status_code == 200:
                 return r
-            else:
-                print(f"[WARN] {url} -> {r.status_code}")
-        except httpx.HTTPError as e:
-            print(f"[ERROR] {url} -> {e}")
+        except httpx.HTTPError:
+            pass
         time.sleep(0.5 * (i + 1))
     raise RuntimeError(f"No se pudo GET {url}")
 
@@ -94,22 +82,27 @@ def get_next_page_url(current_url: str, html_source: str) -> Optional[str]:
     if not m:
         return None
     cur = int(m.group(1))
+    # si existe un link explícito, úsalo
     a = soup.select_one(f"a[href*='/pag/{cur + 1}/']")
     if a and a.has_attr("href"):
         return urljoin(BASE, a["href"])
-    return re.sub(r"/pag/\d+/", f"/pag/{cur + 1}/", current_url)
+    # fallback: incrementa
+    guess = re.sub(r"/pag/\d+/", f"/pag/{cur + 1}/", current_url)
+    return guess
 
 def parse_detail(html_source: str, url: str) -> Dict[str, Any]:
     soup = BeautifulSoup(html_source, "lxml")
+
     nombre = text_or_none(soup.select_one("h1.titulo_producto.principal"))
 
-    cod_txt = text_or_none(soup.select_one("div.codigo"))
+    cod_txt = text_or_none(soup.select_one("div.codigo"))  # "Cod. 3115185"
     sku = None
     if cod_txt:
         m = re.search(r"(\d+)", cod_txt)
         if m:
             sku = m.group(1)
 
+    # a veces en inputs ocultos
     sku_hidden = soup.select_one("input[id^='sku_item_imetrics_'][value]")
     if sku_hidden and not sku:
         sku = sku_hidden.get("value")
@@ -123,10 +116,13 @@ def parse_detail(html_source: str, url: str) -> Dict[str, Any]:
     marca = marca_hidden.get("value") if marca_hidden else None
 
     cat_hidden = soup.select_one("input[id^='categorias_item_imetrics_'][value]")
-    categorias = html.unescape(cat_hidden.get("value") or "").strip() if cat_hidden else None
+    categorias = None
+    if cat_hidden:
+        categorias = html.unescape(cat_hidden.get("value") or "").strip()
 
     descripcion = text_or_none(soup.select_one("div.descripcion div.texto"))
 
+    # precios
     precio_lista = None
     caja_lista = soup.select_one("div.precio.anterior")
     if caja_lista:
@@ -141,6 +137,7 @@ def parse_detail(html_source: str, url: str) -> Dict[str, Any]:
     if plus_node:
         precio_plus = parse_price_text(plus_node.get_text(" ", strip=True))
 
+    # imágenes
     imagenes = []
     for im in soup.select("#img_producto img[src], #galeria_img img[src]"):
         src = im.get("src")
@@ -202,7 +199,7 @@ def grab_category(client: httpx.Client, start_url: str) -> List[Dict[str, Any]]:
 
     return out
 
-# ================= MySQL helpers =================
+# ================= MySQL helpers (idénticos a tu versión) =================
 def clean_txt(x: Any) -> Optional[str]:
     if x is None: return None
     s = str(x).strip()
@@ -235,6 +232,7 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     return cur.fetchone()[0]
 
 def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
+    ean = None
     nombre = clean_txt(r.get("nombre"))
     marca  = clean_txt(r.get("marca"))
     cat, sub = split_categoria(clean_txt(r.get("categorias")))
@@ -340,25 +338,15 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
 
 # ================= Orquestación =================
 def main():
-    print("[INFO] Scrapeando La Anónima (sin Selenium, con soporte proxy)…")
-
-    proxy_url = os.getenv("RES_PROXY")
-    proxies = {"http://": proxy_url, "https://": proxy_url} if proxy_url else None
-    if proxies:
-        print(f"[INFO] Usando proxy: {proxy_url}")
-
+    print("[INFO] Scrapeando La Anónima (sin Selenium)…")
     rows: List[Dict[str, Any]] = []
-    with httpx.Client(headers=HEADERS, http2=False, follow_redirects=True, proxy=proxy_url) as client:
-
-        try:
-            _ = get(client, BASE + "/")
-        except Exception as e:
-            print(f"[WARN] Home falló: {e}")
+    with httpx.Client(headers=HEADERS, http2=True, follow_redirects=True) as client:
+        # (opcional) setear cookie de OneTrust si el banner bloquea algo en tu región
+        # client.cookies.set("OptanonConsent", "isIABGlobal=false&datestamp=...;")
         rows = grab_category(client, START)
 
     if not rows:
-        print("[INFO] No se extrajeron registros.")
-        return
+        print("[INFO] No se extrajeron registros."); return
 
     capturado_en = datetime.now()
     conn = None
