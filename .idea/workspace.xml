@@ -4,38 +4,16 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="prueba interfaz_2">
-      <change afterPath="$PROJECT_DIR$/cron_manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/11_anonima/anonima_proxy.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/11_anonima/prueba.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/12_lacoopeEnCasa/lacoopeencasa.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/13_gallega/gallega1.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/14_la_reina/reinaMysql.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/16_vea/veaMysql.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/3_comodin/bebidas.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/3_comodin/congelados.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/3_comodin/electro.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/3_comodin/frescos.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/3_comodin/golosinas.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/3_comodin/hogar.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/3_comodin/libreria.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/3_comodin/limpieza.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/Toledo/ToledoMySQL.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/readme.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/kilbel/kilbel.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/pruebas.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="adelantos_streamlit">
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/lacteos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/mascotas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/mundo-bebe.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/panaderia.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/perfumeria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/saludables.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/sin-gluten.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/consultas.sql" beforeDir="false" afterPath="$PROJECT_DIR$/consultas.sql" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/11_anonima/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/almacen.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/11_anonima/almacen_playwright.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/almacen_playwright.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/1_carrefour/carrefour.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/1_carrefour/carrefour.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/1_carrefour/carrefour_MySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/1_carrefour/carrefour_MySQL.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/comodinMySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/almacen.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/9_hiperlibertad/hiperlibertad_Mysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/9_hiperlibertad/hiperlibertad_Mysql.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/comodin/comodinMySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/comodin/comodinMySQL.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/laGallega/mysql/gallega1.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/laGallega/mysql/gallega1.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/lareinaonline/reinaMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/lareinaonline/reinaMysql.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/pruebas_generales/anonima.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/almacen.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -121,6 +99,7 @@
     "Python.libreria.executor": "Run",
     "Python.localidadprueba.executor": "Run",
     "Python.main.executor": "Run",
+    "Python.mascotas.executor": "Run",
     "Python.prueba.executor": "Run",
     "Python.prueba2.executor": "Run",
     "Python.prueba3.executor": "Run",
@@ -274,7 +253,15 @@
       <option name="project" value="LOCAL" />
       <updated>1755711865560</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="adelantos_streamlit">
+      <option name="closed" value="true" />
+      <created>1755837388944</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1755837388944</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -286,6 +273,7 @@
     <MESSAGE value="ajustes_bases_de_datos2" />
     <MESSAGE value="prueba interfaz" />
     <MESSAGE value="prueba interfaz_2" />
-    <option name="LAST_COMMIT_MESSAGE" value="prueba interfaz_2" />
+    <MESSAGE value="adelantos_streamlit" />
+    <option name="LAST_COMMIT_MESSAGE" value="adelantos_streamlit" />
   </component>
 </project>
