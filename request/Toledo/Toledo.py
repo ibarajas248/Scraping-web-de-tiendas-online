@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Toledo Digital (VTEX) — Scraper catálogo completo a CSV/XLSX
+17_Toledo Digital (VTEX) — Scraper catálogo completo a CSV/XLSX
 
 Salida por fila (SKU):
 EAN | Código Interno | Nombre Producto | Categoría | Subcategoría | Marca | Fabricante |

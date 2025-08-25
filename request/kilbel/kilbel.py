@@ -2,446 +2,328 @@
 # -*- coding: utf-8 -*-
 
 """
-Kilbel (kilbelonline.com) – Scraper mixto:
-  1) Recorre categorías (n1_/n2_/n3_) y pagina
-  2) (Opcional) Autocompletado a-z0-9 para traer coincidencias extra
-  3) Visita detalle para extraer COD./SKU tienda y datos adicionales
-  4) Exporta CSV y XLSX con esquema estándar
+Kilbel (kilbelonline.com) – Almacén n1_1
+Scraper con impresión detallada de todo lo encontrado y exportación a Excel.
 
-Requisitos:
-  pip install requests beautifulsoup4 lxml pandas tenacity
-
-Uso:
-  python kilbel_scraper.py --modo ambos        # categorías + autocompletar
-  python kilbel_scraper.py --modo categorias   # solo categorías
-  python kilbel_scraper.py --modo auto         # solo autocompletar
+- Recorre /almacen/n1_1/pag/1/, /2/, /3/ ... hasta que no haya productos.
+- De cada card del listado toma: CódigoInterno (prod_####), nombre, URL, imagen,
+  SKU/record id de tienda (id_item_####), precios (lista/oferta), promo (XX% OFF),
+  precio por Kg y precio sin impuestos si aparecen.
+- Entra al detalle y completa: COD ####, nombre, precios, ruta de categorías,
+  EAN (si aparece), precio por Kg y sin impuestos (si cambian), etc.
+- Imprime TODO en consola y guarda Excel al final.
 """
 
 import re
 import time
-import json
-import string
+import random
 import argparse
-from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional, Tuple, Set
-from urllib.parse import urljoin, urlparse
+from typing import List, Dict, Optional
+from urllib.parse import urljoin
 
-import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import pandas as pd
 
-BASE = "https://www.kilbelonline.com/"
+# ------------------ Config ------------------
+BASE = "https://www.kilbelonline.com"
+LISTING_FMT = "/almacen/n1_1/pag/{page}/"
+
+TIMEOUT = 25
+RETRIES = 3
+SLEEP_ITEM = (0.35, 0.8)    # espera entre productos (rand)
+SLEEP_PAGE = (0.8, 1.6)     # espera entre páginas (rand)
+
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
 }
 
-AUTO_URL = "https://www.kilbelonline.com/paginas/buscador_autocompletar.php?term={term}"
-SLEEP = (0.4, 0.9)  # (min, max) segundos entre requests
-TIMEOUT = 25
+# ------------------ Utilidades ------------------
+def clean(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip())
 
-# ---------- Helpers de red ----------
-class SoftHTTPError(Exception):
-    pass
-
-def _sleep():
-    import random
-    time.sleep(random.uniform(*SLEEP))
-
-def make_session() -> requests.Session:
-    s = requests.Session()
-    s.headers.update(HEADERS)
-    s.max_redirects = 5
-    return s
-
-@retry(
-    reraise=True,
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=8),
-    retry=retry_if_exception_type((requests.RequestException, SoftHTTPError)),
-)
-def GET(session: requests.Session, url: str, **kwargs) -> requests.Response:
-    r = session.get(url, timeout=TIMEOUT, **kwargs)
-    if r.status_code >= 500:
-        raise SoftHTTPError(f"HTTP {r.status_code} {url}")
-    return r
-
-# ---------- Modelo ----------
-@dataclass
-class Item:
-    ean: Optional[str]
-    codigo_interno: Optional[str]  # COD./SKU tienda
-    nombre: Optional[str]
-    categoria: Optional[str]
-    subcategoria: Optional[str]
-    marca: Optional[str]
-    fabricante: Optional[str]
-    precio_lista: Optional[float]
-    precio_oferta: Optional[float]
-    tipo_oferta: Optional[str]
-    url: Optional[str]
-
-def num(x: Optional[str]) -> Optional[float]:
-    if not x:
+def parse_price(s: Optional[str]) -> Optional[float]:
+    """Convierte '$ 16.200,00' -> 16200.00"""
+    if not s:
         return None
+    s = re.sub(r"[^\d,.\-]", "", s)
+    s = s.replace(".", "").replace(",", ".")
     try:
-        # Remueve símbolos comunes
-        x = re.sub(r"[^\d,.\-]", "", x)
-        # Normaliza coma decimal si aplica
-        if x.count(",") == 1 and x.count(".") == 0:
-            x = x.replace(",", ".")
-        # Si hay separadores de miles mezclados, deja el último como decimal
-        if x.count(".") > 1:
-            x = x.replace(".", "")
-        return float(x)
+        return float(s)
     except Exception:
         return None
 
-# ---------- Descubrimiento de categorías ----------
-def is_category_href(href: str) -> bool:
-    # Kilbel usa rutas como /perfumeria/n1_3/, /bebidas/n2_123/, /gaseosas/n3_456/
-    return bool(re.search(r"/n[123]_\d+/?$", href))
+def get_session() -> requests.Session:
+    s = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(max_retries=RETRIES)
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
+    return s
 
-def discover_categories(session: requests.Session) -> List[str]:
-    r = GET(session, BASE)
-    r.raise_for_status()
-    soup = BeautifulSoup(r.text, "lxml")
-    cats: Set[str] = set()
-
-    # Busca todos los enlaces que parezcan categorías
-    for a in soup.select("a[href]"):
-        href = a["href"].strip()
-        if href.startswith("http"):
-            url = href
-        else:
-            url = urljoin(BASE, href)
-
-        path = urlparse(url).path
-        if is_category_href(path):
-            cats.add(url)
-
-    # También intenta descubrir subniveles desde cada n1_
-    new_found = True
-    visited = set()
-    while new_found:
-        new_found = False
-        for url in list(cats):
-            if url in visited:
-                continue
-            visited.add(url)
-            try:
-                _sleep()
-                r = GET(session, url)
-                if r.status_code != 200:
-                    continue
-                soup = BeautifulSoup(r.text, "lxml")
-                for a in soup.select("a[href]"):
-                    href = a["href"].strip()
-                    u = urljoin(BASE, href)
-                    if is_category_href(urlparse(u).path) and u not in cats:
-                        cats.add(u)
-                        new_found = True
-            except Exception:
-                pass
-
-    return sorted(cats)
-
-# ---------- Listado: productos por categoría (con paginación) ----------
-def extract_product_links_from_listing(html: str) -> List[str]:
-    soup = BeautifulSoup(html, "lxml")
-    links = []
-
-    # 1) tarjetas de producto típicas
-    for a in soup.select("a[href].producto, .product a[href], .producto a[href]"):
-        u = a.get("href", "").strip()
-        if u:
-            links.append(u)
-
-    # 2) fallback: cualquier enlace con /producto/ en la ruta
-    for a in soup.select("a[href]"):
-        u = a["href"].strip()
-        if "/producto/" in u or "/productos/" in u:
-            links.append(u)
-
-    # normaliza a URLs absolutas y filtra duplicados
-    norm = []
-    seen = set()
-    for u in links:
-        absu = urljoin(BASE, u)
-        if absu not in seen:
-            seen.add(absu)
-            norm.append(absu)
-    return norm
-
-def find_next_page(html: str, current_url: str) -> Optional[str]:
-    soup = BeautifulSoup(html, "lxml")
-    # intenta localizar botón/enlace de siguiente
-    candidates = soup.select("a[href].siguiente, a[href].next, a[href*='?pagina='], a[href*='&pagina=']")
-    for a in candidates:
-        u = urljoin(current_url, a.get("href", ""))
-        if u and u != current_url:
-            return u
-    # fallback: ninguna paginación visible
+def get_soup(session: requests.Session, url: str) -> Optional[BeautifulSoup]:
+    for intent in range(1, RETRIES + 1):
+        try:
+            r = session.get(url, headers=HEADERS, timeout=TIMEOUT)
+            if r.status_code == 200:
+                return BeautifulSoup(r.text, "lxml")
+            if r.status_code in (403, 404):
+                print(f"    ⚠ {r.status_code} en {url} (paro de intentar)")
+                return None
+            print(f"    ⚠ HTTP {r.status_code} en {url}, reintento {intent}/{RETRIES}...")
+            time.sleep(0.8)
+        except requests.RequestException as e:
+            print(f"    ⚠ Error de red en {url}: {e} (reintento {intent}/{RETRIES})")
+            time.sleep(0.8)
     return None
 
-def crawl_listing(session: requests.Session, category_url: str) -> List[str]:
-    urls: List[str] = []
-    seen_pages = set()
-    url = category_url
-    page = 0
+# ------------------ Listado ------------------
+def parse_listing_products(soup: BeautifulSoup) -> List[Dict]:
+    productos = []
+    cards = soup.select("div.producto[id^=prod_]")
+    print(f"  • Cards encontradas en listado: {len(cards)}")
 
-    for _ in range(200):  # cap de seguridad
-        if url in seen_pages:
-            break
-        seen_pages.add(url)
-        _sleep()
-        r = GET(session, url)
-        if r.status_code != 200:
-            break
-        page += 1
-        product_links = extract_product_links_from_listing(r.text)
-        print(f"   📄 Página {page}: {len(product_links)} links encontrados")
-        urls.extend(product_links)
-        nxt = find_next_page(r.text, url)
-        if not nxt:
-            break
-        url = nxt
+    for idx, prod in enumerate(cards, 1):
+        pid_match = re.search(r"prod_(\d+)", prod.get("id", ""))
+        codigo_interno = pid_match.group(1) if pid_match else None
 
-    # único
-    return sorted(set(urls))
-# ---------- Detalle: extracción por producto ----------
-def parse_detail(html: str, url: str, cat_hint: Tuple[str, str]) -> Item:
-    soup = BeautifulSoup(html, "lxml")
+        a = prod.select_one(".col1_listado .titulo02 a")
+        nombre_list = clean(a.get_text()) if a else None
+        href = a.get("href") if a else None
+        url_detalle = urljoin(BASE, href) if href else None
 
-    # nombre
-    nombre = None
-    for sel in ["h1", ".nombre-producto", ".product-name", "h1.titulo", ".detalle-producto h1"]:
-        el = soup.select_one(sel)
-        if el and el.get_text(strip=True):
-            nombre = el.get_text(strip=True)
-            break
+        img = prod.select_one(".ant_imagen img")
+        img_url = img.get("data-src") or (img.get("src") if img else None)
 
-    # marca (si viene rotulada)
-    marca = None
-    for lab in soup.select("li, .caracteristica, .atributo, .spec li"):
-        txt = lab.get_text(" ", strip=True).lower()
-        if "marca" in txt:
-            # intenta extraer valor después de ':'
-            m = re.search(r"marca[:\s]+(.+)", txt)
+        sku_input = prod.select_one(f"input#id_item_{codigo_interno}") if codigo_interno else None
+        sku_tienda = sku_input.get("value") if sku_input else None
+
+        precio_lista_list = None
+        precio_oferta_list = None
+        el_prev = prod.select_one(".precio_complemento .precio.anterior")
+        if el_prev:
+            precio_lista_list = parse_price(el_prev.get_text())
+
+        el_actual = prod.select_one(".precio_complemento .precio.aux1")
+        if el_actual:
+            precio_oferta_list = parse_price(el_actual.get_text())
+
+        promo = None
+        promo_span = prod.select_one("span.promocion")
+        if promo_span:
+            m = re.search(r"promocion(\d+)-off", " ".join(promo_span.get("class", [])))
             if m:
-                marca = m.group(1).strip()
-            else:
-                # último token
-                parts = txt.split()
-                if parts:
-                    marca = parts[-1].strip()
-            break
+                promo = f"{m.group(1)}% OFF"
 
-    # COD./SKU tienda (suele aparecer como "COD." o "Código:")
-    codigo_interno = None
-    candidates = soup.find_all(string=re.compile(r"(cod\.|código|sku)", re.I))
-    for t in candidates:
-        frag = t.strip()
-        # Busca valor cercano
-        parent_text = t.parent.get_text(" ", strip=True) if hasattr(t, "parent") else frag
-        m = re.search(r"(?:cod\.|código|sku)[\s:]+([A-Z0-9\-\._/]+)", parent_text, flags=re.I)
+        precio_x_kg_list = None
+        sin_imp_list = None
+        for cod in prod.select(".precio_complemento .codigo"):
+            txt = cod.get_text(" ", strip=True)
+            if "Precio por" in txt:
+                precio_x_kg_list = parse_price(txt)
+            if "imp" in txt.lower():  # "Imp.Nac." / "impuestos"
+                sin_imp_list = parse_price(txt)
+
+        print(
+            f"    [{idx:03}] LISTADO  "
+            f"CODINT={codigo_interno}  "
+            f"SKU_TIENDA={sku_tienda}  "
+            f"NOMBRE='{nombre_list}'  "
+            f"URL={url_detalle}"
+        )
+        print(
+            f"           PRECIOS listado -> lista={precio_lista_list}  "
+            f"oferta={precio_oferta_list}  promo={promo}  "
+            f"porKg={precio_x_kg_list}  sinImp={sin_imp_list}"
+        )
+
+        productos.append({
+            "CodigoInterno_list": codigo_interno,
+            "NombreProducto_list": nombre_list,
+            "URL": url_detalle,
+            "Imagen": img_url,
+            "SKU_Tienda": sku_tienda,
+            "RecordId_Tienda": sku_tienda,
+            "PrecioLista_list": precio_lista_list,
+            "PrecioOferta_list": precio_oferta_list,
+            "TipoOferta": promo,
+            "PrecioPorKg_list": precio_x_kg_list,
+            "PrecioSinImpuestos_list": sin_imp_list,
+        })
+    return productos
+
+# ------------------ Detalle ------------------
+def parse_detail(session: requests.Session, url: str) -> Dict:
+    res = {
+        "NombreProducto": None,
+        "CodigoInterno_det": None,
+        "PrecioLista": None,
+        "PrecioOferta": None,
+        "PrecioPorKg": None,
+        "PrecioSinImpuestos": None,
+        "Categoria": None,
+        "Subcategoria": None,
+        "Subsubcategoria": None,
+        "EAN": None,
+        "Marca": None,
+        "Fabricante": None,
+    }
+    soup = get_soup(session, url)
+    if not soup:
+        print("           ⚠ No pude cargar el detalle.")
+        return res
+
+    h1 = soup.select_one("#detalle_producto h1.titulo_producto")
+    if h1:
+        res["NombreProducto"] = clean(h1.get_text())
+
+    cod_box = soup.find(string=re.compile(r"COD\.\s*\d+"))
+    if cod_box:
+        m = re.search(r"COD\.\s*(\d+)", cod_box)
         if m:
-            codigo_interno = m.group(1).strip()
+            res["CodigoInterno_det"] = m.group(1)
+
+    prev = soup.select_one("#detalle_producto .precio.anterior")
+    if prev:
+        res["PrecioLista"] = parse_price(prev.get_text())
+
+    act = soup.select_one("#detalle_producto .precio.aux1")
+    if act:
+        res["PrecioOferta"] = parse_price(act.get_text())
+
+    for div in soup.select("#detalle_producto .codigo"):
+        t = div.get_text(" ", strip=True)
+        if "Precio por" in t:
+            res["PrecioPorKg"] = parse_price(t)
+        if "sin impuestos" in t.lower() or "imp.nac" in t.lower():
+            res["PrecioSinImpuestos"] = parse_price(t)
+
+    # Ruta de categorías del onclick agregarLista_dataLayerPush('Almacén  > Infusiones  > Café')
+    onclick_node = soup.find(attrs={"onclick": re.compile(r"agregarLista_dataLayerPush")})
+    if onclick_node:
+        on = onclick_node.get("onclick", "")
+        m = re.search(r"agregarLista_dataLayerPush\('([^']+)'", on)
+        if m:
+            ruta = clean(m.group(1).replace("&gt;", ">"))
+            partes = [clean(p) for p in ruta.split(">") if p.strip()]
+            if partes:
+                res["Categoria"] = partes[0] if len(partes) > 0 else None
+                res["Subcategoria"] = partes[1] if len(partes) > 1 else None
+                res["Subsubcategoria"] = partes[2] if len(partes) > 2 else None
+
+    # EAN: heurística -> número de 13 dígitos en el texto completo
+    m_ean = re.search(r"\b(\d{13})\b", soup.get_text(" ", strip=True))
+    if m_ean:
+        res["EAN"] = m_ean.group(1)
+
+    # Marca / Fabricante: si el sitio los publica con etiquetas, agregá aquí los selectores.
+    # Por defecto quedan None.
+    return res
+
+# ------------------ Runner ------------------
+def run(max_pages: int = 300, start_page: int = 1, outfile: str = "kilbel_almacen_n1_1.xlsx"):
+    session = get_session()
+    resultados: List[Dict] = []
+    vistos = set()  # para evitar duplicados por URL
+
+    for page in range(start_page, max_pages + 1):
+        url_list = urljoin(BASE, LISTING_FMT.format(page=page))
+        print(f"\n=== Página {page} -> {url_list}")
+        soup = get_soup(session, url_list)
+        if not soup:
+            print("   (fin: sin contenido o HTTP de corte)")
             break
 
-    # precios: intenta dos niveles (lista/oferta)
-    precio_lista = None
-    precio_oferta = None
-    tipo_oferta = None
+        rows = parse_listing_products(soup)
+        if not rows:
+            print("   (fin: no hay cards de productos)")
+            break
 
-    # selectores habituales
-    price_selectors = [
-        (".precio-oferta, .price.special, .price-sale, .oferta", "oferta"),
-        (".precio, .price, .price-regular, .precio-lista", "lista"),
+        for r in rows:
+            url = r.get("URL")
+            if not url:
+                print("    - Card sin URL de detalle, salto.")
+                continue
+            if url in vistos:
+                print(f"    - Ya visitado: {url}")
+                continue
+            vistos.add(url)
+
+            # Detalle
+            d = parse_detail(session, url)
+            print(
+                "           DETALLE -> "
+                f"COD={d.get('CodigoInterno_det')}  "
+                f"NOMBRE='{d.get('NombreProducto')}'"
+            )
+            print(
+                "                      "
+                f"CATEGORÍA='{d.get('Categoria')}'  "
+                f"SUBCAT='{d.get('Subcategoria')}'  "
+                f"SUBSUB='{d.get('Subsubcategoria')}'"
+            )
+            print(
+                "                      "
+                f"PRECIOS detalle -> lista={d.get('PrecioLista')}  "
+                f"oferta={d.get('PrecioOferta')}  porKg={d.get('PrecioPorKg')}  "
+                f"sinImp={d.get('PrecioSinImpuestos')}  EAN={d.get('EAN')}"
+            )
+
+            merged = {
+                "EAN": d.get("EAN"),
+                "CodigoInterno": d.get("CodigoInterno_det") or r.get("CodigoInterno_list"),
+                "NombreProducto": d.get("NombreProducto") or r.get("NombreProducto_list"),
+                "Categoria": d.get("Categoria"),
+                "Subcategoria": d.get("Subcategoria"),
+                "Marca": d.get("Marca"),
+                "Fabricante": d.get("Fabricante"),
+                "PrecioLista": d.get("PrecioLista") if d.get("PrecioLista") is not None else r.get("PrecioLista_list"),
+                "PrecioOferta": d.get("PrecioOferta") if d.get("PrecioOferta") is not None else r.get("PrecioOferta_list"),
+                "TipoOferta": r.get("TipoOferta"),
+                "PrecioPorKg": d.get("PrecioPorKg") if d.get("PrecioPorKg") is not None else r.get("PrecioPorKg_list"),
+                "PrecioSinImpuestos": d.get("PrecioSinImpuestos") if d.get("PrecioSinImpuestos") is not None else r.get("PrecioSinImpuestos_list"),
+                "URL": r.get("URL"),
+                "Imagen": r.get("Imagen"),
+                "SKU_Tienda": r.get("SKU_Tienda"),
+                "RecordId_Tienda": r.get("RecordId_Tienda"),
+                "Pagina": page,
+            }
+            resultados.append(merged)
+
+            time.sleep(random.uniform(*SLEEP_ITEM))
+        time.sleep(random.uniform(*SLEEP_PAGE))
+
+    if not resultados:
+        print("\n⚠ No se obtuvieron productos. No se generará Excel.")
+        return
+
+    df = pd.DataFrame(resultados)
+    # orden clásico para tus reportes
+    cols = [
+        "EAN", "CodigoInterno", "NombreProducto",
+        "Categoria", "Subcategoria", "Marca", "Fabricante",
+        "PrecioLista", "PrecioOferta", "TipoOferta",
+        "PrecioPorKg", "PrecioSinImpuestos",
+        "URL", "Imagen", "SKU_Tienda", "RecordId_Tienda", "Pagina"
     ]
-    for sel, typ in price_selectors:
-        el = soup.select_one(sel)
-        if el and el.get_text(strip=True):
-            value = num(el.get_text(" ", strip=True))
-            if value is not None:
-                if typ == "oferta" and precio_oferta is None:
-                    precio_oferta = value
-                elif typ == "lista" and precio_lista is None:
-                    precio_lista = value
+    for c in cols:
+        if c not in df.columns:
+            df[c] = None
+    df = df[cols]
 
-    # si solo hay un precio, asúmelo como lista
-    if precio_lista is None and precio_oferta is not None:
-        precio_lista = precio_oferta
-    if precio_oferta and precio_lista and precio_oferta < precio_lista:
-        tipo_oferta = "descuento"
-    else:
-        tipo_oferta = None
+    df.to_excel(outfile, index=False)
+    print(f"\n✔ Guardado Excel: {outfile}  (filas: {len(df)})")
 
-    ean = None  # Kilbel normalmente no lo expone
-    fabricante = None  # raramente aparece
-    categoria, subcategoria = cat_hint
-
-    return Item(
-        ean=ean,
-        codigo_interno=codigo_interno,
-        nombre=nombre,
-        categoria=categoria,
-        subcategoria=subcategoria,
-        marca=marca,
-        fabricante=fabricante,
-        precio_lista=precio_lista,
-        precio_oferta=precio_oferta,
-        tipo_oferta=tipo_oferta,
-        url=url,
-    )
-
-def crawl_detail(session: requests.Session, url: str, cat_hint: Tuple[str, str]) -> Optional[Item]:
-    try:
-        _sleep()
-        r = GET(session, url)
-        if r.status_code != 200:
-            print(f"   ⚠️ Error HTTP {r.status_code} en {url}")
-            return None
-        item = parse_detail(r.text, url, cat_hint)
-        if item and item.nombre:
-            print(f"      ✔ Producto: {item.nombre} | SKU: {item.codigo_interno or '-'}")
-        else:
-            print(f"      ✔ Producto sin nombre → {url}")
-        return item
-    except Exception as e:
-        print(f"   ⚠️ Error detalle {url}: {e}")
-        return None
-
-# ---------- Mapeo categoría/subcategoría desde URL ----------
-def parse_cat_from_url(category_url: str) -> Tuple[str, str]:
-    """
-    Intenta deducir (categoria, subcategoria) desde rutas tipo:
-      /perfumeria/n1_3/
-      /bebidas/gaseosas/n3_123/
-    """
-    path = urlparse(category_url).path.strip("/").split("/")
-    # heurística sencilla:
-    if len(path) >= 2 and re.search(r"n[123]_\d+", path[-1]):
-        cat = path[0].replace("-", " ").title()
-        sub = " ".join(path[1:-1]).replace("-", " ").title() if len(path) > 2 else None
-        return (cat, sub)
-    return (None, None)
-
-# ---------- Autocompletado (diccionario) ----------
-def autocomplete_sweep(session: requests.Session) -> Dict[str, Dict]:
-    results: Dict[str, Dict] = {}
-    alphabet = string.ascii_lowercase + string.digits
-
-    for ch in alphabet:
-        _sleep()
-        url = AUTO_URL.format(term=ch)
-        try:
-            r = GET(session, url)
-            if r.status_code != 200:
-                continue
-            data = r.json()
-        except Exception:
-            continue
-
-        for row in data:
-            # cada fila suele traer: id, label, value, url, precio, etc.
-            pid = str(row.get("id") or row.get("value") or row.get("label") or row.get("url") or "")
-            if not pid:
-                continue
-            results[pid] = row
-
-    return results
-
-# ---------- Orquestación ----------
-def run(mode: str = "ambos", out_prefix: str = "kilbel"):
-    session = make_session()
-
-    items: List[Item] = []
-    seen_keys: Set[str] = set()  # dedupe por url o por codigo_interno
-
-    if mode in ("categorias", "ambos"):
-        print("⛓ Descubriendo categorías…")
-        cats = discover_categories(session)
-        print(f"→ {len(cats)} categorías encontradas")
-
-        for i, cat in enumerate(cats, 1):
-            print(f"[{i}/{len(cats)}] {cat}")
-            cat_hint = parse_cat_from_url(cat)
-            product_links = crawl_listing(session, cat)
-            print(f"   • {len(product_links)} productos en total en esta categoría")
-            for pu in product_links:
-                key = pu
-                if key in seen_keys:
-                    continue
-                it = crawl_detail(session, pu, cat_hint)
-                if it:
-                    # dedupe por codigo_interno si existe
-                    dedupe_key = it.codigo_interno or it.url
-                    if dedupe_key in seen_keys:
-                        continue
-                    seen_keys.add(dedupe_key)
-                    items.append(it)
-
-    if mode in ("auto", "ambos"):
-        print("🔎 Autocompletado a-z0-9…")
-        auto = autocomplete_sweep(session)
-        print(f"→ {len(auto)} entradas en autocompletar")
-        # mostrar algunas
-        for i, row in enumerate(auto.values()):
-            if i < 5:
-                print(f"   • {row.get('label') or row.get('nombre') or row.get('value')}")
-        # Normaliza autocompletar a Item (mínimos campos)
-        for row in auto.values():
-            pu = row.get("url")
-            nombre = row.get("label") or row.get("nombre") or row.get("value")
-            precio_txt = row.get("precio") or row.get("price") or row.get("precio_oferta") or ""
-            precio = num(str(precio_txt))
-            key = row.get("id") or pu
-            if not key:
-                continue
-            if key in seen_keys or (pu and pu in seen_keys):
-                continue
-            seen_keys.add(str(key))
-            items.append(Item(
-                ean=None,
-                codigo_interno=None,
-                nombre=nombre,
-                categoria=None,
-                subcategoria=None,
-                marca=None,
-                fabricante=None,
-                precio_lista=precio,
-                precio_oferta=None,
-                tipo_oferta=None,
-                url=urljoin(BASE, pu) if pu else None
-            ))
-
-    # ---- Exportación ----
-    rows = [asdict(x) for x in items]
-    df = pd.DataFrame(rows, columns=[
-        "ean", "codigo_interno", "nombre", "categoria", "subcategoria",
-        "marca", "fabricante", "precio_lista", "precio_oferta", "tipo_oferta", "url"
-    ])
-
-    if "codigo_interno" in df.columns:
-        before = len(df)
-        df = df.sort_values(by=["codigo_interno", "url"], na_position="last") \
-               .drop_duplicates(subset=["codigo_interno", "url"], keep="first")
-        print(f"🧹 Dedupe: {before} → {len(df)}")
-
-    csv_path = f"{out_prefix}.csv"
-    xlsx_path = f"{out_prefix}.xlsx"
-    df.to_csv(csv_path, index=False, encoding="utf-8-sig")
-    with pd.ExcelWriter(xlsx_path, engine="xlsxwriter") as wb:
-        df.to_excel(wb, index=False, sheet_name="kilbel")
-    print(f"✅ Exportado: {csv_path} | {xlsx_path}")
-    return df
-
-# ---------- CLI ----------
+# ------------------ CLI ------------------
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--modo", choices=["categorias", "auto", "ambos"], default="ambos", help="Fuente de datos")
-    ap.add_argument("--out", default="kilbel", help="Prefijo de salida (sin extensión)")
+    ap = argparse.ArgumentParser(description="Scraper Kilbel Almacén n1_1 (verbose).")
+    ap.add_argument("--max-pages", type=int, default=300, help="Máximo de páginas a recorrer (se corta solo si no hay más).")
+    ap.add_argument("--start-page", type=int, default=1, help="Página inicial (por defecto 1).")
+    ap.add_argument("--outfile", type=str, default="kilbel_almacen_n1_1.xlsx", help="Nombre del archivo Excel de salida.")
     args = ap.parse_args()
-    run(mode=args.modo, out_prefix=args.out)
+
+    run(max_pages=args.max_pages, start_page=args.start_page, outfile=args.outfile)

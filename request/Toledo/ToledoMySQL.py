@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Toledo Digital (VTEX) — Scraper catálogo completo + inserción MySQL
+17_Toledo Digital (VTEX) — Scraper catálogo completo + inserción MySQL
 
 Inserta en:
 - tiendas (toledo)
@@ -55,7 +55,7 @@ HEADERS = {
 
 # Identidad tienda en DB
 TIENDA_CODIGO = "toledo"
-TIENDA_NOMBRE = "Toledo Digital"
+TIENDA_NOMBRE = "17_Toledo Digital"
 
 # Si alguna vez necesitás forzar EAN por SKU/producto:
 EAN_MAP: Dict[str, str] = {
@@ -388,7 +388,7 @@ def find_or_create_producto(cur, p: Dict[str, any]) -> int:
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, any]) -> int:
     """
-    Para VTEX (Toledo):
+    Para VTEX (17_Toledo):
       - sku_tienda = Código Interno (itemId)
       - record_id_tienda = productId (fallback universal)
     Requiere UNIQUE(tienda_id, sku_tienda) y/o UNIQUE(tienda_id, record_id_tienda).
