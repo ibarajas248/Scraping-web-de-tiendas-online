@@ -2,21 +2,21 @@
 # -*- coding: utf-8 -*-
 
 """
-La Genovesa (ALMACÉN) – Scraper con Selenium + BeautifulSoup
+La Genovesa (ALMACÉN) – Scraper con Selenium + BeautifulSoup + Persistencia MySQL
 
 - Abre HOME -> acepta/selecciona sucursal si aparece -> va a la categoría
-- Scroll gentil sobre el CONTENEDOR REAL (con wheel + END + fondo real)
+- Scroll gentil sobre el CONTENEDOR REAL (wheel + END + fondo real)
 - Recorre cada tarjeta, entra al detalle y extrae:
   EAN, Título, Precio unitario, Precio de referencia, Imagen, URL
 - Imprime todo lo que va encontrando
-- Exporta a XLSX y deja archivos de diagnóstico si falla la carga
+- Exporta a XLSX y persiste en MySQL (tiendas, productos, producto_tienda, historico_precios)
 """
 
 import re
 import time
 import random
 import argparse
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Any
 from urllib.parse import urljoin, urlparse, parse_qs
 
 import pandas as pd
@@ -31,6 +31,10 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, ElementClickInterceptedException, WebDriverException
+
+# === Persistencia MySQL ===
+from mysql.connector import Error as MySQLError
+from base_datos import get_conn  # <- tu conexión MySQL
 
 # ================= Config =================
 BASE = "https://www.lagenovesadigital.com.ar"
@@ -61,7 +65,7 @@ SCROLL_MAX_ROUNDS = 120
 SCROLL_KEYS_STEPS = 3
 SCROLL_GENTLE_STEPS = 12
 SCROLL_STEP_PX = 160
-SCROLL_NEAR_BOTTOM_OFFSET = 220  # (ya no se usa en la ráfaga nueva, pero lo dejamos por compatibilidad)
+SCROLL_NEAR_BOTTOM_OFFSET = 220
 SCROLL_MAX_NO_GROWTH_BURSTS = 6
 AFTER_ACTION_SLEEP = (0.6, 1.0)
 POLL_AFTER_SCROLL_SEC = 2.0
@@ -191,7 +195,6 @@ def try_accept_location_modal(driver) -> bool:
     return acted
 
 def warmup_lazy_load(driver, selector: str, rounds: int = 6) -> bool:
-    """Scroll arriba/abajo suave para disparar los primeros items."""
     for _ in range(rounds):
         driver.execute_script("window.scrollBy(0, 600);")
         human_sleep(0.3, 0.6)
@@ -310,14 +313,12 @@ def get_scroll_root(driver, item_selector: str):
 
 # ============== Scroll gentil (corregido) ==============
 def _scroll_burst_gentle(driver, item_selector: str, root_el):
-    # 0) foco
     try:
         driver.execute_script("arguments[0].focus();", root_el)
         root_el.click()
     except Exception:
         pass
 
-    # 1) simular rueda (algunas libs dependen de 'wheel')
     for _ in range(6):
         try:
             driver.execute_script(
@@ -328,7 +329,6 @@ def _scroll_burst_gentle(driver, item_selector: str, root_el):
             break
         human_sleep(0.05, 0.12)
 
-    # 2) pequeños pasos en scrollTop
     try:
         for _ in range(10):
             driver.execute_script("arguments[0].scrollTop = arguments[0].scrollTop + 200;", root_el)
@@ -336,14 +336,12 @@ def _scroll_burst_gentle(driver, item_selector: str, root_el):
     except Exception:
         pass
 
-    # 3) fondo real del contenedor (o documento como fallback)
     try:
         driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", root_el)
     except Exception:
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     human_sleep(0.12, 0.22)
 
-    # 4) tecla END como trigger adicional
     try:
         root_el.send_keys(Keys.END)
     except Exception:
@@ -351,7 +349,7 @@ def _scroll_burst_gentle(driver, item_selector: str, root_el):
 
 # ============== Polling de crecimiento (usa contenedor) ==============
 def _poll_for_growth(driver, item_selector: str, prev_count: int, prev_height: int, root_el) -> Optional[Tuple[int, int]]:
-    deadline = time.time() + 3.5  # un poco más generoso
+    deadline = time.time() + 3.5
     while time.time() < deadline:
         human_sleep(0.20, 0.25)
         new_count = len(driver.find_elements(By.CSS_SELECTOR, item_selector))
@@ -395,7 +393,6 @@ def scroll_until_no_more(
     while rounds < max_rounds:
         rounds += 1
 
-        # Botón "Ver más" si existe
         if try_click_load_more(driver):
             grew = _poll_for_growth(driver, item_selector, prev_count, prev_height, root_el)
             if grew:
@@ -404,10 +401,7 @@ def scroll_until_no_more(
                 no_growth_bursts = 0
                 continue
 
-        # Ráfaga gentil
         _scroll_burst_gentle(driver, item_selector, root_el)
-
-        # Polling después del scroll
         grew = _poll_for_growth(driver, item_selector, prev_count, prev_height, root_el)
         if grew:
             prev_count, prev_height = grew
@@ -415,7 +409,6 @@ def scroll_until_no_more(
             no_growth_bursts = 0
             continue
 
-        # Sin crecimiento
         same_rounds += 1
         cur = len(driver.find_elements(By.CSS_SELECTOR, item_selector))
         log(f"[SCROLL] Sin nuevos items (chequeo {same_rounds}/{calm_rounds}) — total {cur}.")
@@ -609,6 +602,221 @@ def scrape_categoria(
             pass
         log("[END] Driver cerrado.")
 
+# =================== DB (contrato estándar) ===================
+_NULLLIKE = {"", "null", "none", "nan", "na"}
+def clean(val):
+    if val is None:
+        return None
+    s = str(val).strip()
+    s = re.sub(r"\s+", " ", s)
+    return None if s.lower() in _NULLLIKE else s
+
+TIENDA_CODIGO = "lagenovesa"
+TIENDA_NOMBRE = "La Genovesa"
+
+def upsert_tienda(cur, codigo: str, nombre: str) -> int:
+    cur.execute(
+        "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
+        "ON DUPLICATE KEY UPDATE nombre=VALUES(nombre)",
+        (codigo, nombre)
+    )
+    cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
+    return cur.fetchone()[0]
+
+def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
+    ean = clean(p.get("ean"))
+    if ean:
+        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
+        row = cur.fetchone()
+        if row:
+            pid = row[0]
+            cur.execute("""
+                UPDATE productos SET
+                  nombre = COALESCE(NULLIF(%s,''), nombre),
+                  marca = COALESCE(NULLIF(%s,''), marca),
+                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
+                  categoria = COALESCE(NULLIF(%s,''), categoria),
+                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
+                WHERE id=%s
+            """, (
+                p.get("nombre") or "", p.get("marca") or "", p.get("fabricante") or "",
+                p.get("categoria") or "", p.get("subcategoria") or "", pid
+            ))
+            return pid
+
+    nombre = clean(p.get("nombre")) or ""
+    marca  = clean(p.get("marca")) or ""
+    if nombre and marca:
+        cur.execute("""SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1""",
+                    (nombre, marca))
+        row = cur.fetchone()
+        if row:
+            pid = row[0]
+            cur.execute("""
+                UPDATE productos SET
+                  ean = COALESCE(NULLIF(%s,''), ean),
+                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
+                  categoria = COALESCE(NULLIF(%s,''), categoria),
+                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
+                WHERE id=%s
+            """, (
+                p.get("ean") or "", p.get("fabricante") or "",
+                p.get("categoria") or "", p.get("subcategoria") or "", pid
+            ))
+            return pid
+
+    cur.execute("""
+        INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
+        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
+    """, (
+        p.get("ean") or "", nombre, marca, p.get("fabricante") or "",
+        p.get("categoria") or "", p.get("subcategoria") or ""
+    ))
+    return cur.lastrowid
+
+def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
+    sku = clean(p.get("sku"))
+    rec = clean(p.get("record_id"))
+    url = p.get("url") or ""
+    nombre_tienda = p.get("nombre") or p.get("nombre_tienda") or ""
+
+    if sku:
+        cur.execute("""
+            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
+            VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,'')) 
+            ON DUPLICATE KEY UPDATE
+              id = LAST_INSERT_ID(id),
+              producto_id = VALUES(producto_id),
+              record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
+              url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
+              nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
+        """, (tienda_id, producto_id, sku, rec, url, nombre_tienda))
+        return cur.lastrowid
+
+    if rec:
+        cur.execute("""
+            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
+            VALUES (%s, %s, NULL, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,'')) 
+            ON DUPLICATE KEY UPDATE
+              id = LAST_INSERT_ID(id),
+              producto_id = VALUES(producto_id),
+              url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
+              nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
+        """, (tienda_id, producto_id, rec, url, nombre_tienda))
+        return cur.lastrowid
+
+    cur.execute("""
+        INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
+        VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
+    """, (tienda_id, producto_id, url, nombre_tienda))
+    return cur.lastrowid
+
+def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en):
+    def to_txt_or_none(x):
+        v = parse_price(x)
+        if x is None: return None
+        if isinstance(v, float) and (v != v):  # NaN
+            return None
+        try:
+            return f"{round(float(v), 2)}"
+        except Exception:
+            return None
+
+    cur.execute("""
+        INSERT INTO historico_precios
+          (tienda_id, producto_tienda_id, capturado_en,
+           precio_lista, precio_oferta, tipo_oferta,
+           promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          precio_lista = VALUES(precio_lista),
+          precio_oferta = VALUES(precio_oferta),
+          tipo_oferta = VALUES(tipo_oferta),
+          promo_tipo = VALUES(promo_tipo),
+          promo_texto_regular = VALUES(promo_texto_regular),
+          promo_texto_descuento = VALUES(promo_texto_descuento),
+          promo_comentarios = VALUES(promo_comentarios)
+    """, (
+        tienda_id, producto_tienda_id, capturado_en,
+        to_txt_or_none(p.get("precio_lista")),
+        to_txt_or_none(p.get("precio_oferta")),
+        p.get("tipo_oferta") or None,
+        p.get("promo_tipo") or None,
+        p.get("precio_regular_promo") or None,
+        p.get("precio_descuento") or None,
+        p.get("comentarios_promo") or None
+    ))
+
+# ---- mapeo específico La Genovesa -> contrato DB ----
+def row_to_db_product(row: Dict[str, Any]) -> Dict[str, Any]:
+    sku = (row.get("articulo_id") or
+           (parse_qs(urlparse(row.get("detail_url") or "").query).get("ArticuloID") or [None])[0])
+
+    precio_oferta = row.get("detail_price")
+    precio_lista  = row.get("list_price")
+    if not precio_lista and row.get("detail_ref"):
+        m = re.search(r"([\$]?\s*\d[\d\.\,]*)", row["detail_ref"])
+        if m:
+            precio_lista = m.group(1)
+
+    return {
+        "sku":        clean(sku),
+        "record_id":  None,
+        "ean":        clean(row.get("ean")),
+        "nombre":     clean(row.get("detail_title") or row.get("list_title")),
+        "marca":      None,
+        "fabricante": None,
+        "categoria":  clean(row.get("categoria")),
+        "subcategoria": clean(row.get("subcategoria")),
+
+        "precio_lista":  clean(precio_lista),
+        "precio_oferta": clean(precio_oferta),
+        "tipo_oferta":   None,
+        "promo_tipo":    None,
+        "precio_regular_promo": clean(row.get("detail_ref")),
+        "precio_descuento":     None,
+        "comentarios_promo":    None,
+
+        "url":            clean(row.get("detail_url")),
+        "nombre_tienda":  clean(row.get("detail_title") or row.get("list_title")),
+        "nombre":         clean(row.get("detail_title") or row.get("list_title")),
+    }
+
+def persistir_df_en_mysql(df: pd.DataFrame, tienda_codigo=TIENDA_CODIGO, tienda_nombre=TIENDA_NOMBRE):
+    productos = [row_to_db_product(r) for r in df.to_dict(orient="records")]
+    if not productos:
+        print("⚠️ No hay productos para guardar en DB.")
+        return
+
+    from datetime import datetime
+    capturado_en = datetime.now()
+
+    conn = None
+    try:
+        conn = get_conn()
+        conn.autocommit = False
+        cur = conn.cursor()
+
+        tienda_id = upsert_tienda(cur, tienda_codigo, tienda_nombre)
+
+        insertados = 0
+        for p in productos:
+            producto_id = find_or_create_producto(cur, p)
+            pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
+            insert_historico(cur, tienda_id, pt_id, p, capturado_en)
+            insertados += 1
+
+        conn.commit()
+        print(f"💾 Guardado en MySQL: {insertados} filas de histórico para {tienda_nombre} ({capturado_en})")
+    except MySQLError as e:
+        if conn: conn.rollback()
+        print(f"❌ Error MySQL: {e}")
+    finally:
+        try:
+            if conn: conn.close()
+        except Exception:
+            pass
+
 # ============== CLI ==============
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -625,6 +833,10 @@ if __name__ == "__main__":
         user_data_dir=args.user_data_dir,
         profile_dir=args.profile_dir,
     )
+
+    # Persistir en MySQL con tu contrato estándar
+    persistir_df_en_mysql(df, tienda_codigo=TIENDA_CODIGO, tienda_nombre=TIENDA_NOMBRE)
+
     log(f"[SAVE] Exportando a {args.outfile} …")
     df.to_excel(args.outfile, index=False)
     log("[SAVE] Archivo XLSX generado.")

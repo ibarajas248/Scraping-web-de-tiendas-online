@@ -4,33 +4,32 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="adelantos_streamlit_2">
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/almacen.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/atomo/atomo.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/atomo/atomomysql.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/elAbastecedor/prueba.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/genovesa/pruebagenovesa.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/solvercaptcha.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="adelantos_streamlit_3">
+      <change afterPath="$PROJECT_DIR$/documentacion/Deploy_Streamlit_Completo.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/documentacion/readme_instalacion_en_vps.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/19_modo_market/modoMarketMysql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/genovesa/genovesamysql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/josimar/josimar.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/masonline/masonline.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/masonline/pruebas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/modo_market/modoMarket.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/cormoran.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/darentucasa.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/pinguino.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/streamlitsintunel.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/streamlitvps_2.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/vps/app.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/vps/cron_manager.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/bebidas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/bebidas.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/congelados.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/congelados.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/electro.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/electro.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/frescos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/frescos.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/golosinas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/golosinas.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/hogar.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/hogar.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/lacteos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/lacteos.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/libreria.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/libreria.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/limpieza.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/limpieza.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/mascotas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/mascotas.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/mundo-bebe.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/mundo-bebe.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/panaderia.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/panaderia.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/perfumeria.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/perfumeria.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/saludables.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/saludables.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/3_comodin/sin-gluten.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/sin-gluten.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/Toledo/ToledoMySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/17_Toledo/ToledoMySQL.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/Toledo/Toledo.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/Toledo/Toledo.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/Toledo/ToledoMySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/Toledo/ToledoMySQL.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/kilbel/kilbel.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/kilbel/kilbel.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app_regiones.py" beforeDir="false" afterPath="$PROJECT_DIR$/app_regiones.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/base_de_datos.sql" beforeDir="false" afterPath="$PROJECT_DIR$/base_de_datos.sql" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cron_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/cron_manager.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/eanconfig.py" beforeDir="false" afterPath="$PROJECT_DIR$/eanconfig.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/11_anonima/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/almacen.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/genovesa/pruebagenovesa.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/genovesa/pruebagenovesa.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/pruebas_generales/prueba.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/pruebas_generales/prueba.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/pruebas_generales/pruebas.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/pruebas_generales/pruebas.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/streamlitvps.py" beforeDir="false" afterPath="$PROJECT_DIR$/streamlitvps.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -68,90 +67,97 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python.Coto.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Coto_MySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PRUEBA.executor&quot;: &quot;Run&quot;,
-    &quot;Python.almacen.executor&quot;: &quot;Run&quot;,
-    &quot;Python.almacen_playwright.executor&quot;: &quot;Run&quot;,
-    &quot;Python.alvear.executor&quot;: &quot;Run&quot;,
-    &quot;Python.alvearMySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.anonima.executor&quot;: &quot;Run&quot;,
-    &quot;Python.app_regiones.executor&quot;: &quot;Run&quot;,
-    &quot;Python.atomo.executor&quot;: &quot;Run&quot;,
-    &quot;Python.atomomysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.base_datos.executor&quot;: &quot;Run&quot;,
-    &quot;Python.bebidas.executor&quot;: &quot;Run&quot;,
-    &quot;Python.carrefour.executor&quot;: &quot;Run&quot;,
-    &quot;Python.carrefour_MySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.comodin.executor&quot;: &quot;Run&quot;,
-    &quot;Python.comodinMySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.conectar.executor&quot;: &quot;Run&quot;,
-    &quot;Python.copeprueba.executor&quot;: &quot;Run&quot;,
-    &quot;Python.cordiez.executor&quot;: &quot;Run&quot;,
-    &quot;Python.cordiezMysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.coto.executor&quot;: &quot;Run&quot;,
-    &quot;Python.cotoMysql2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.cotoRequestJson.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dia.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dia_mysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dino.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dino2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dinoMySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dinoPaginado.executor&quot;: &quot;Run&quot;,
-    &quot;Python.disco.executor&quot;: &quot;Run&quot;,
-    &quot;Python.disco_MySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.ean.executor&quot;: &quot;Run&quot;,
-    &quot;Python.estructura_coto.executor&quot;: &quot;Run&quot;,
-    &quot;Python.gallega1.executor&quot;: &quot;Run&quot;,
-    &quot;Python.hiperlibertad.executor&quot;: &quot;Run&quot;,
-    &quot;Python.hiperlibertad_Mysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.jumbo.executor&quot;: &quot;Run&quot;,
-    &quot;Python.jumboMysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.kilbel.executor&quot;: &quot;Run&quot;,
-    &quot;Python.laAnonima.executor&quot;: &quot;Run&quot;,
-    &quot;Python.laAnonima_MySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.laGallega.executor&quot;: &quot;Run&quot;,
-    &quot;Python.laReinaOnline.executor&quot;: &quot;Run&quot;,
-    &quot;Python.lacoopeencasa.executor&quot;: &quot;Run&quot;,
-    &quot;Python.libreria.executor&quot;: &quot;Run&quot;,
-    &quot;Python.localidadprueba.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;Python.mascotas.executor&quot;: &quot;Run&quot;,
-    &quot;Python.prueba.executor&quot;: &quot;Run&quot;,
-    &quot;Python.prueba2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.prueba3.executor&quot;: &quot;Run&quot;,
-    &quot;Python.prueba_vea.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebaean.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebagenovesa.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebas.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebasMysqlCarrefour.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebaspaginacion.executor&quot;: &quot;Run&quot;,
-    &quot;Python.reinaMysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.solvercaptcha.executor&quot;: &quot;Run&quot;,
-    &quot;Python.sql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.vea.executor&quot;: &quot;Run&quot;,
-    &quot;Python.veaMysql.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/David/PycharmProjects/scrapingTiendas/final/16_vea&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.Coto.executor": "Run",
+    "Python.Coto_MySQL.executor": "Run",
+    "Python.PRUEBA.executor": "Run",
+    "Python.almacen.executor": "Run",
+    "Python.almacen_playwright.executor": "Run",
+    "Python.alvear.executor": "Run",
+    "Python.alvearMySQL.executor": "Run",
+    "Python.anonima.executor": "Run",
+    "Python.app_regiones.executor": "Run",
+    "Python.atomo.executor": "Run",
+    "Python.atomomysql.executor": "Run",
+    "Python.base_datos.executor": "Run",
+    "Python.bebidas.executor": "Run",
+    "Python.carrefour.executor": "Run",
+    "Python.carrefour_MySQL.executor": "Run",
+    "Python.comodin.executor": "Run",
+    "Python.comodinMySQL.executor": "Run",
+    "Python.conectar.executor": "Run",
+    "Python.copeprueba.executor": "Run",
+    "Python.cordiez.executor": "Run",
+    "Python.cordiezMysql.executor": "Run",
+    "Python.cormoran.executor": "Run",
+    "Python.coto.executor": "Run",
+    "Python.cotoMysql2.executor": "Run",
+    "Python.cotoRequestJson.executor": "Run",
+    "Python.darentucasa.executor": "Run",
+    "Python.dia.executor": "Run",
+    "Python.dia_mysql.executor": "Run",
+    "Python.dino.executor": "Run",
+    "Python.dino2.executor": "Run",
+    "Python.dinoMySQL.executor": "Run",
+    "Python.dinoPaginado.executor": "Run",
+    "Python.disco.executor": "Run",
+    "Python.disco_MySQL.executor": "Run",
+    "Python.ean.executor": "Run",
+    "Python.estructura_coto.executor": "Run",
+    "Python.gallega1.executor": "Run",
+    "Python.genovesamysql.executor": "Run",
+    "Python.hiperlibertad.executor": "Run",
+    "Python.hiperlibertad_Mysql.executor": "Run",
+    "Python.josimar.executor": "Run",
+    "Python.jumbo.executor": "Run",
+    "Python.jumboMysql.executor": "Run",
+    "Python.kilbel.executor": "Run",
+    "Python.laAnonima.executor": "Run",
+    "Python.laAnonima_MySQL.executor": "Run",
+    "Python.laGallega.executor": "Run",
+    "Python.laReinaOnline.executor": "Run",
+    "Python.lacoopeencasa.executor": "Run",
+    "Python.libreria.executor": "Run",
+    "Python.localidadprueba.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.mascotas.executor": "Run",
+    "Python.masonline.executor": "Run",
+    "Python.modoMarket.executor": "Run",
+    "Python.modoMarketMysql.executor": "Run",
+    "Python.prueba.executor": "Run",
+    "Python.prueba2.executor": "Run",
+    "Python.prueba3.executor": "Run",
+    "Python.prueba_vea.executor": "Run",
+    "Python.pruebaean.executor": "Run",
+    "Python.pruebagenovesa.executor": "Run",
+    "Python.pruebas.executor": "Run",
+    "Python.pruebasMysqlCarrefour.executor": "Run",
+    "Python.pruebaspaginacion.executor": "Run",
+    "Python.reinaMysql.executor": "Run",
+    "Python.solvercaptcha.executor": "Run",
+    "Python.sql.executor": "Run",
+    "Python.vea.executor": "Run",
+    "Python.veaMysql.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "C:/Users/David/PycharmProjects/scrapingTiendas/vps"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\16_vea" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\Toledo" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\14_la_reina" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\13_gallega" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\12_lacoopeEnCasa" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\documentacion" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\3_comodin" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request\dino" />
-      <recent name="C:\Users\USER\PycharmProjects\Scraping-web-de-tiendas-online" />
     </key>
   </component>
   <component name="RunManager">
@@ -290,7 +296,15 @@
       <option name="project" value="LOCAL" />
       <updated>1755902171555</updated>
     </task>
-    <option name="localTasksCounter" value="13" />
+    <task id="LOCAL-00013" summary="adelantos_streamlit_3">
+      <option name="closed" value="true" />
+      <created>1756160175289</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1756160175289</updated>
+    </task>
+    <option name="localTasksCounter" value="14" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -304,6 +318,7 @@
     <MESSAGE value="prueba interfaz_2" />
     <MESSAGE value="adelantos_streamlit" />
     <MESSAGE value="adelantos_streamlit_2" />
-    <option name="LAST_COMMIT_MESSAGE" value="adelantos_streamlit_2" />
+    <MESSAGE value="adelantos_streamlit_3" />
+    <option name="LAST_COMMIT_MESSAGE" value="adelantos_streamlit_3" />
   </component>
 </project>
