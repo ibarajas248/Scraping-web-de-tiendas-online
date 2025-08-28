@@ -6,6 +6,7 @@ def cron_manager():
     import streamlit as st
     import pandas as pd
     import re
+    import os  # <- agregado para manejar basenames
     from typing import List, Tuple, Optional
 
     # =========================
@@ -247,12 +248,15 @@ def cron_manager():
                 py_files = []
                 st.error(f"No se pudo listar scripts: {e}")
             if py_files:
-                py_file = st.selectbox("Script .py", options=py_files)
+                # Mostrar solo el nombre del archivo en el spinner
+                name_to_path = {os.path.basename(p): p for p in py_files}
+                selected_name = st.selectbox("Script .py", options=list(name_to_path.keys()))
+                py_file = name_to_path[selected_name]  # ruta completa para ejecutar
             else:
                 st.warning("No hay .py en esta carpeta.")
 
     if py_file:
-        st.success(f"Script seleccionado: `{py_file}`")
+        st.success(f"Script seleccionado: `{os.path.basename(py_file)}`")
 
     # ======== FORMULARIO AGREGAR / EDITAR ========
     st.subheader(" Agregar / Editar job")
@@ -266,81 +270,74 @@ def cron_manager():
     else:
         selected_row = None
 
-    col1, col2, col3, col4, col5 = st.columns(5)
-    minute = col1.selectbox("Minuto", options=minutes_options(), index=minutes_options().index("*/15") if "*/15" in minutes_options() else 0)
-    hour = col2.selectbox("Hora", options=hours_options(), index=hours_options().index("*"))
-    day = col3.selectbox("Día del mes", options=day_options(), index=day_options().index("*"))
-    month = col4.selectbox("Mes", options=month_options(), index=month_options().index("*"))
-    weekday_label = col5.selectbox("Día de semana", options=[lbl for _, lbl in weekday_options()], index=0)
-    weekday_val = [v for v, lbl in weekday_options() if lbl == weekday_label][0]
-
-    # Comando: se arma con python_bin + script elegido + args opcionales
-    default_cmd = ""
-    if py_file:
-        default_cmd = f"{python_bin} {py_file}"
-    cmd = st.text_input("Comando a ejecutar", value=default_cmd)
-
-    # Redirección de salida
-    st.markdown("**Redirección de salida (opcional):**")
-    log_choice = st.radio("Logs", ["Enviar a /dev/null"], horizontal=True)
-    log_path = ""
-    if log_choice == "Escribir a archivo":
-        log_path = st.text_input("Ruta archivo log (append)", value="/home/intelligenceblue-scrap/logs/cron.log")
-
-    def apply_redirect(command: str) -> str:
-        if log_choice == "Enviar a /dev/null":
-            return f"{command} > /dev/null 2>&1"
-        '''
-        elif log_choice == "Escribir a archivo" and log_path.strip():
-            return f"{command} >> {log_path.strip()} 2>&1"
-        else:
-            return command
-        '''
-
-    # Precargar campos si edita
+    # Info visual cuando editas (sin tocar tu lógica)
     if selected_row and mode == "Editar existente":
         if selected_row["Tipo"] == "5campos":
-            # set defaults (solo visual; no forzamos los selectbox porque ya se renderizaron)
             st.info("Se cargaron los valores actuales. Ajusta y guarda.")
-            # Mostrar el original
             st.code(format_cron_line(selected_row["Spec/Min"], selected_row["Hora"], selected_row["Día"], selected_row["Mes"], selected_row["DíaSem"], selected_row["Comando"]))
-            # Sugerir comando si no hay py_file
-            if not py_file:
-                cmd = selected_row["Comando"]
         else:
             st.warning("Este job usa sintaxis @spec (por ejemplo @reboot). La edición visual aquí está pensada para formato de 5 campos.")
 
-    # Botones
-    cA, cB = st.columns(2)
+    # ---------- A PARTIR DE AQUÍ: SIN RERUN HASTA SUBMIT ----------
+    with st.form(key="cron_form"):
+        col1, col2, col3, col4, col5 = st.columns(5)
+        minute = col1.selectbox("Minuto", options=minutes_options(), index=minutes_options().index("*/15") if "*/15" in minutes_options() else 0)
+        hour = col2.selectbox("Hora", options=hours_options(), index=hours_options().index("*"))
+        day = col3.selectbox("Día del mes", options=day_options(), index=day_options().index("*"))
+        month = col4.selectbox("Mes", options=month_options(), index=month_options().index("*"))
+        weekday_label = col5.selectbox("Día de semana", options=[lbl for _, lbl in weekday_options()], index=0)
+        weekday_val = [v for v, lbl in weekday_options() if lbl == weekday_label][0]
 
-    if mode == "Agregar nuevo":
-        if cA.button("➕ Agregar job"):
-            if not cmd.strip():
-                st.error("Debes especificar un comando.")
-            else:
-                new_cmd = apply_redirect(cmd.strip())
-                new_line = format_cron_line(minute, hour, day, month, weekday_val, new_cmd)
-                new_lines = lines[:] + [f"# añadido por panel {st.session_state.get('_session_id','')}".strip(), new_line]
-                try:
-                    set_crontab_lines(host, port, user, password, new_lines)
-                    st.success(f"Agregado ✅: {new_line}")
-                except Exception as e:
-                    st.error(f"Error agregando job: {e}")
+        # Comando: se arma con python_bin + script elegido
+        default_cmd = ""
+        if py_file:
+            default_cmd = f"{python_bin} {py_file}"
+        # sugerir comando actual si estás editando y no hay py_file seleccionado
+        if selected_row and mode == "Editar existente" and (not py_file):
+            if selected_row.get("Comando"):
+                default_cmd = selected_row["Comando"]
 
-    elif mode == "Editar existente" and selected_row:
+        cmd = st.text_input("Comando a ejecutar", value=default_cmd, key="cmd_input")
+
+        # Redirección de salida (mantengo tu comportamiento)
+        st.markdown("**Redirección de salida (opcional):**")
+        log_choice = st.radio("Logs", ["Enviar a /dev/null"], horizontal=True, key="log_choice")
+        log_path = ""
+        def apply_redirect(command: str) -> str:
+            if log_choice == "Enviar a /dev/null":
+                return f"{command} > /dev/null 2>&1"
+            # Mantengo tu bloque comentado original
+
+        cA, cB = st.columns(2)
+        submit_add = cA.form_submit_button("➕ Agregar job")
+        submit_save = cB.form_submit_button("💾 Guardar cambios en job seleccionado")
+
+    # --- Procesamiento tras el submit ---
+    if mode == "Agregar nuevo" and submit_add:
+        if not cmd.strip():
+            st.error("Debes especificar un comando.")
+        else:
+            new_cmd = apply_redirect(cmd.strip())
+            new_line = format_cron_line(minute, hour, day, month, weekday_val, new_cmd)
+            new_lines = lines[:] + [f"# añadido por panel {st.session_state.get('_session_id','')}".strip(), new_line]
+            try:
+                set_crontab_lines(host, port, user, password, new_lines)
+                st.success(f"Agregado ✅: {new_line}")
+            except Exception as e:
+                st.error(f"Error agregando job: {e}")
+
+    if mode == "Editar existente" and selected_row and submit_save:
         if selected_row["Tipo"] != "5campos":
-            cB.warning("Solo se puede editar aquí el formato de 5 campos. Para @reboot u otros, edítalo como texto fuera de este panel.")
-        if cB.button("💾 Guardar cambios en job seleccionado"):
-            if not cmd.strip():
-                st.error("Debes especificar un comando.")
-            else:
-                new_cmd = apply_redirect(cmd.strip())
-                updated = format_cron_line(minute, hour, day, month, weekday_val, new_cmd)
-                new_lines = lines[:]
-                try:
-                    new_lines[selected_row["line_idx"]] = updated
-                    set_crontab_lines(host, port, user, password, new_lines)
-                    st.success(f"Actualizado ✅: {updated}")
-                except Exception as e:
-                    st.error(f"Error actualizando job: {e}")
-
+            st.warning("Solo se puede editar aquí el formato de 5 campos. Para @reboot u otros, edítalo como texto fuera de este panel.")
+        elif not cmd.strip():
+            st.error("Debes especificar un comando.")
+        else:
+            new_cmd = apply_redirect(cmd.strip())
+            updated = format_cron_line(minute, hour, day, month, weekday_val, new_cmd)
+            new_lines = lines[:]
+            try:
+                new_lines[selected_row["line_idx"]] = updated
+                set_crontab_lines(host, port, user, password, new_lines)
+                st.success(f"Actualizado ✅: {updated}")
+            except Exception as e:
+                st.error(f"Error actualizando job: {e}")

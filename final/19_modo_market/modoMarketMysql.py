@@ -34,6 +34,12 @@ from urllib3.util.retry import Retry
 
 # === Persistencia MySQL ===
 from mysql.connector import Error as MySQLError
+import sys, os
+
+# añade la carpeta raíz (2 niveles más arriba) al sys.path
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+)
 from base_datos import get_conn  # <- tu conexión MySQL
 
 # ==================== Config VTEX ====================
@@ -552,7 +558,7 @@ def run(base: str, step: int, outfile: Optional[str], sales_channel: Optional[in
         today = dt.datetime.now().strftime("%Y%m%d")
         outfile = f"Listado_ModoMarket_{today}.xlsx"
     print(f"💾 Guardando {len(df_all)} filas únicas en {outfile} …")
-    df_all.to_excel(outfile, index=False)
+    #df_all.to_excel(outfile, index=False)
     print("✅ Listo.")
     return df_all, outfile
 

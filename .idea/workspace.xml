@@ -4,32 +4,23 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="adelantos_streamlit_3">
-      <change afterPath="$PROJECT_DIR$/documentacion/Deploy_Streamlit_Completo.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/documentacion/readme_instalacion_en_vps.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/19_modo_market/modoMarketMysql.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/genovesa/genovesamysql.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/josimar/josimar.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/masonline/masonline.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/masonline/pruebas.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/modo_market/modoMarket.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/cormoran.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/darentucasa.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pruebas_generales/pinguino.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlitsintunel.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlitvps_2.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vps/app.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vps/cron_manager.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="parcial UI">
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/JugueteriaLibreria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/Mascotas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/bebida.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/carnesCongelados.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/hogarBazar.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/lacteosFiambres.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/limpieza.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/mundoBebe.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/perfumeria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/sinTac.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/suplementoDietetica.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/lacteosElPuente/elPuente.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/lacteosElPuente/puenteMysql.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app_regiones.py" beforeDir="false" afterPath="$PROJECT_DIR$/app_regiones.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/base_de_datos.sql" beforeDir="false" afterPath="$PROJECT_DIR$/base_de_datos.sql" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cron_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/cron_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/eanconfig.py" beforeDir="false" afterPath="$PROJECT_DIR$/eanconfig.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/11_anonima/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/almacen.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/genovesa/pruebagenovesa.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/genovesa/pruebagenovesa.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/pruebas_generales/prueba.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/pruebas_generales/prueba.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/pruebas_generales/pruebas.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/pruebas_generales/pruebas.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/streamlitvps.py" beforeDir="false" afterPath="$PROJECT_DIR$/streamlitvps.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/19_modo_market/modoMarketMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/19_modo_market/modoMarketMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/cron_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/cron_manager.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -81,6 +72,7 @@
     "Python.atomo.executor": "Run",
     "Python.atomomysql.executor": "Run",
     "Python.base_datos.executor": "Run",
+    "Python.bebida.executor": "Run",
     "Python.bebidas.executor": "Run",
     "Python.carrefour.executor": "Run",
     "Python.carrefour_MySQL.executor": "Run",
@@ -104,6 +96,7 @@
     "Python.disco.executor": "Run",
     "Python.disco_MySQL.executor": "Run",
     "Python.ean.executor": "Run",
+    "Python.elPuente.executor": "Run",
     "Python.estructura_coto.executor": "Run",
     "Python.gallega1.executor": "Run",
     "Python.genovesamysql.executor": "Run",
@@ -134,6 +127,7 @@
     "Python.pruebas.executor": "Run",
     "Python.pruebasMysqlCarrefour.executor": "Run",
     "Python.pruebaspaginacion.executor": "Run",
+    "Python.puenteMysql.executor": "Run",
     "Python.reinaMysql.executor": "Run",
     "Python.solvercaptcha.executor": "Run",
     "Python.sql.executor": "Run",
@@ -304,7 +298,15 @@
       <option name="project" value="LOCAL" />
       <updated>1756160175289</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="parcial UI">
+      <option name="closed" value="true" />
+      <created>1756360592441</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1756360592441</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -319,6 +321,7 @@
     <MESSAGE value="adelantos_streamlit" />
     <MESSAGE value="adelantos_streamlit_2" />
     <MESSAGE value="adelantos_streamlit_3" />
-    <option name="LAST_COMMIT_MESSAGE" value="adelantos_streamlit_3" />
+    <MESSAGE value="parcial UI" />
+    <option name="LAST_COMMIT_MESSAGE" value="parcial UI" />
   </component>
 </project>
