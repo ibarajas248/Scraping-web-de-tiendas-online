@@ -5,22 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="parcial UI">
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/JugueteriaLibreria.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/Mascotas.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/bebida.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/carnesCongelados.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/hogarBazar.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/lacteosFiambres.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/limpieza.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/mundoBebe.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/perfumeria.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/sinTac.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/15_atomo/suplementoDietetica.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lacteosElPuente/elPuente.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/lacteosElPuente/puenteMysql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/disco_falta/disco_sucursales/disco_cordoba_alto_cordoba_cabrera_493.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/vps/pruebas/app.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/19_modo_market/modoMarketMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/19_modo_market/modoMarketMysql.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vps/cron_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/cron_manager.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -95,6 +82,8 @@
     "Python.dinoPaginado.executor": "Run",
     "Python.disco.executor": "Run",
     "Python.disco_MySQL.executor": "Run",
+    "Python.disco_cordoba.executor": "Run",
+    "Python.disco_cordoba_alto_cordoba_cabrera_493.executor": "Run",
     "Python.ean.executor": "Run",
     "Python.elPuente.executor": "Run",
     "Python.estructura_coto.executor": "Run",
@@ -135,16 +124,16 @@
     "Python.veaMysql.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "git-widget-placeholder": "master",
-    "last_opened_file_path": "C:/Users/David/PycharmProjects/scrapingTiendas/vps"
+    "last_opened_file_path": "C:/Users/David/PycharmProjects/scrapingTiendas/vps/pruebas"
   }
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps\pruebas" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\16_vea" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\Toledo" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\14_la_reina" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\13_gallega" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\documentacion" />
