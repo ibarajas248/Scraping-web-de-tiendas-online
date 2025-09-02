@@ -285,8 +285,13 @@ def get_minmax_dates():
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_tiendas():
-    q = "SELECT id, codigo, nombre FROM tiendas ORDER BY nombre"
+    q = """
+    SELECT id, codigo, nombre, ref_tienda, provincia, sucursal
+    FROM tiendas
+    ORDER BY nombre
+    """
     return read_df(q)
+
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_categorias():
@@ -462,7 +467,7 @@ def get_detail(where_str: str, params: Dict, effective: bool, limit: int):
 
 
 # ---------- Navegación "tabs" con sidebars distintos ----------
-VISTAS = ["Reporte", "jobs", "ean", "opcion 3"]
+VISTAS = ["Reporte", "jobs", "ean", "reporte rapido aux","tiendas"]
 vista = st.radio("Secciones", VISTAS, horizontal=True, key="vista_actual")
 
 # ---- Sidebars por vista ----
@@ -488,16 +493,43 @@ def sidebar_reporte():
     else:
         start_date, end_date = default_start, date_range
 
-    tiendas_df = get_tiendas()
+    # ===== Nuevos filtros por atributos de tienda =====
+    tiendas_df = get_tiendas().copy()
+
+    # Helpers de opciones limpias (sin nulos/espacios)
+    def _opts(series: pd.Series) -> list[str]:
+        return sorted([x for x in series.fillna("").astype(str).str.strip().unique().tolist() if x])
+
+    provincias_opts = _opts(tiendas_df["provincia"])
+    provincias_sel  = st.sidebar.multiselect("Provincias", provincias_opts, default=[])
+
+    df1 = tiendas_df if not provincias_sel else tiendas_df[tiendas_df["provincia"].isin(provincias_sel)]
+
+    sucursales_opts = _opts(df1["sucursal"])
+    sucursales_sel  = st.sidebar.multiselect("Sucursales", sucursales_opts, default=[])
+
+    df2 = df1 if not sucursales_sel else df1[df1["sucursal"].isin(sucursales_sel)]
+
+    refs_opts = _opts(df2["ref_tienda"])
+    refs_sel  = st.sidebar.multiselect("Ref. tienda", refs_opts, default=[])
+
+    df3 = df2 if not refs_sel else df2[df2["ref_tienda"].isin(refs_sel)]
+
+    # Selector de tiendas (filtrado por lo anterior)
+    nombres_opts = df3["nombre"].tolist()
     tiendas_sel_nombres = st.sidebar.multiselect(
         "Tiendas",
-        tiendas_df["nombre"].tolist(),
-        default=tiendas_df["nombre"].tolist()
+        nombres_opts,
+        default=nombres_opts
     )
-    tiendas_sel_ids = tiendas_df.loc[
-        tiendas_df["nombre"].isin(tiendas_sel_nombres), "id"
-    ].astype(int).tolist()
+    # Ids finales (intersección de todo)
+    tiendas_sel_ids = (
+        df3.loc[df3["nombre"].isin(tiendas_sel_nombres), "id"]
+        .astype(int)
+        .tolist()
+    )
 
+    # ===== Resto de filtros existentes =====
     cats_df = get_categorias()
     cats_sel = st.sidebar.multiselect("Categorías", cats_df["categoria"].tolist(), default=[])
 
@@ -520,7 +552,7 @@ def sidebar_reporte():
             st.sidebar.error("No se pudieron leer EANs del archivo subido.")
         else:
             ean_list += eans_from_file
-            master_attrs_df = attrs_df  # <- DataFrame con columnas del maestro (si las trae)
+            master_attrs_df = attrs_df  # Maestro opcional desde Excel
 
     # Deduplicar preservando orden
     _seen = set()
@@ -541,8 +573,14 @@ def sidebar_reporte():
         "ean_list": ean_list,
         "use_effective": use_effective,
         "sample_limit": int(sample_limit),
-        "master_attrs_df": master_attrs_df,  # <- imprescindible para usar maestro
+        "master_attrs_df": master_attrs_df,
+
+        # (opcionales por si luego los quieres usar)
+        "provincias_sel": provincias_sel,
+        "sucursales_sel": sucursales_sel,
+        "refs_sel": refs_sel,
     }
+
 
 def sidebar_analisis():
     st.sidebar.header("Filtros – Análisis")
@@ -769,5 +807,13 @@ elif vista == "jobs":
     vistaCron()
 elif vista == "ean":
     vistaEan()
+elif vista == "reporte rapido aux":
+    import prueba
+    prueba.prueba(engine)
+
+elif vista == "tiendas":
+    import tiendas
+    tiendas.tiendas(engine)
+
 else:
     vista_regiones()

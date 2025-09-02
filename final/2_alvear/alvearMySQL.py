@@ -308,7 +308,8 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
 def find_or_create_producto(cur, row: Dict[str, Any]) -> int:
     """
     En Alvear no hay EAN → guardamos NULL.
-    Intentamos evitar duplicados usando (nombre, idMarca) si ambos existen;
+    Intentamos evitar dupli
+    cados usando (nombre, idMarca) si ambos existen;
     si no, solo nombre (riesgo aceptado).
     """
     ean = None  # explícito

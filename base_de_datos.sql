@@ -96,6 +96,10 @@ CREATE TABLE `tiendas` (
   `codigo` varchar(40) NOT NULL,
   `nombre` varchar(160) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci ROW_FORMAT=DYNAMIC;
+ALTER TABLE `tiendas`
+  ADD COLUMN `ref_tienda` VARCHAR(80) NULL AFTER `nombre`,
+  ADD COLUMN `provincia`  VARCHAR(80) NULL AFTER `ref_tienda`,
+  ADD COLUMN `sucursal`   VARCHAR(160) NULL AFTER `provincia`;
 
 -- --------------------------------------------------------
 

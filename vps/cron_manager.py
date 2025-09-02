@@ -8,6 +8,8 @@ def cron_manager():
     import re
     import os  # <- agregado para manejar basenames
     from typing import List, Tuple, Optional
+    import shlex
+    from pathlib import PurePosixPath
 
     # =========================
     # CONFIG POR DEFECTO (EDITABLE EN LA UI)
@@ -20,9 +22,55 @@ def cron_manager():
     BASE_DIR = "/home/intelligenceblue-scrap/htdocs/scrap.intelligenceblue.com.ar/scrap_tiendas"
     DEFAULT_PYTHON_BIN = "/home/intelligenceblue-scrap/.venvs/scrap/bin/python"
 
+
+
     # =========================
     # SSH HELPERS
     # =========================
+
+    def pretty_cmd(cmd: str, base_dir: str) -> str:
+        """
+        Devuelve una vista corta del comando, priorizando la ruta del .py
+        como 'carpeta/script.py'. Si no encuentra .py, intenta algo razonable.
+        """
+        # quitar redirección tipo '> /dev/null 2>&1'
+        cmd_no_redirect = re.split(r"\s+>\s*/dev/null.*$", cmd)[0].strip()
+
+        # tokenizar respetando comillas
+        try:
+            tokens = shlex.split(cmd_no_redirect)
+        except ValueError:
+            tokens = cmd_no_redirect.split()
+
+        # buscar el primer token que termine en .py
+        script_path = None
+        for t in tokens:
+            if t.endswith(".py"):
+                script_path = t
+                break
+
+        if not script_path:
+            m = re.search(r"(/[^ \t'\"<>|&]+\.(?:py|sh|pl|rb))", cmd_no_redirect)
+            if m:
+                script_path = m.group(1)
+
+        if script_path:
+            p = PurePosixPath(script_path)
+            # si cuelga de BASE_DIR, devolver ruta relativa a BASE_DIR
+            try:
+                short = str(p.relative_to(base_dir).as_posix())
+            except Exception:
+                parts = p.parts
+                short = "/".join(parts[-2:]) if len(parts) >= 2 else p.name
+            return short
+
+        # fallback: último par 'carpeta/archivo'
+        m2 = re.search(r"/([^/\s]+/[^/\s]+)$", cmd_no_redirect)
+        if m2:
+            return m2.group(1)
+
+        return cmd_no_redirect[:80]
+
     def _ssh_client(host: str, port: int, user: str, password: str) -> paramiko.SSHClient:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -203,15 +251,32 @@ def cron_manager():
     st.subheader(" Cronjobs actuales")
     if rows:
         df = pd.DataFrame(rows)
-        st.dataframe(df.drop(columns=["line_idx"]), use_container_width=True)
+        df_display = df.drop(columns=["line_idx"]).copy()
+        df_display["Comando"] = df_display["Comando"].apply(lambda c: pretty_cmd(c, BASE_DIR))
+        st.dataframe(df_display, use_container_width=True)
+
     else:
         st.info("No hay cronjobs cargados para este usuario.")
 
     # ======== ELIMINAR JOB ========
+    # ======== ELIMINAR JOB ========
     with st.expander(" Eliminar un job", expanded=False):
         if rows:
-            opt_map = {f"[{r['Tipo']}] {r['Spec/Min']} {r['Hora']} {r['Día']} {r['Mes']} {r['DíaSem']}  →  {r['Comando']}": r["line_idx"] for r in rows}
-            to_del_label = st.selectbox("Selecciona el job a eliminar", ["(ninguno)"] + list(opt_map.keys()))
+            # construir labels simplificados
+            labels = []
+            opt_map = {}  # label -> line_idx
+            for r in rows:
+                short = pretty_cmd(r["Comando"], BASE_DIR)
+                if r["Tipo"] == "5campos":
+                    label = (f"[{r['Tipo']}] {r['Spec/Min']} {r['Hora']} {r['Día']} "
+                             f"{r['Mes']} {r['DíaSem']}  →  {short}  [#{r['line_idx']}]")
+                else:  # @spec
+                    label = f"[{r['Tipo']}] {r['Spec/Min']}  →  {short}  [#{r['line_idx']}]"
+                labels.append(label)
+                opt_map[label] = r["line_idx"]
+
+            to_del_label = st.selectbox("Selecciona el job a eliminar",
+                                        ["(ninguno)"] + labels)
             if to_del_label != "(ninguno)" and st.button("Eliminar seleccionado"):
                 del_idx = opt_map[to_del_label]
                 new_lines = [ln for i, ln in enumerate(lines) if i != del_idx]
