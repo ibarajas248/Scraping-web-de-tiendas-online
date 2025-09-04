@@ -4,21 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="tiendas_1">
-      <change afterPath="$PROJECT_DIR$/ean.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/20_lacteos_el_puente/elPuente.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba_alto_cordoba_cabrera_493.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba_alto_cordoba_cabrera_493_myslq.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vps/eanconfig.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vps/login.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vps/reporte.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vps/tiendas.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="2_9_2025 ok">
+      <change afterPath="$PROJECT_DIR$/final/18_lagenovesa/genovesamysql.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/base_de_datos.sql" beforeDir="false" afterPath="$PROJECT_DIR$/base_de_datos.sql" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/2_alvear/alvearMySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/2_alvear/alvearMySQL.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vps/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vps/cron_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/cron_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vps/pruebas/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/pruebas/app.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -136,16 +124,16 @@
     &quot;Python.veaMysql.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/David/PycharmProjects/scrapingTiendas/final/8_disco/sucursales&quot;
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/David/PycharmProjects/scrapingTiendas/final/18_lagenovesa&quot;
   }
 }</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\18_lagenovesa" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\8_disco\sucursales" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps\pruebas" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\16_vea" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\Toledo" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\8_disco\sucursales" />
@@ -331,7 +319,15 @@
       <option name="project" value="LOCAL" />
       <updated>1756743452700</updated>
     </task>
-    <option name="localTasksCounter" value="18" />
+    <task id="LOCAL-00018" summary="2_9_2025 ok">
+      <option name="closed" value="true" />
+      <created>1756832920357</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1756832920357</updated>
+    </task>
+    <option name="localTasksCounter" value="19" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -349,6 +345,7 @@
     <MESSAGE value="parcial UI" />
     <MESSAGE value="tiendas" />
     <MESSAGE value="tiendas_1" />
-    <option name="LAST_COMMIT_MESSAGE" value="tiendas_1" />
+    <MESSAGE value="2_9_2025 ok" />
+    <option name="LAST_COMMIT_MESSAGE" value="2_9_2025 ok" />
   </component>
 </project>
