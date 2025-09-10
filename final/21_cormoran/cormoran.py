@@ -13,7 +13,12 @@ Requiere:
 """
 
 from __future__ import annotations
-
+from mysql.connector import Error as MySQLError
+import sys, os
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+)
+from base_datos import get_conn
 import argparse
 import json
 import re
@@ -337,12 +342,7 @@ def crawl_cormoran(
     return df
 
 # =============== MySQL: helpers ===============
-from mysql.connector import Error as MySQLError
-import sys, os
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-)
-from base_datos import get_conn  # <- tu conexión MySQL
+ # <- tu conexión MySQL
 
 def _clean(v):
     if v is None:
@@ -561,7 +561,7 @@ def main() -> None:
     print(f"\nTotal de filas (SKU) obtenidas: {len(df)}")
 
     # Exportar a disco
-    df.to_excel(args.outfile, index=False)
+    #df.to_excel(args.outfile, index=False)
     if args.csv:
         df.to_csv(args.csv, index=False, encoding="utf-8-sig")
     print(f"Datos exportados a {args.outfile}" + (f" y {args.csv}" if args.csv else ""))

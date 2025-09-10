@@ -515,7 +515,7 @@ def fetch_products_by_dep(
 def main():
     """Función principal: gestiona argumentos, recorre categorías y exporta a Excel."""
     ap = argparse.ArgumentParser(description="Scraper de productos (Pingüino) → Excel")
-    ap.add_argument("--out", default="Productos_Pinguino.xlsx", help="Archivo XLSX de salida")
+    ap.add_argument("--out", default="Productos_Pinguino_abc.xlsx", help="Archivo XLSX de salida")
     ap.add_argument("--sleep", type=float, default=1.2, help="Espera (seg) entre deptos")
     ap.add_argument("--only-ofertas", action="store_true", help="Solo ofertas (ofe=1)")
     ap.add_argument("--debug-html", action="store_true", help="Guardar HTML por depto en ./_html")

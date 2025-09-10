@@ -3,7 +3,13 @@
 # y un base_datos.get_conn() que devuelva una conexión mysql.connector.connect(...)
 from datetime import datetime
 import numpy as np
+import pandas as pd
 from mysql.connector import Error as MySQLError
+import sys, os
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+)
+
 from base_datos import get_conn  # <- tu conexión MySQL
 
 TIENDA_CODIGO = "cormoran"

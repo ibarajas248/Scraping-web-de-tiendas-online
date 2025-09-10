@@ -5,13 +5,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="2_9_2025 ok">
-      <change afterPath="$PROJECT_DIR$/final/21_cormoran/cormoran.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/22_JOSIMAR/josimar.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/23_masonline/masonline.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requeriments.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requeriments.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vps/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vps/reporte.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/reporte.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cormoran/cormoran.py" beforeDir="false" afterPath="$PROJECT_DIR$/cormoran/cormoran.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/21_cormoran/cormoran.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/21_cormoran/cormoran.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/pruebas_generales/pruebas.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/pruebas_generales/pruebas.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
