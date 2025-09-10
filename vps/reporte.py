@@ -432,7 +432,7 @@ def iniciaReporte():
          ELSE s.tipo_oferta
             END AS TIPO_OFERTA,
           DATE(s.capturado_en) AS FECHA,
-          NULL as ID_BANDERA, 
+          t.ref_tienda as ID_BANDERA, 
           t.nombre AS BANDERA,
           s.url_tienda as URLs
         FROM (

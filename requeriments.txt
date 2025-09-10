@@ -16,4 +16,3 @@ requests
 pandas
 openpyxl
 rapidfuzz
-pip install scikit-learn rapidfuzz

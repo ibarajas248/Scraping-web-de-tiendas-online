@@ -5,7 +5,7 @@ import os, sys, importlib.util
 import streamlit as st
 
 APP_USER = os.getenv("APP_USER", "scrap@intelligenceblue.com.ar")
-APP_PASS = os.getenv("APP_PASS", "0DP$eRS(FPBl")
+APP_PASS = os.getenv("APP_PASS", "scraptiendas")
 
 def show_login():
     st.title("Iniciar sesión")

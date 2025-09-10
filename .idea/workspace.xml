@@ -5,7 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="2_9_2025 ok">
-      <change afterPath="$PROJECT_DIR$/cormoran/cormoran.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/21_cormoran/cormoran.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requeriments.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requeriments.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/reporte.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/reporte.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -31,7 +37,7 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/ibarajas248/Scraping-web-de-tiendas-online.git&quot;,
-    &quot;accountId&quot;: &quot;af0e0ae9-d90b-4de9-9567-d36100925378&quot;
+    &quot;accountId&quot;: &quot;353b1a11-606d-42c1-b4d8-971b9ce402db&quot;
   }
 }</component>
   <component name="ProjectColorInfo">{
@@ -117,6 +123,7 @@
     &quot;Python.pruebaspaginacion.executor&quot;: &quot;Run&quot;,
     &quot;Python.puenteMysql.executor&quot;: &quot;Run&quot;,
     &quot;Python.reinaMysql.executor&quot;: &quot;Run&quot;,
+    &quot;Python.reporte.executor&quot;: &quot;Run&quot;,
     &quot;Python.solvercaptcha.executor&quot;: &quot;Run&quot;,
     &quot;Python.sql.executor&quot;: &quot;Run&quot;,
     &quot;Python.vea.executor&quot;: &quot;Run&quot;,
@@ -169,7 +176,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-5b207ade9991-746f403e7f0c-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-241.17890.14" />
+        <option value="bundled-python-sdk-98f27166c754-ba05f1cad1b1-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-242.21829.153" />
       </set>
     </attachedChunks>
   </component>
