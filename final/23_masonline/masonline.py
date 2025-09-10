@@ -3,6 +3,7 @@
 
 """
 Masonline (VTEX) — Ingesta MySQL por productClusterIds con fallback alfabético
+(con truncado DINÁMICO según límites reales de columnas en MySQL)
 
 - Intenta traer todo el cluster por paginación (_from/_to).
 - Si choca el límite (~2.500 resultados), particiona por 'ft' (0–9, a–z).
@@ -40,16 +41,43 @@ from base_datos import get_conn  # <- tu helper de conexión mysql.connector
 TIENDA_CODIGO = "masonline"
 TIENDA_NOMBRE = "Masonline (VTEX)"
 
-# ---------------- Límites de columnas (ajustá a tu DDL) ----------------
-MAXLEN_TIPO_OFERTA = 255            # historico_precios.tipo_oferta (VARCHAR(255) sugerido)
-MAXLEN_PROMO_COMENTARIOS = 1000     # historico_precios.promo_comentarios (TEXT o VARCHAR grande)
-MAXLEN_NOMBRE_TIENDA = 255          # producto_tienda.nombre_tienda (VARCHAR(255) sugerido)
+# ---------------- Límites por defecto (se sobreescriben dinámicamente) ----------------
+DEFAULT_LIMITS = {
+    ("historico_precios", "tipo_oferta"): 255,
+    ("historico_precios", "promo_comentarios"): 1000,
+    ("historico_precios", "promo_texto_regular"): 255,
+    ("historico_precios", "promo_texto_descuento"): 255,
+    ("producto_tienda", "nombre_tienda"): 255,
+}
 
-def _truncate(s: Optional[str], maxlen: int) -> Optional[str]:
+# se rellena al conectar
+DB_LIMITS: Dict[Tuple[str, str], Optional[int]] = {}
+
+def _truncate_dyn(s: Optional[str], table: str, column: str) -> Optional[str]:
+    """Trunca usando el límite real de la columna en MySQL (o el default si no se pudo leer).
+       Si la columna es TEXT (sin max length), no trunca.
+    """
     if s is None:
         return None
     s = str(s)
-    return s[:maxlen] if len(s) > maxlen else s
+    limit = DB_LIMITS.get((table, column))
+    if limit is None:
+        # None => TEXT o sin límite conocido → sin truncar
+        return s
+    if len(s) > limit:
+        return s[:limit]
+    return s
+
+def _parse_price(val) -> Optional[str]:
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        if np.isnan(f):
+            return None
+        return f"{round(f, 2)}"
+    except Exception:
+        return None
 
 # ---------------- Config VTEX ----------------
 BASE = "https://www.masonline.com.ar"
@@ -306,17 +334,43 @@ def scrape_cluster(cluster_id: str) -> pd.DataFrame:
         df = df.reindex(columns=cols)
     return df
 
-# ---------------- Helpers SQL ----------------
-def _parse_price(val) -> Optional[str]:
-    if val is None:
-        return None
-    try:
-        f = float(val)
-        if np.isnan(f):
-            return None
-        return f"{round(f, 2)}"
-    except Exception:
-        return None
+# ---------------- Helpers SQL dinámicos ----------------
+def load_db_limits(cur) -> None:
+    """Carga DB_LIMITS leyendo INFORMATION_SCHEMA. Si no encuentra, usa DEFAULT_LIMITS.
+       Si CHARACTER_MAXIMUM_LENGTH es NULL (TEXT), dejamos None (sin truncado).
+    """
+    global DB_LIMITS
+    DB_LIMITS = DEFAULT_LIMITS.copy()
+    targets = [
+        ("historico_precios", "tipo_oferta"),
+        ("historico_precios", "promo_comentarios"),
+        ("historico_precios", "promo_texto_regular"),
+        ("historico_precios", "promo_texto_descuento"),
+        ("producto_tienda", "nombre_tienda"),
+    ]
+    cur.execute("SELECT DATABASE()")
+    dbname = cur.fetchone()[0]
+
+    for table, column in targets:
+        cur.execute("""
+            SELECT CHARACTER_MAXIMUM_LENGTH
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s AND COLUMN_NAME=%s
+            LIMIT 1
+        """, (dbname, table, column))
+        row = cur.fetchone()
+        if row is None:
+            # se mantiene default
+            continue
+        maxlen = row[0]  # puede ser None para TEXT
+        if maxlen is None:
+            DB_LIMITS[(table, column)] = None  # sin truncado (TEXT)
+        else:
+            try:
+                DB_LIMITS[(table, column)] = int(maxlen)
+            except Exception:
+                # fallback por cualquier cosa rara
+                pass
 
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute(
@@ -379,7 +433,8 @@ def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
     sku = (r.get("SKU") or None)
     url = (r.get("URL") or None)
-    nombre_tienda = _truncate((r.get("NombreProducto") or None), MAXLEN_NOMBRE_TIENDA)
+    # truncado dinámico segun columna real
+    nombre_tienda = _truncate_dyn((r.get("NombreProducto") or None), "producto_tienda", "nombre_tienda")
     record_id = (r.get("ProductId") or None)
 
     if sku:
@@ -418,7 +473,10 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en: dt.datetime):
     precio_lista = _parse_price(r.get("PrecioLista"))
     precio_oferta = _parse_price(r.get("PrecioOferta"))
-    tipo_oferta = _truncate((r.get("TipoOferta") or None), MAXLEN_TIPO_OFERTA)
+
+    # Truncados DINÁMICOS
+    tipo_oferta_raw = (r.get("TipoOferta") or None)
+    tipo_oferta = _truncate_dyn(tipo_oferta_raw, "historico_precios", "tipo_oferta")
 
     # Metadatos del cluster en comentarios
     promo_comentarios = None
@@ -426,7 +484,12 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
     cname = r.get("ClusterNombre")
     if cid or cname:
         promo_comentarios = f"cluster_id={cid or ''}; cluster_nombre={cname or ''}"
-        promo_comentarios = _truncate(promo_comentarios, MAXLEN_PROMO_COMENTARIOS)
+    promo_comentarios = _truncate_dyn(promo_comentarios, "historico_precios", "promo_comentarios")
+
+    # también truncamos promo_texto_* y promo_tipo (lo igualas a tipo_oferta)
+    promo_tipo = _truncate_dyn(tipo_oferta, "historico_precios", "tipo_oferta")
+    promo_texto_regular = _truncate_dyn(None, "historico_precios", "promo_texto_regular")
+    promo_texto_descuento = _truncate_dyn(None, "historico_precios", "promo_texto_descuento")
 
     cur.execute("""
         INSERT INTO historico_precios
@@ -445,7 +508,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
     """, (
         tienda_id, producto_tienda_id, capturado_en,
         precio_lista, precio_oferta, tipo_oferta,
-        tipo_oferta, None, None, promo_comentarios
+        promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios
     ))
 
 # ---------------- Orquestador MySQL ----------------
@@ -481,6 +544,9 @@ def run_to_mysql(cluster_ids: List[str], out_prefix: Optional[str] = None):
         conn.autocommit = False
         cur = conn.cursor()
 
+        # Cargar límites reales desde INFORMATION_SCHEMA
+        load_db_limits(cur)
+
         tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
 
         inserted_hist = 0
@@ -493,7 +559,7 @@ def run_to_mysql(cluster_ids: List[str], out_prefix: Optional[str] = None):
 
         conn.commit()
         print(f"✅ Guardado en MySQL: {inserted_hist} filas de histórico para {TIENDA_NOMBRE} ({capturado_en})")
-    except Exception as e:
+    except Exception:
         if conn:
             conn.rollback()
         raise

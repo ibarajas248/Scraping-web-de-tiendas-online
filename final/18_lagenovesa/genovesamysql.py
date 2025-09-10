@@ -16,9 +16,14 @@ import re
 import time
 import random
 import argparse
+import tempfile
+import shutil
+import socket
 from typing import Optional, List, Dict, Tuple, Any
 from urllib.parse import urljoin, urlparse, parse_qs
 
+import os
+import sys
 import pandas as pd
 from bs4 import BeautifulSoup
 
@@ -34,7 +39,6 @@ from selenium.common.exceptions import TimeoutException, ElementClickIntercepted
 
 # === Persistencia MySQL ===
 from mysql.connector import Error as MySQLError
-import sys, os
 
 # añade la carpeta raíz (2 niveles más arriba) al sys.path
 sys.path.append(
@@ -108,22 +112,81 @@ def snapshot_debug(driver, prefix="genovesa_debug"):
     except Exception:
         pass
 
-# ============== Selenium setup ==============
-def make_driver(headless: bool = False, user_data_dir: Optional[str] = None, profile_dir: Optional[str] = None):
+# ===== Helpers de perfil / puerto =====
+def _get_free_port(start=9222, end=9360) -> Optional[int]:
+    for p in range(start, end):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", p))
+                return p
+            except OSError:
+                continue
+    return None
+
+def _cleanup_singleton_locks(user_data_dir: str):
+    # Quita archivos de lock que dejan los perfiles de Chromium/Chrome
+    try:
+        for root, _, files in os.walk(user_data_dir):
+            for name in files:
+                if name.startswith("Singleton"):
+                    try:
+                        os.remove(os.path.join(root, name))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    # locks temporales globales
+    try:
+        for f in os.listdir("/tmp"):
+            if f.startswith(".org.chromium.Chromium"):
+                try: os.remove(os.path.join("/tmp", f))
+                except Exception: pass
+    except Exception:
+        pass
+
+# ============== Selenium setup (endurecido) ==============
+def make_driver(
+    headless: bool = False,
+    user_data_dir: Optional[str] = None,
+    profile_dir: Optional[str] = None,
+    keep_profile: bool = False
+):
     opts = Options()
     if headless:
         opts.add_argument("--headless=new")
-    if user_data_dir:
-        opts.add_argument(f"--user-data-dir={user_data_dir}")
-    if profile_dir:
-        opts.add_argument(f"--profile-directory={profile_dir}")
 
-    opts.add_argument("--disable-blink-features=AutomationControlled")
-    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
-    opts.add_experimental_option('useAutomationExtension', False)
+    # Perfil: si no se pasa, crear uno temporal único
+    temp_dir = None
+    if not user_data_dir:
+        temp_dir = tempfile.mkdtemp(prefix="chrome-prof-")
+        user_data_dir = temp_dir
+    else:
+        # Si el usuario pasa un perfil persistente, limpiamos locks
+        os.makedirs(user_data_dir, exist_ok=True)
+        _cleanup_singleton_locks(user_data_dir)
+
+    opts.add_argument(f"--user-data-dir={user_data_dir}")
+
+    # Evitar 'Default' y generar un subperfil único si no se pasa
+    if not profile_dir:
+        profile_dir = f"Profile-{os.getpid()}-{int(time.time())}"
+    opts.add_argument(f"--profile-directory={profile_dir}")
+
+    # Puerto de depuración exclusivo
+    free_port = _get_free_port()
+    if free_port:
+        opts.add_argument(f"--remote-debugging-port={free_port}")
+
+    # Robustez general en VPS
     opts.add_argument("--window-size=1280,900")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--disable-features=VizDisplayCompositor")
+    opts.add_argument("--disable-features=NetworkService")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option('useAutomationExtension', False)
     opts.add_argument("--lang=es-AR")
     opts.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -140,6 +203,20 @@ def make_driver(headless: bool = False, user_data_dir: Optional[str] = None, pro
         )
     except Exception:
         pass
+
+    # Limpieza automática si fue un perfil temporal
+    if temp_dir and not keep_profile:
+        import atexit
+        @atexit.register
+        def _cleanup():
+            try:
+                driver.quit()
+            except Exception:
+                pass
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
 
     return driver
 
@@ -285,7 +362,7 @@ def try_click_load_more(driver) -> bool:
                 continue
     return False
 
-# ============== NUEVO: detectar contenedor real de scroll ==============
+# ============== detectar contenedor real de scroll ==============
 def get_scroll_root(driver, item_selector: str):
     js = r"""
     const sel = arguments[0];
@@ -519,9 +596,15 @@ def scrape_categoria(
     headless: bool = False,
     user_data_dir: Optional[str] = None,
     profile_dir: Optional[str] = None,
+    keep_profile: bool = False,
     sleep_between_detail=(0.05, 0.15),
 ) -> pd.DataFrame:
-    driver = make_driver(headless=headless, user_data_dir=user_data_dir, profile_dir=profile_dir)
+    driver = make_driver(
+        headless=headless,
+        user_data_dir=user_data_dir,
+        profile_dir=profile_dir,
+        keep_profile=keep_profile
+    )
     try:
         # HOME
         log("[INIT] Entrando al HOME…")
@@ -684,7 +767,7 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
     sku = clean(p.get("sku"))
     rec = clean(p.get("record_id"))
     url = p.get("url") or ""
-    nombre_tienda = p.get("nombre") or p.get("nombre_tienda") or ""
+    nombre_tienda = p.get("nombre_tienda") or p.get("nombre") or ""
 
     if sku:
         cur.execute("""
@@ -765,11 +848,13 @@ def row_to_db_product(row: Dict[str, Any]) -> Dict[str, Any]:
         if m:
             precio_lista = m.group(1)
 
+    nombre_det = clean(row.get("detail_title") or row.get("list_title"))
+
     return {
         "sku":        clean(sku),
         "record_id":  None,
         "ean":        clean(row.get("ean")),
-        "nombre":     clean(row.get("detail_title") or row.get("list_title")),
+        "nombre":     nombre_det,
         "marca":      None,
         "fabricante": None,
         "categoria":  clean(row.get("categoria")),
@@ -784,8 +869,7 @@ def row_to_db_product(row: Dict[str, Any]) -> Dict[str, Any]:
         "comentarios_promo":    None,
 
         "url":            clean(row.get("detail_url")),
-        "nombre_tienda":  clean(row.get("detail_title") or row.get("list_title")),
-        "nombre":         clean(row.get("detail_title") or row.get("list_title")),
+        "nombre_tienda":  nombre_det,
     }
 
 def persistir_df_en_mysql(df: pd.DataFrame, tienda_codigo=TIENDA_CODIGO, tienda_nombre=TIENDA_NOMBRE):
@@ -831,6 +915,7 @@ if __name__ == "__main__":
     parser.add_argument("--outfile", default="LaGenovesa_ALMACEN.xlsx", help="Archivo XLSX de salida")
     parser.add_argument("--user-data-dir", default=None, help="Ruta a User Data dir de Chrome (opcional)")
     parser.add_argument("--profile-dir", default=None, help="Nombre de profile de Chrome (opcional, ej. 'Default')")
+    parser.add_argument("--keep-profile", action="store_true", help="No borrar el perfil temporal al salir")
     args = parser.parse_args()
 
     df = scrape_categoria(
@@ -838,6 +923,7 @@ if __name__ == "__main__":
         headless=args.headless,
         user_data_dir=args.user_data_dir,
         profile_dir=args.profile_dir,
+        keep_profile=args.keep_profile
     )
 
     # Persistir en MySQL con tu contrato estándar
