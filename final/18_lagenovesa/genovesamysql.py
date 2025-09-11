@@ -4,12 +4,20 @@
 """
 La Genovesa (ALMACÉN) – Scraper con Selenium + BeautifulSoup + Persistencia MySQL
 
-- Abre HOME -> acepta/selecciona sucursal si aparece -> va a la categoría
-- Scroll gentil sobre el CONTENEDOR REAL (wheel + END + fondo real)
-- Recorre cada tarjeta, entra al detalle y extrae:
+- Abre HOME -> resuelve/acepta sucursal si aparece -> va a la categoría
+- Scroll gentil sobre el CONTENEDOR REAL (wheel + END + al fondo real)
+- Recorre tarjetas del listado, entra al detalle y extrae:
   EAN, Título, Precio unitario, Precio de referencia, Imagen, URL
-- Imprime todo lo que va encontrando
 - Exporta a XLSX y persiste en MySQL (tiendas, productos, producto_tienda, historico_precios)
+
+Requisitos recomendados en VPS (Ubuntu):
+  sudo apt update
+  sudo apt install -y google-chrome-stable || sudo snap install chromium
+  sudo apt install -y unzip xvfb libnss3 libxss1 libasound2 libx11-xcb1 \
+     libxrandr2 libxcomposite1 libxdamage1 libxi6 libgtk-3-0 libgbm1 \
+     ca-certificates fonts-liberation xdg-utils
+  pip install --upgrade pip
+  pip install selenium webdriver-manager beautifulsoup4 lxml pandas openpyxl mysql-connector-python
 """
 
 import re
@@ -24,6 +32,7 @@ from urllib.parse import urljoin, urlparse, parse_qs
 
 import os
 import sys
+import platform
 import pandas as pd
 from bs4 import BeautifulSoup
 
@@ -40,10 +49,20 @@ from selenium.common.exceptions import TimeoutException, ElementClickIntercepted
 # === Persistencia MySQL ===
 from mysql.connector import Error as MySQLError
 
-# añade la carpeta raíz (2 niveles más arriba) al sys.path
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-)
+# ---------- Path robusto a base_datos.py (busca hasta 4 niveles arriba) ----------
+def _ensure_project_root_for_import():
+    env_root = os.environ.get("PROJECT_ROOT")
+    if env_root and os.path.isfile(os.path.join(env_root, "base_datos.py")):
+        sys.path.append(os.path.abspath(env_root))
+        return
+    here = os.path.abspath(os.path.dirname(__file__))
+    for up in range(5):
+        candidate = os.path.abspath(os.path.join(here, *([".."] * up)))
+        if os.path.isfile(os.path.join(candidate, "base_datos.py")):
+            sys.path.append(candidate)
+            return
+
+_ensure_project_root_for_import()
 from base_datos import get_conn  # <- tu conexión MySQL
 
 # ================= Config =================
@@ -72,14 +91,8 @@ DETAIL_IMG_SEL   = "img.imgPromocionesL, img.imgPromociones"
 # ===== Tiempos / Scroll =====
 WAIT = 30
 SCROLL_MAX_ROUNDS = 120
-SCROLL_KEYS_STEPS = 3
-SCROLL_GENTLE_STEPS = 12
-SCROLL_STEP_PX = 160
-SCROLL_NEAR_BOTTOM_OFFSET = 220
 SCROLL_MAX_NO_GROWTH_BURSTS = 6
 AFTER_ACTION_SLEEP = (0.6, 1.0)
-POLL_AFTER_SCROLL_SEC = 2.0
-POLL_INTERVAL_SEC = 0.2
 
 # ================ Utils ================
 def log(msg: str) -> None:
@@ -107,7 +120,10 @@ def snapshot_debug(driver, prefix="genovesa_debug"):
     try:
         with open(f"{prefix}.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
-        driver.save_screenshot(f"{prefix}.png")
+        try:
+            driver.save_screenshot(f"{prefix}.png")
+        except Exception:
+            pass
         log(f"[DEBUG] Guardados {prefix}.html / {prefix}.png")
     except Exception:
         pass
@@ -124,7 +140,6 @@ def _get_free_port(start=9222, end=9360) -> Optional[int]:
     return None
 
 def _cleanup_singleton_locks(user_data_dir: str):
-    # Quita archivos de lock que dejan los perfiles de Chromium/Chrome
     try:
         for root, _, files in os.walk(user_data_dir):
             for name in files:
@@ -135,7 +150,6 @@ def _cleanup_singleton_locks(user_data_dir: str):
                         pass
     except Exception:
         pass
-    # locks temporales globales
     try:
         for f in os.listdir("/tmp"):
             if f.startswith(".org.chromium.Chromium"):
@@ -144,46 +158,62 @@ def _cleanup_singleton_locks(user_data_dir: str):
     except Exception:
         pass
 
-# ============== Selenium setup (endurecido) ==============
+# ---------- Proxy helper ----------
+def _apply_proxy_from_env(opts: Options):
+    proxy = os.environ.get("SELENIUM_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+    if proxy:
+        opts.add_argument(f"--proxy-server={proxy}")
+
+# ---------- Chrome binary candidates ----------
+def _possible_binaries():
+    env_bin = os.environ.get("CHROME_BIN") or os.environ.get("GOOGLE_CHROME_BIN")
+    if env_bin:
+        yield env_bin
+    for p in [
+        "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable",
+        "/snap/bin/chromium", "/usr/bin/chromium", "/usr/bin/chromium-browser",
+        "/opt/google/chrome/google-chrome"
+    ]:
+        if os.path.exists(p):
+            yield p
+
+# ============== Selenium setup (endurecido VPS) ==============
 def make_driver(
-    headless: bool = False,
+    headless: bool = True,
     user_data_dir: Optional[str] = None,
     profile_dir: Optional[str] = None,
     keep_profile: bool = False
 ):
+    log(f"[ENV] Python={platform.python_version()} | System={platform.platform()}")
     opts = Options()
     if headless:
         opts.add_argument("--headless=new")
 
-    # Perfil: si no se pasa, crear uno temporal único
+    # Perfil (temporal por defecto)
     temp_dir = None
     if not user_data_dir:
         temp_dir = tempfile.mkdtemp(prefix="chrome-prof-")
         user_data_dir = temp_dir
     else:
-        # Si el usuario pasa un perfil persistente, limpiamos locks
         os.makedirs(user_data_dir, exist_ok=True)
         _cleanup_singleton_locks(user_data_dir)
-
     opts.add_argument(f"--user-data-dir={user_data_dir}")
 
-    # Evitar 'Default' y generar un subperfil único si no se pasa
     if not profile_dir:
         profile_dir = f"Profile-{os.getpid()}-{int(time.time())}"
     opts.add_argument(f"--profile-directory={profile_dir}")
 
-    # Puerto de depuración exclusivo
+    # Puerto debugging exclusivo
     free_port = _get_free_port()
     if free_port:
         opts.add_argument(f"--remote-debugging-port={free_port}")
 
-    # Robustez general en VPS
+    # Flags VPS
     opts.add_argument("--window-size=1280,900")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-features=VizDisplayCompositor")
-    opts.add_argument("--disable-features=NetworkService")
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     opts.add_experimental_option('useAutomationExtension', False)
@@ -192,9 +222,26 @@ def make_driver(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
     )
+    _apply_proxy_from_env(opts)
 
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=opts)
+    # Intentar fijar binario si existe
+    for bin_path in _possible_binaries():
+        try:
+            if os.path.exists(bin_path):
+                opts.binary_location = bin_path
+                log(f"[CHROME] Usando binario: {bin_path}")
+                break
+        except Exception:
+            pass
+
+    # Crear driver (webdriver_manager) con fallback a /usr/bin/chromedriver
+    try:
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=opts)
+    except Exception as e:
+        log(f"[CHROME] Error inicial creando driver: {e}. Intentando /usr/bin/chromedriver…")
+        service = Service("/usr/bin/chromedriver")
+        driver = webdriver.Chrome(service=service, options=opts)
 
     try:
         driver.execute_cdp_cmd(
@@ -227,6 +274,8 @@ def click_first_visible(driver, labels: List[str]) -> bool:
         for e in els:
             try:
                 if e.is_displayed():
+                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", e)
+                    human_sleep(0.1, 0.2)
                     e.click()
                     human_sleep(*AFTER_ACTION_SLEEP)
                     log(f"[MODAL] Click en: {txt}")
@@ -251,7 +300,6 @@ def select_first_valid_option(sel_el) -> bool:
 def try_accept_location_modal(driver) -> bool:
     acted = False
     human_sleep(0.4, 0.8)
-
     selects = driver.find_elements(By.XPATH, "//select[not(@disabled)]")
     for sel in selects:
         if not sel.is_displayed():
@@ -259,10 +307,8 @@ def try_accept_location_modal(driver) -> bool:
         if select_first_valid_option(sel):
             acted = True
             log("[MODAL] Select sucursal/zona elegido.")
-
     if click_first_visible(driver, ["Aceptar", "Confirmar", "Continuar", "Ingresar", "Entrar", "Guardar"]):
         acted = True
-
     closes = driver.find_elements(By.XPATH, "//button[contains(@class,'close') or @aria-label='Close' or contains(., '×')]")
     for c in closes:
         try:
@@ -274,7 +320,6 @@ def try_accept_location_modal(driver) -> bool:
                 break
         except Exception:
             pass
-
     return acted
 
 def warmup_lazy_load(driver, selector: str, rounds: int = 6) -> bool:
@@ -288,6 +333,10 @@ def warmup_lazy_load(driver, selector: str, rounds: int = 6) -> bool:
     return False
 
 def ensure_listing_ready(driver, url: str):
+    try:
+        log(f"[NAV] UA: {driver.execute_script('return navigator.userAgent')}")
+    except Exception:
+        pass
     for attempt in range(1, 3):
         try:
             WebDriverWait(driver, WAIT).until(
@@ -304,10 +353,8 @@ def ensure_listing_ready(driver, url: str):
                 driver.get(url)
                 human_sleep(0.6, 1.0)
                 continue
-
             if warmup_lazy_load(driver, LIST_SELECTOR, rounds=10):
                 return
-
             snapshot_debug(driver, "genovesa_debug_init")
             if attempt == 1:
                 driver.get(url)
@@ -368,7 +415,6 @@ def get_scroll_root(driver, item_selector: str):
     const sel = arguments[0];
     const list = document.querySelector(sel);
     if (!list) return null;
-
     function isScrollable(n){
       if (!n) return false;
       const st = getComputedStyle(n);
@@ -376,14 +422,11 @@ def get_scroll_root(driver, item_selector: str):
       const y = st.overflowY;
       return hasSpace && /(auto|scroll|overlay)/.test(y);
     }
-
-    // subir desde el listado hasta encontrar un contenedor desplazable
     let el = list;
     while (el && el !== document.body) {
       if (isScrollable(el)) { el.setAttribute('data-scrroot','1'); return el; }
       el = el.parentElement;
     }
-    // fallback: documento
     const root = document.scrollingElement || document.documentElement || document.body;
     root.setAttribute('data-scrroot','1');
     return root;
@@ -394,14 +437,14 @@ def get_scroll_root(driver, item_selector: str):
     except Exception:
         return driver.find_element(By.TAG_NAME, "body")
 
-# ============== Scroll gentil (corregido) ==============
+# ============== Scroll gentil ==============
 def _scroll_burst_gentle(driver, item_selector: str, root_el):
     try:
         driver.execute_script("arguments[0].focus();", root_el)
         root_el.click()
     except Exception:
         pass
-
+    # rueda suave
     for _ in range(6):
         try:
             driver.execute_script(
@@ -411,26 +454,25 @@ def _scroll_burst_gentle(driver, item_selector: str, root_el):
         except Exception:
             break
         human_sleep(0.05, 0.12)
-
+    # arrastre incremental
     try:
         for _ in range(10):
             driver.execute_script("arguments[0].scrollTop = arguments[0].scrollTop + 200;", root_el)
             human_sleep(0.08, 0.15)
     except Exception:
         pass
-
+    # al fondo
     try:
         driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", root_el)
     except Exception:
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     human_sleep(0.12, 0.22)
-
+    # END
     try:
         root_el.send_keys(Keys.END)
     except Exception:
         pass
 
-# ============== Polling de crecimiento (usa contenedor) ==============
 def _poll_for_growth(driver, item_selector: str, prev_count: int, prev_height: int, root_el) -> Optional[Tuple[int, int]]:
     deadline = time.time() + 3.5
     while time.time() < deadline:
@@ -447,7 +489,6 @@ def _poll_for_growth(driver, item_selector: str, prev_count: int, prev_height: i
             return new_count, int(new_height)
     return None
 
-# ============== Orquestador de scroll (corregido) ==============
 def scroll_until_no_more(
     driver,
     item_selector: str,
@@ -593,7 +634,7 @@ def parse_detail_page(driver, url: str) -> Dict:
 # ============== Orquestador ==============
 def scrape_categoria(
     url: str,
-    headless: bool = False,
+    headless: bool = True,
     user_data_dir: Optional[str] = None,
     profile_dir: Optional[str] = None,
     keep_profile: bool = False,
@@ -911,16 +952,26 @@ def persistir_df_en_mysql(df: pd.DataFrame, tienda_codigo=TIENDA_CODIGO, tienda_
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default=DEFAULT_URL, help="URL de la categoría a scrapear")
-    parser.add_argument("--headless", action="store_true", help="Ejecutar Chrome en modo headless")
+    parser.add_argument("--headless", action="store_true", help="Forzar modo headless")
+    parser.add_argument("--no-headless", action="store_true", help="Desactivar headless (debug con entorno gráfico)")
     parser.add_argument("--outfile", default="LaGenovesa_ALMACEN.xlsx", help="Archivo XLSX de salida")
     parser.add_argument("--user-data-dir", default=None, help="Ruta a User Data dir de Chrome (opcional)")
     parser.add_argument("--profile-dir", default=None, help="Nombre de profile de Chrome (opcional, ej. 'Default')")
     parser.add_argument("--keep-profile", action="store_true", help="No borrar el perfil temporal al salir")
     args = parser.parse_args()
 
+    # Headless por defecto TRUE; permite override con --no-headless / --headless
+    _headless = True
+    if args.no_headless:
+        _headless = False
+    if args.headless:
+        _headless = True
+
+    log(f"[RUN] Headless={_headless} | Outfile={args.outfile}")
+
     df = scrape_categoria(
         url=args.url,
-        headless=args.headless,
+        headless=_headless,
         user_data_dir=args.user_data_dir,
         profile_dir=args.profile_dir,
         keep_profile=args.keep_profile
@@ -930,5 +981,5 @@ if __name__ == "__main__":
     persistir_df_en_mysql(df, tienda_codigo=TIENDA_CODIGO, tienda_nombre=TIENDA_NOMBRE)
 
     log(f"[SAVE] Exportando a {args.outfile} …")
-    df.to_excel(args.outfile, index=False)
+    #df.to_excel(args.outfile, index=False)
     log("[SAVE] Archivo XLSX generado.")

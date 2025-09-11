@@ -162,6 +162,7 @@ def iniciaReporte():
         # 👇 clave: aceptar 'Nombre Proveedor' para FABRICANTE
         "FABRICANTE": {"fabricante", "nombre proveedor", "proveedor", "producer", "manufacturer"},
         "MARCA": {"marca", "brand"},
+        "PRODUCTO": {"descripcion", "descripción", "producto", "nombre producto"}
     }
 
     def _pick_col(df: pd.DataFrame, names: set[str]) -> str | None:
@@ -246,7 +247,8 @@ def iniciaReporte():
                     if col:
                         df2[out_col] = df[col]
 
-                keep = [c for c in ["EAN", "CATEGORIA", "SUBCATEGORIA", "MARCA", "FABRICANTE"] if c in df2.columns]
+                keep = [c for c in ["EAN", "CATEGORIA", "SUBCATEGORIA", "MARCA", "FABRICANTE", "PRODUCTO"] if c in df2.columns]
+
                 rows_list.append(df2[keep])
 
             attrs_df = None
@@ -391,21 +393,45 @@ def iniciaReporte():
         p.update({f"be{i}": e for i, e in enumerate(eans)})
 
         q = f"""
+        -- 1) Último snapshot por (tienda, producto_tienda)
         WITH ult AS (
           SELECT h.tienda_id, h.producto_tienda_id, MAX(h.capturado_en) AS maxc
           FROM historico_precios h
-          JOIN producto_tienda pt ON pt.id=h.producto_tienda_id
-          JOIN productos p ON p.id=pt.producto_id
+          JOIN producto_tienda pt ON pt.id = h.producto_tienda_id
+          JOIN productos p ON p.id = pt.producto_id
           WHERE {where_str} AND p.ean IN ({placeholders})
           GROUP BY h.tienda_id, h.producto_tienda_id
+        ),
+        -- 2) Tomamos precio/atributos de ese último snapshot
+        snap AS (
+          SELECT
+            h.tienda_id,
+            p.ean,
+            COALESCE(pt.nombre_tienda, p.nombre) AS producto,
+            {price_expr} AS precio,
+            h.capturado_en
+          FROM ult u
+          JOIN historico_precios h
+            ON h.tienda_id = u.tienda_id
+           AND h.producto_tienda_id = u.producto_tienda_id
+           AND h.capturado_en = u.maxc
+          JOIN producto_tienda pt ON pt.id = u.producto_tienda_id
+          JOIN productos p        ON p.id  = pt.producto_id
+        ),
+        -- 3) Unificar por (tienda, EAN): preferimos snapshot más reciente
+        --    y, si hay varios en ese mismo momento, el menor precio
+        dedup AS (
+          SELECT s.*,
+                 ROW_NUMBER() OVER(
+                   PARTITION BY s.tienda_id, s.ean
+                   ORDER BY s.capturado_en DESC, s.precio ASC
+                 ) AS rn
+          FROM snap s
         )
-        SELECT t.nombre AS tienda, p.ean, COALESCE(pt.nombre_tienda, p.nombre) AS producto,
-               {price_expr} AS precio
-        FROM ult u
-        JOIN historico_precios h ON h.tienda_id=u.tienda_id AND h.producto_tienda_id=u.producto_tienda_id AND h.capturado_en=u.maxc
-        JOIN producto_tienda pt ON pt.id=u.producto_tienda_id
-        JOIN productos p ON p.id=pt.producto_id
-        JOIN tiendas t ON t.id=u.tienda_id
+        SELECT t.nombre AS tienda, d.ean, d.producto, d.precio
+        FROM dedup d
+        JOIN tiendas t ON t.id = d.tienda_id
+        WHERE d.rn = 1
         """
         return read_df(q, p)
 
@@ -748,7 +774,8 @@ def iniciaReporte():
             m = m.dropna(subset=["EAN"]).drop_duplicates("EAN")
 
             # Orden requerido: ... MARCA, FABRICANTE
-            master_cols = [c for c in ["CATEGORIA", "SUBCATEGORIA", "MARCA", "FABRICANTE"] if c in m.columns]
+            master_cols = [c for c in ["CATEGORIA", "SUBCATEGORIA", "MARCA", "FABRICANTE", "PRODUCTO"] if c in m.columns]
+
 
             # Extras del detalle (para no pisar las 4 columnas del maestro)
             extras = detail.drop(columns=master_cols, errors="ignore")

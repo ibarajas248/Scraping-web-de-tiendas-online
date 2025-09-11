@@ -45,11 +45,11 @@ sys.path.append(
 from base_datos import get_conn
 
 # ======== Identidad tienda / Config sitio ========
-TIENDA_CODIGO = "kilbel_n1_1"
-TIENDA_NOMBRE = "Kilbel Online — Almacén n1_1"
+TIENDA_CODIGO = "kilbel"
+TIENDA_NOMBRE = "Kilbel Online"
 
 BASE = "https://www.kilbelonline.com"
-LISTING_FMT = "/almacen/n1_1/pag/{page}/"
+LISTING_FMT = "/perfumeria/n1_3/pag/{page}/"
 
 # ======== Headers / Rotación ========
 USER_AGENTS = [

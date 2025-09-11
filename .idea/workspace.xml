@@ -5,14 +5,25 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="2_9_2025 ok">
-      <change afterPath="$PROJECT_DIR$/final/24_kilbel/kilbel.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/25_pinguino/pinguino.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/kilbel/kilbeldb.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pinguino/pinguino.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/pinguino/pinguinomysql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/bebidas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/carniceria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/congelados.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/ferreteria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/fiambreria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/lacteos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/limpieza.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/mascotas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/panificados.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/pastas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/perfumeria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/rotiseria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/verduleria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/8_disco/sucursales/pruebavps.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/23_masonline/masonline.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/23_masonline/masonline.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/kilbel/kilbel.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/kilbel/kilbel.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/18_lagenovesa/genovesamysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/18_lagenovesa/genovesamysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/kilbel.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/almacen.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/reporte.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/reporte.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -35,12 +46,12 @@
     &quot;assignee&quot;: &quot;ibarajas248&quot;
   }
 }</component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/ibarajas248/Scraping-web-de-tiendas-online.git",
-    "accountId": "af0e0ae9-d90b-4de9-9567-d36100925378"
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/ibarajas248/Scraping-web-de-tiendas-online.git&quot;,
+    &quot;accountId&quot;: &quot;af0e0ae9-d90b-4de9-9567-d36100925378&quot;
   }
-}]]></component>
+}</component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 2
 }</component>
@@ -134,16 +145,16 @@
     "Python.veaMysql.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "git-widget-placeholder": "master",
-    "last_opened_file_path": "C:/Users/David/PycharmProjects/scrapingTiendas/final/25_pinguino"
+    "last_opened_file_path": "C:/Users/USER/PycharmProjects/ScrapingTiendas/final/24_kilbel"
   }
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\USER\PycharmProjects\ScrapingTiendas\final\24_kilbel" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\25_pinguino" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\18_lagenovesa" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\8_disco\sucursales" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps\pruebas" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\8_disco\sucursales" />
