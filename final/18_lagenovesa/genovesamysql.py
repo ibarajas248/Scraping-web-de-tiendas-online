@@ -4,13 +4,13 @@
 """
 La Genovesa (ALMACÉN) – Scraper con Selenium + BeautifulSoup + Persistencia MySQL
 
-- Abre HOME -> resuelve/acepta sucursal si aparece -> va a la categoría
-- Scroll gentil sobre el CONTENEDOR REAL (wheel + END + al fondo real)
-- Recorre tarjetas del listado, entra al detalle y extrae:
+- HOME -> aceptar sucursal si aparece -> ir a categoría
+- Scroll sobre contenedor real (wheel + END + fondo real)
+- Lee tarjetas del listado, entra al detalle y extrae:
   EAN, Título, Precio unitario, Precio de referencia, Imagen, URL
 - Exporta a XLSX y persiste en MySQL (tiendas, productos, producto_tienda, historico_precios)
 
-Requisitos recomendados en VPS (Ubuntu):
+Requisitos en VPS (Ubuntu):
   sudo apt update
   sudo apt install -y google-chrome-stable || sudo snap install chromium
   sudo apt install -y unzip xvfb libnss3 libxss1 libasound2 libx11-xcb1 \
@@ -20,19 +20,19 @@ Requisitos recomendados en VPS (Ubuntu):
   pip install selenium webdriver-manager beautifulsoup4 lxml pandas openpyxl mysql-connector-python
 """
 
+import os
 import re
+import sys
 import time
 import random
+import socket
+import shutil
 import argparse
 import tempfile
-import shutil
-import socket
+import platform
 from typing import Optional, List, Dict, Tuple, Any
 from urllib.parse import urljoin, urlparse, parse_qs
 
-import os
-import sys
-import platform
 import pandas as pd
 from bs4 import BeautifulSoup
 
@@ -73,11 +73,11 @@ DEFAULT_URL = (
 )
 
 # Listado
-LIST_SELECTOR = "div.columContainerList"
-CARD_TITLE_SEL = ".textTituloProductos"
-CARD_PRICE_SEL = "span.textPrecio b"
-CARD_IMG_SEL   = "img.imgListadoProducto"
-CARD_LINK_SEL  = "a.columTextList, a.columImgList"
+LIST_SELECTOR   = "div.columContainerList"
+CARD_TITLE_SEL  = ".textTituloProductos"
+CARD_PRICE_SEL  = "span.textPrecio b"
+CARD_IMG_SEL    = "img.imgListadoProducto"
+CARD_LINK_SEL   = "a.columTextList, a.columImgList"
 CARD_STOCK_TEXT = ".textSemaforo"
 CARD_STOCK_DOT  = "b.Semaforo"
 
@@ -913,7 +913,8 @@ def row_to_db_product(row: Dict[str, Any]) -> Dict[str, Any]:
         "nombre_tienda":  nombre_det,
     }
 
-def persistir_df_en_mysql(df: pd.DataFrame, tienda_codigo=TIENDA_CODIGO, tienda_nombre=TIENDA_NOMBRE):
+def persistir_df_en_mysql(df: pd.DataFrame, tienda_codigo=TIENDA_CODIGO, tienda_nombre=TIENDA_NOMBRE,
+                          chunk_size: int = 200, max_retries: int = 3):
     productos = [row_to_db_product(r) for r in df.to_dict(orient="records")]
     if not productos:
         print("⚠️ No hay productos para guardar en DB.")
@@ -927,18 +928,46 @@ def persistir_df_en_mysql(df: pd.DataFrame, tienda_codigo=TIENDA_CODIGO, tienda_
         conn = get_conn()
         conn.autocommit = False
         cur = conn.cursor()
+        # Ajustes de sesión para minimizar bloqueos
+        try:
+            cur.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        except Exception:
+            pass
+        try:
+            cur.execute("SET SESSION innodb_lock_wait_timeout = 20")
+        except Exception:
+            pass
 
         tienda_id = upsert_tienda(cur, tienda_codigo, tienda_nombre)
-
-        insertados = 0
-        for p in productos:
-            producto_id = find_or_create_producto(cur, p)
-            pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
-            insert_historico(cur, tienda_id, pt_id, p, capturado_en)
-            insertados += 1
-
         conn.commit()
-        print(f"💾 Guardado en MySQL: {insertados} filas de histórico para {tienda_nombre} ({capturado_en})")
+
+        total = len(productos)
+        for start in range(0, total, chunk_size):
+            chunk = productos[start:start + chunk_size]
+
+            for attempt in range(max_retries):
+                try:
+                    cur = conn.cursor()
+                    for p in chunk:
+                        producto_id = find_or_create_producto(cur, p)
+                        pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
+                        insert_historico(cur, tienda_id, pt_id, p, capturado_en)
+                    conn.commit()
+                    print(f"💾 Guardado chunk {start+1}-{start+len(chunk)} de {total}")
+                    break
+                except MySQLError as e:
+                    code = getattr(e, "errno", None)
+                    conn.rollback()
+                    if code in (1205, 1213) and attempt < max_retries - 1:
+                        delay = 1.5 * (attempt + 1)
+                        print(f"⏳ Lock/Deadlock (errno={code}). Reintentando en {delay:.1f}s…")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        raise
+
+        print(f"✅ Persistencia completa: {total} filas de histórico para {tienda_nombre} ({capturado_en})")
+
     except MySQLError as e:
         if conn: conn.rollback()
         print(f"❌ Error MySQL: {e}")
@@ -953,7 +982,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default=DEFAULT_URL, help="URL de la categoría a scrapear")
     parser.add_argument("--headless", action="store_true", help="Forzar modo headless")
-    parser.add_argument("--no-headless", action="store_true", help="Desactivar headless (debug con entorno gráfico)")
+    parser.add_argument("--no-headless", action="store_true", help="Desactivar headless")
     parser.add_argument("--outfile", default="LaGenovesa_ALMACEN.xlsx", help="Archivo XLSX de salida")
     parser.add_argument("--user-data-dir", default=None, help="Ruta a User Data dir de Chrome (opcional)")
     parser.add_argument("--profile-dir", default=None, help="Nombre de profile de Chrome (opcional, ej. 'Default')")
@@ -977,9 +1006,13 @@ if __name__ == "__main__":
         keep_profile=args.keep_profile
     )
 
-    # Persistir en MySQL con tu contrato estándar
+    # Persistir en MySQL con contrato estándar (en chunks con reintentos para evitar 1205)
     persistir_df_en_mysql(df, tienda_codigo=TIENDA_CODIGO, tienda_nombre=TIENDA_NOMBRE)
 
+    # Exportar a Excel
     log(f"[SAVE] Exportando a {args.outfile} …")
-    #df.to_excel(args.outfile, index=False)
-    log("[SAVE] Archivo XLSX generado.")
+    try:
+        df.to_excel(args.outfile, index=False)
+        log("[SAVE] Archivo XLSX generado.")
+    except Exception as e:
+        log(f"[SAVE] Error al exportar XLSX: {e}")

@@ -198,7 +198,9 @@ def main():
 
         print("Listo.")
     finally:
-        driver.quit()
+        #driver.quit()
+        print("Listo.")
+
 
 
 if __name__ == "__main__":
