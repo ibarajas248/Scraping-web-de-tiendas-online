@@ -46,7 +46,7 @@ from mysql.connector import connect, Error as MySQLError
 # ================= Config scraping =================
 BASE = "https://supermercado.laanonimaonline.com"
 START = f"{BASE}/almacen/n1_1/pag/1/"
-
+#dddd
 HEADLESS = True
 PAGE_LOAD_TIMEOUT = 25
 IMPLICIT_WAIT = 2
