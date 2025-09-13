@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Tuple, Optional
 
 import numpy as np
+import pandas as pd
 from mysql.connector import Error as MySQLError
 
 from selenium import webdriver
@@ -15,45 +16,39 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver import ActionChains
-from selenium.common.exceptions import SessionNotCreatedException, WebDriverException, TimeoutException
-from selenium.webdriver.chrome.service import Service
-
-# webdriver_manager (fallback opcional)
-try:
-    from webdriver_manager.chrome import ChromeDriverManager
-    _HAS_WDM = True
-except Exception:
-    _HAS_WDM = False
+from selenium.common.exceptions import SessionNotCreatedException, WebDriverException
 
 # añade la carpeta raíz (2 niveles más arriba) al sys.path
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )
 
-# --- Helper de conexión MySQL (ajusta a tu proyecto)
+# --- Tu helper de conexión ---
 from base_datos import get_conn
 
 # =========================
-# Parámetros (ENV primero, con defaults)
+# Parámetros de negocio (ENV primero, con default)
 # =========================
 BASE          = "https://www.disco.com.ar"
+
 DISCO_USER    = os.getenv("DISCO_USER", "comercial@factory-blue.com")
 DISCO_PASS    = os.getenv("DISCO_PASS", "Compras2025")
 
 PROVINCIA     = os.getenv("DISCO_PROVINCIA", "CORDOBA").strip()
 TIENDA_NOM    = os.getenv("DISCO_TIENDA", "Disco Alta Córdoba Cabrera 493").strip()
 
-# punto de entrada de scraping (puede ser /almacen, /bebidas, /lacteos, etc.)
+# punto de entrada de scraping (ej: /almacen, /bebidas, /lacteos, ...)
 CATEGORIA_URL = os.getenv("DISCO_CATEGORIA_URL", "/almacen").strip()
 
 # Control de crawling
-MAX_EMPTY     = int(os.getenv("DISCO_MAX_EMPTY", "1"))    # páginas vacías toleradas
+MAX_EMPTY     = int(os.getenv("DISCO_MAX_EMPTY", "1"))      # páginas vacías toleradas
 SLEEP_PDP     = float(os.getenv("DISCO_SLEEP_PDP", "0.6"))  # espera entre PDPs
 SLEEP_PAGE    = float(os.getenv("DISCO_SLEEP_PAGE", "1.0")) # espera al cargar la lista
+ALLOW_SHOW_MORE = os.getenv("DISCO_ALLOW_SHOW_MORE", "0").lower() in {"1","true","yes"}
 
 # Identificadores de tienda para tu esquema
-TIENDA_CODIGO = os.getenv("DISCO_TIENDA_CODIGO", "disco_cordoba_alto_cordoba_cabrera_493")
-TIENDA_NOMBRE = os.getenv("DISCO_TIENDA_NOMBRE", "Disco_cordoba_alto_cordoba_cabrera_493")
+TIENDA_CODIGO = "disco_cordoba_alto_cordoba_cabrera_493"
+TIENDA_NOMBRE = "Disco_cordoba_alto_cordoba_cabrera_493"
 TIENDA_REF    = os.getenv("DISCO_REF_TIENDA", "disco_cordoba_cabrera_493")
 
 # Opcional: matar huérfanos Chrome
@@ -147,11 +142,9 @@ def _select_by_text_case_insensitive(driver, wait, select_xpath: str, target_tex
             sel = wait.until(EC.presence_of_element_located((By.XPATH, select_xpath)))
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
             wait.until(lambda d: len(sel.find_elements(By.TAG_NAME, "option")) > 0)
-            # 1) Intento directo por visible_text
             with contextlib.suppress(Exception):
                 Select(sel).select_by_visible_text(target_text)
                 return
-            # 2) Igualando por texto normalizado
             value = None
             for o in sel.find_elements(By.TAG_NAME, "option"):
                 if o.get_attribute("disabled"):
@@ -175,112 +168,120 @@ def _select_by_text_case_insensitive(driver, wait, select_xpath: str, target_tex
     raise last_exc
 
 # =========================
-# Carga completa de productos en la página (scroll + “ver más” + estabilidad)
+# Recolección PROGRESIVA (anti-virtualización VTEX)
 # =========================
-CARD_ANCHOR_XPATHS = [
+CARD_XPATHS = [
     "//a[contains(@class,'vtex-product-summary-2-x-clearLink') and contains(@href,'/p')]",
     "//a[@data-testid='product-summary-link' and contains(@href,'/p')]",
     "//section[contains(@class,'gallery')]//a[contains(@href,'/p')]",
 ]
 
-def _count_card_links(driver) -> int:
-    seen = set()
-    for xp in CARD_ANCHOR_XPATHS:
-        for a in driver.find_elements(By.XPATH, xp):
-            href = a.get_attribute("href") or ""
-            if href:
-                seen.add(href)
-    return len(seen)
+SHOW_MORE_XPATHS = [
+    "//*[contains(@class,'vtex-search-result-3-x-buttonShowMore') and not(@disabled)]",
+    "//button[not(@disabled) and (contains(.,'Mostrar') or contains(.,'Más') or contains(.,'Cargar'))]"
+]
 
-def _click_load_more_if_any(driver) -> bool:
-    # Botones típicos “Mostrar más”, “Cargar más”, “Ver más”
-    candidates = driver.find_elements(
-        By.XPATH,
-        "//button[not(@disabled) and (contains(.,'Mostrar más') or contains(.,'Cargar más') or contains(.,'Ver más'))]"
-    )
-    for b in candidates:
-        try:
-            if b.is_displayed() and b.is_enabled():
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", b)
-                time.sleep(0.2)
-                b.click()
-                return True
-        except Exception:
-            continue
+GALLERY_CONTAINERS = [
+    "//*[contains(@class,'vtex-search-result-3-x-gallery')]",
+    "//*[@data-testid='search-result-gallery']",
+    "//section[contains(@class,'gallery')]"
+]
+
+def _scroll_gallery_or_window(driver):
+    # Scrollea el contenedor real (overflow: auto). Si no existe, usa window.
+    for xp in GALLERY_CONTAINERS:
+        conts = driver.find_elements(By.XPATH, xp)
+        for c in conts:
+            try:
+                if c.is_displayed():
+                    driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", c)
+                    time.sleep(0.25)
+                    return True
+            except Exception:
+                pass
+    driver.execute_script("window.scrollBy(0, 900);")
+    time.sleep(0.15)
+    driver.execute_script("window.scrollBy(0, 900);")
+    time.sleep(0.15)
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(0.25)
     return False
 
-def _load_all_cards_on_page(driver, settle_checks: int = 3, max_rounds: int = 40) -> None:
-    """
-    Realiza scrolls y clicks en 'mostrar más' hasta que:
-     - no crece el número de cards tras varios intentos ('settle_checks'), o
-     - se llega a max_rounds.
-    """
-    last_n = -1
-    stable = 0
-    rounds = 0
+def _click_show_more_if_any(driver) -> bool:
+    for xp in SHOW_MORE_XPATHS:
+        btns = driver.find_elements(By.XPATH, xp)
+        for b in btns:
+            try:
+                if b.is_displayed() and b.is_enabled():
+                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", b)
+                    time.sleep(0.15)
+                    b.click()
+                    return True
+            except Exception:
+                continue
+    return False
 
-    # pequeña espera para que VTEX hidrate la grilla
-    time.sleep(0.8)
+def _collect_product_links_on_page(driver, allow_show_more: bool = False,
+                                   settle_checks: int = 5, max_rounds: int = 80) -> List[str]:
+    """
+    Acumula progresivamente los hrefs (únicos) que aparecen en la grilla,
+    para no perder los de arriba cuando el grid se virtualiza.
+    Si allow_show_more=True, intentará pulsar “Mostrar más” (mezcla chunks).
+    """
+    seen = set()
+    last_size, stable, rounds = -1, 0, 0
+    time.sleep(0.8)  # pequeña espera para hidratación inicial
 
     while rounds < max_rounds:
         rounds += 1
 
-        # Scroll suave + END
-        driver.execute_script("window.scrollBy(0, 900);")
-        time.sleep(0.15)
-        driver.execute_script("window.scrollBy(0, 900);")
-        time.sleep(0.15)
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(0.25)
+        # 1) Colectar lo visible AHORA
+        for xp in CARD_XPATHS:
+            for a in driver.find_elements(By.XPATH, xp):
+                href = a.get_attribute("href") or ""
+                if not href:
+                    continue
+                if href.startswith(BASE):
+                    href = href[len(BASE):]
+                if href.startswith("/"):
+                    seen.add(href)
 
-        # Intentar “ver más”
-        with contextlib.suppress(Exception):
-            if _click_load_more_if_any(driver):
-                time.sleep(0.7)
+        # 2) Intentar “Mostrar más” si se permite
+        clicked = False
+        if allow_show_more:
+            with contextlib.suppress(Exception):
+                clicked = _click_show_more_if_any(driver)
+                if clicked:
+                    time.sleep(0.8)
 
-        # Recuento tras acciones
-        n = _count_card_links(driver)
-        # Pequeña espera de settling del DOM
-        time.sleep(0.35)
-        n2 = _count_card_links(driver)
-        n = max(n, n2)
+        # 3) Scroll para lazy-load
+        _scroll_gallery_or_window(driver)
 
-        if n == last_n:
+        # 4) Heurística de estabilidad
+        if len(seen) == last_size and not clicked:
             stable += 1
         else:
             stable = 0
-        last_n = n
+        last_size = len(seen)
 
-        # Si ya no crece, repetir algunos checks más para confirmar estabilidad
         if stable >= settle_checks:
             break
 
-def _collect_product_links_on_page(driver) -> List[str]:
-    _load_all_cards_on_page(driver, settle_checks=3, max_rounds=50)
-    links = set()
-    for xp in CARD_ANCHOR_XPATHS:
-        for a in driver.find_elements(By.XPATH, xp):
-            href = a.get_attribute("href") or ""
-            if not href:
-                continue
-            # normalizamos a relativo (para concatenar con BASE)
-            if href.startswith(BASE):
-                href = href[len(BASE):]
-            if href.startswith("/"):
-                links.add(href)
-    return sorted(links)
+    return sorted(seen)
 
 # =========================
 # Extracción PDP
 # =========================
 def _extract_jsonld_ean(driver) -> Optional[str]:
     """Intenta leer EAN/GTIN desde JSON-LD o identificadores visibles."""
-    # JSON-LD
     try:
         scripts = driver.find_elements(By.XPATH, "//script[@type='application/ld+json']")
         for s in scripts:
+            data = None
             with contextlib.suppress(Exception):
                 data = json.loads(s.get_attribute("innerText") or "{}")
+            if data is None:
+                continue
             candidates = data if isinstance(data, list) else [data]
             for obj in candidates:
                 if not isinstance(obj, dict):
@@ -293,18 +294,13 @@ def _extract_jsonld_ean(driver) -> Optional[str]:
                             return vs
     except Exception:
         pass
-    # Tabla o etiqueta visible
-    xp = (
-        "//span[contains(@class,'product-identifier__label') and "
-        "(contains(.,'EAN') or contains(.,'Gtin') or contains(.,'GTIN'))]"
-        "/following-sibling::span[contains(@class,'product-identifier__value')]"
-    )
+    # fallback: buscar identificador “EAN/GTIN” visible
+    xp = ("//span[contains(@class,'product-identifier__label') and "
+          "(contains(.,'EAN') or contains(.,'Gtin') or contains(.,'GTIN'))]"
+          "/following-sibling::span[contains(@class,'product-identifier__value')]")
     with contextlib.suppress(Exception):
-        v = driver.find_element(By.XPATH, xp).get_text().strip()  # a veces innerText
-        if re.fullmatch(r"\d{8,14}", v):
-            return v
-    with contextlib.suppress(Exception):
-        v = driver.find_element(By.XPATH, xp).text.strip()
+        el = driver.find_element(By.XPATH, xp)
+        v = (el.get_attribute("innerText") or el.text or "").strip()
         if re.fullmatch(r"\d{8,14}", v):
             return v
     return None
@@ -313,7 +309,6 @@ def _scrape_pdp(driver, wait, pdp_url_rel: str) -> dict:
     url_full = f"{BASE}{pdp_url_rel}"
     driver.get(url_full)
 
-    # Esperar nombre producto
     with contextlib.suppress(Exception):
         wait.until(EC.presence_of_element_located((By.XPATH, "//h1[contains(@class,'productNameContainer')]")))
 
@@ -347,7 +342,6 @@ def _scrape_pdp(driver, wait, pdp_url_rel: str) -> dict:
 
     # Precios (robusto)
     def _first_price_text():
-        # toma el primer bloque que contenga un $
         xps = [
             "//*[@id='priceContainer']",
             "(//*[contains(@class,'store-theme')][contains(.,'$')])[1]",
@@ -363,7 +357,6 @@ def _scrape_pdp(driver, wait, pdp_url_rel: str) -> dict:
     price_now, price_now_raw = _parse_price(price_now_text)
 
     def _second_price_text():
-        # intenta segundo precio para “regular”/tachado
         xps = [
             "(//div[contains(@class,'store-theme')][contains(text(),'$')])[2]",
             "(//section//*[contains(text(),'$')])[2]"
@@ -410,13 +403,24 @@ def _scrape_pdp(driver, wait, pdp_url_rel: str) -> dict:
     }
 
 # =========================
-# MySQL helpers (contrato estándar)
+# MySQL helpers
 # =========================
 def clean(val):
     if val is None:
         return None
     s = str(val).strip()
     return None if s.lower() in {"", "null", "none", "nan", "na"} else s
+
+def parse_price_text(val) -> Optional[str]:
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        if np.isnan(f):
+            return None
+        return f"{round(f, 2)}"
+    except Exception:
+        return None
 
 def upsert_tienda(cur, codigo: str, nombre: str, ref_tienda: str, provincia: str, sucursal: str) -> int:
     nombre = _clip(_clean_text(nombre), 255) or ""
@@ -497,7 +501,6 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
         """, (tienda_id, producto_id, sku, url, nombre_tienda))
         return cur.lastrowid
 
-    # Fallback sin SKU: usa URL como cuasi id (si existe UNIQUE(tienda_id, url_tienda))
     try:
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
@@ -545,7 +548,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
     ))
 
 # =========================
-# Driver para VPS (headless) robusto
+# Driver para VPS (headless) con perfil único + retries + cleanup
 # =========================
 def _best_effort_kill_stale_chrome():
     if not KILL_STALE_CHROME:
@@ -560,103 +563,50 @@ def _best_effort_kill_stale_chrome():
     except Exception:
         pass
 
-def _find_chrome_binary_candidates():
-    env_bin = os.environ.get("CHROME_BIN") or os.environ.get("GOOGLE_CHROME_BIN")
-    if env_bin and os.path.exists(env_bin):
-        yield env_bin
-    for p in [
-        "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable",
-        "/snap/bin/chromium", "/usr/bin/chromium", "/usr/bin/chromium-browser",
-        "/opt/google/chrome/google-chrome"
-    ]:
-        if os.path.exists(p):
-            yield p
+def _make_driver_once() -> Tuple[webdriver.Chrome, str]:
+    prof_dir = tempfile.mkdtemp(prefix="chrome-prof-")
+    cache_dir = os.path.join(prof_dir, "cache")
+    os.makedirs(cache_dir, exist_ok=True)
 
-def _build_chrome_options(prof_dir: str) -> webdriver.ChromeOptions:
-    opts = webdriver.ChromeOptions()
-    opts.add_argument("--headless=new")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--disable-software-rasterizer")
-    opts.add_argument("--window-size=1280,2200")
-    opts.add_argument("--disable-blink-features=AutomationControlled")
-    opts.add_argument("--disable-features=Translate,BackForwardCache,NetworkService")
-    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
-    opts.add_experimental_option("useAutomationExtension", False)
-    opts.add_argument("--lang=es-AR")
-    opts.add_argument(
+    atexit.register(lambda: shutil.rmtree(prof_dir, ignore_errors=True))
+    os.environ.setdefault("XDG_RUNTIME_DIR", prof_dir)
+
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1280,2000")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+    options.add_argument("--lang=es-AR")
+    options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
     )
 
-    # Perfil temporario aislado
-    cache_dir = os.path.join(prof_dir, "cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    opts.add_argument(f"--user-data-dir={prof_dir}")
-    opts.add_argument("--profile-directory=Default")
-    opts.add_argument(f"--disk-cache-dir={cache_dir}")
-    opts.add_argument("--no-first-run")
-    opts.add_argument("--no-default-browser-check")
-    opts.add_argument("--disable-extensions")
-    opts.add_argument("--disable-crash-reporter")
+    # Perfil/Cache/Cookies aislados
+    options.add_argument(f"--user-data-dir={prof_dir}")
+    options.add_argument("--profile-directory=Default")
+    options.add_argument(f"--disk-cache-dir={cache_dir}")
+    options.add_argument("--no-first-run")
+    options.add_argument("--no-default-browser-check")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-crash-reporter")
+    options.add_argument("--disable-features=Translate,BackForwardCache")
 
-    # Debug port único
+    # Puerto de debug único por proceso
     dbg_port = 9222 + (os.getpid() % 1000)
-    opts.add_argument(f"--remote-debugging-port={dbg_port}")
+    options.add_argument(f"--remote-debugging-port={dbg_port}")
 
-    # Proxy opcional
-    proxy = os.environ.get("SELENIUM_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
-    if proxy:
-        opts.add_argument(f"--proxy-server={proxy}")
+    # (Opcional) mover paths a disco si /dev/shm es chico
+    options.add_argument(f"--homedir={prof_dir}")
+    options.add_argument(f"--data-path={prof_dir}")
 
-    # Fijar binario si existe
-    for bin_path in _find_chrome_binary_candidates():
-        try:
-            opts.binary_location = bin_path
-            break
-        except Exception:
-            pass
-
-    return opts
-
-def _make_driver_once() -> Tuple[webdriver.Chrome, str]:
-    prof_dir = tempfile.mkdtemp(prefix="chrome-prof-")
-    os.environ.setdefault("XDG_RUNTIME_DIR", prof_dir)
-
-    opts = _build_chrome_options(prof_dir)
-
-    # Estrategia en cascada:
-    # 1) webdriver_manager (si disponible)
-    # 2) Selenium Manager (driver embebido) -> webdriver.Chrome(options=opts)
-    # 3) /usr/bin/chromedriver
-    last_err = None
-    try:
-        if _HAS_WDM:
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=opts)
-            driver.set_page_load_timeout(60)
-            return driver, prof_dir
-    except Exception as e:
-        last_err = e
-
-    try:
-        driver = webdriver.Chrome(options=opts)
-        driver.set_page_load_timeout(60)
-        return driver, prof_dir
-    except Exception as e:
-        last_err = e
-
-    try:
-        service = Service("/usr/bin/chromedriver")
-        driver = webdriver.Chrome(service=service, options=opts)
-        driver.set_page_load_timeout(60)
-        return driver, prof_dir
-    except Exception as e:
-        last_err = e
-
-    # Si nada funcionó, propaga el último error
-    raise last_err if last_err else RuntimeError("No se pudo inicializar ChromeDriver")
+    driver = webdriver.Chrome(options=options)  # Selenium Manager resuelve el driver
+    driver.set_page_load_timeout(60)
+    return driver, prof_dir
 
 def _make_driver(max_retries: int = 3) -> webdriver.Chrome:
     _best_effort_kill_stale_chrome()
@@ -664,33 +614,22 @@ def _make_driver(max_retries: int = 3) -> webdriver.Chrome:
     for _ in range(max_retries):
         try:
             driver, prof_dir = _make_driver_once()
-            def _cleanup():
+            def _sigterm_handler(signum, frame):
                 with contextlib.suppress(Exception):
                     driver.quit()
-                with contextlib.suppress(Exception):
-                    shutil.rmtree(prof_dir, ignore_errors=True)
-            atexit.register(_cleanup)
-            def _sigterm_handler(signum, frame):
-                _cleanup()
                 os._exit(0)
             signal.signal(signal.SIGTERM, _sigterm_handler)
-            with contextlib.suppress(Exception):
-                driver.execute_cdp_cmd(
-                    "Page.addScriptToEvaluateOnNewDocument",
-                    {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
-                )
             return driver
         except SessionNotCreatedException as e:
             last_err = e
-            msg = str(e)
-            if "user data directory is already in use" in msg:
-                time.sleep(0.7)
+            if "user data directory is already in use" in str(e):
+                time.sleep(0.8)
                 continue
             else:
                 break
         except WebDriverException as e:
             last_err = e
-            time.sleep(0.7)
+            time.sleep(0.8)
             continue
         except Exception as e:
             last_err = e
@@ -706,7 +645,7 @@ def _dismiss_cookies(driver, wait):
             (By.XPATH, "//button[contains(.,'Aceptar') or contains(.,'cookies') or contains(.,'Acepto')]")
         ))
         driver.execute_script("arguments[0].click();", btn)
-        time.sleep(0.2)
+        time.sleep(0.3)
 
 def login_and_select_store(driver, wait):
     driver.get(BASE)
@@ -714,7 +653,7 @@ def login_and_select_store(driver, wait):
 
     # Mi cuenta
     _click_with_retry(driver, wait, "//span[normalize-space()='Mi Cuenta']")
-    time.sleep(0.6)
+    time.sleep(0.8)
 
     # Entrar con e-mail y contraseña
     with contextlib.suppress(Exception):
@@ -727,7 +666,6 @@ def login_and_select_store(driver, wait):
         _type_with_retry(driver, wait, "//input[@placeholder='Ej. nombre@mail.com']", DISCO_USER)
     with contextlib.suppress(Exception):
         _type_with_retry(driver, wait, "//input[contains(@placeholder,'mail.com')]", DISCO_USER)
-
     with contextlib.suppress(Exception):
         _type_with_retry(driver, wait, "//input[@type='password' and contains(@class,'vtex-styleguide-9-x-input')]", DISCO_PASS)
     with contextlib.suppress(Exception):
@@ -766,7 +704,6 @@ def login_and_select_store(driver, wait):
     with contextlib.suppress(Exception):
         _click_with_retry(driver, wait, "//div[contains(@class,'vtex-dropdown__container')][.//div[contains(.,'Seleccionar tienda')]]//div[contains(@class,'vtex-dropdown__button')]")
     store_select_xpath = "//div[contains(@class,'vtex-dropdown__container')][.//div[contains(.,'Seleccionar tienda')]]//select"
-    # Esperar que aparezca la opción
     wait.until(EC.presence_of_element_located(
         (By.XPATH, f"{store_select_xpath}/option[contains(., '{TIENDA_NOM}') or contains(., '{TIENDA_NOM.replace('ó','o')}')]")
     ))
@@ -790,7 +727,7 @@ def run_scrape_and_persist():
         # 1) login + tienda
         login_and_select_store(driver, wait)
 
-        # 2) Crawl por páginas (?page=1,2,3,...) con carga completa de cada página
+        # 2) Crawl por páginas (?page=1,2,3,...) o un solo URL con "Mostrar más"
         data: List[Dict[str, Any]] = []
         page = 1
         empty_pages = 0
@@ -801,11 +738,12 @@ def run_scrape_and_persist():
             driver.get(list_url)
             time.sleep(SLEEP_PAGE)
 
-            # Cargar TODO lo que hay en la página (scroll + ver más + estabilidad DOM)
-            links = _collect_product_links_on_page(driver)
+            # Recolecta TODO lo visible de esta página (anti-virtualización)
+            links = _collect_product_links_on_page(driver, allow_show_more=ALLOW_SHOW_MORE)
             total = len(links)
+            print(f"🔗 Productos encontrados en la página {page}: {total}")
+
             if total == 0:
-                print("⚠️  Sin items en la página.")
                 empty_pages += 1
                 if empty_pages > MAX_EMPTY:
                     print("⛔ Fin: no hay más productos.")
@@ -814,7 +752,6 @@ def run_scrape_and_persist():
                 continue
 
             empty_pages = 0
-            print(f"🔗 Productos encontrados en la página {page}: {total}")
 
             # 3) Visitar cada PDP y recolectar datos
             for i, rel in enumerate(links, 1):
@@ -825,11 +762,15 @@ def run_scrape_and_persist():
                 except Exception as e:
                     print(f"    × Error en {rel}: {e}")
                 finally:
-                    # volver a la lista para mantener el contexto/cookies
+                    # volver a la lista para mantener contexto/cookies
                     driver.get(list_url)
                     time.sleep(SLEEP_PDP)
 
-            page += 1
+            # Si usas "Mostrar más" en una sola URL, normalmente basta una vuelta
+            if not ALLOW_SHOW_MORE:
+                page += 1
+            else:
+                break
 
         if not data:
             print("⚠️ No se capturaron productos; no se escribe MySQL.")
