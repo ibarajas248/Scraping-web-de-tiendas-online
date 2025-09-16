@@ -28,7 +28,7 @@ HEADERS = {
 SLEEP = 0.35
 TIMEOUT = 25
 RETRIES = 3
-MAX_PAGINAS = 5000
+MAX_PAGINAS = 5
 
 TIENDA_CODIGO = "coto"
 TIENDA_NOMBRE = "Coto Digital"
@@ -188,112 +188,41 @@ def parse_record(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         ean = str(ean_any or "").strip()
 
     # ---- Precios ----
-    #
-    # Precio de lista y de oferta
-    #
-    # La estructura Endeca entrega los precios en varios campos. En particular
-    # ``dto_price`` puede contener ``precio``, ``precioLista`` y otros
-    # valores; ``dto_desc`` (producto.dtoDescuentos) es una lista de promos y
-    # puede incluir claves como ``precioDescuento`` (si existe un precio
-    # promocional explícito), ``textoPrecioRegular`` y ``textoDescuento``.
-    #
-    # El precio de oferta a veces no está en ``precioDescuento``: por ejemplo
-    # las promociones de tipo 2x1/3x2 o descuentos sobre la segunda unidad
-    # sólo declaran un precio regular. Para esos casos calculamos el precio
-    # efectivo dividiendo o aplicando porcentajes según corresponda.
-
     precio_lista = ""
-    if isinstance(dto_price, dict):
-        precio_lista = dto_price.get("precioLista", "") or dto_price.get("precio", "")
+    precio_final = ""
 
+    if isinstance(dto_price, dict):
+        precio_lista = dto_price.get("precioLista", "")
+
+    # Si hay promo, tomar precioDescuento (unitario) limpiando con parse_price
     promo_tipo = ""
     precio_regular_promo = ""
     precio_descuento = ""
     comentarios_promo = ""
 
-    # Analizar descuentos declarados
     if isinstance(dto_desc, list) and dto_desc:
-        # textoDescuento suele traer cadenas como '2x1', '50% dto 2da unid', etc.
         promos_txt = [str(d.get("textoDescuento", "")).strip() for d in dto_desc if d]
         promo_tipo = "; ".join([p for p in promos_txt if p])
+
         d0 = (dto_desc[0] or {})
-        # textoPrecioRegular suele venir con prefijos como 'Precio Regular:' o 'Precio Contado:'
-        precio_regular_promo = str(d0.get("textoPrecioRegular", "")).replace("Precio Contado:", "").replace("Precio Regular:", "").replace("$", "").strip()
-        precio_descuento = d0.get("precioDescuento", "").replace("$", "").strip()
-        comentarios_promo = str(d0.get("comentarios", "")).strip()
 
-    # Convertir los precios a valores numéricos para cálculos
-    precio_regular_num = parse_price(precio_regular_promo)
-    # Si no hay precio regular en la promo, usar precio_lista o dto_price['precio']
-    if (isinstance(precio_regular_num, float) and np.isnan(precio_regular_num)) or precio_regular_num is None:
-        # intentar con precioLista
-        precio_regular_num = parse_price(precio_lista)
-        # última opción: usar dto_price['precio'] si existe
-        if isinstance(dto_price, dict):
-            tmp_prec = dto_price.get("precio", "")
-            if tmp_prec:
-                precio_regular_num = parse_price(tmp_prec)
+        # Texto de referencia del precio regular (como viene en el JSON)
+        precio_regular_promo = str(d0.get("textoPrecioRegular", "")).replace("Precio Contado:", "").strip()
 
-    # Inicializar precio de oferta
-    precio_oferta_num = np.nan
-
-    # Si el precio de descuento está declarado explícitamente, usarlo
-    if precio_descuento:
-        precio_desc_num = parse_price(precio_descuento)
-        if not (isinstance(precio_desc_num, float) and np.isnan(precio_desc_num)):
-            precio_oferta_num = precio_desc_num
-
-    # Si no hay precio de descuento explícito, intentar calcularlo a partir de promo_tipo
-    if (isinstance(precio_oferta_num, float) and np.isnan(precio_oferta_num)):
-        # Asegurarse de que tenemos un precio base
-        if not (isinstance(precio_regular_num, float) and np.isnan(precio_regular_num)):
-            # Patrón 'NxM', por ejemplo '2x1', '3x2'
-            m = re.search(r"(\d+)\s*[xX]\s*(\d+)", promo_tipo)
-            if m:
-                try:
-                    unidades_obtenidas = int(m.group(1))
-                    unidades_pagadas = int(m.group(2))
-                    if unidades_obtenidas > 0:
-                        precio_oferta_num = precio_regular_num * (unidades_pagadas / unidades_obtenidas)
-                except Exception:
-                    pass
-            else:
-                # Descuento sobre la segunda unidad: '70% 2da unid', '50% dto 2da', etc.
-                m2 = re.search(r"(\d+)%[^\d]*\b(?:2da|segunda)\b", promo_tipo, flags=re.IGNORECASE)
-                if m2:
-                    try:
-                        porcentaje = float(m2.group(1))
-                        # Se paga una unidad al 100% y la otra con descuento (100%-porcentaje).
-                        factor = (1 + (1 - porcentaje / 100.0)) / 2.0
-                        precio_oferta_num = precio_regular_num * factor
-                    except Exception:
-                        pass
-                else:
-                    # Descuento simple: '30% dto', '15% OFF'
-                    m3 = re.search(r"(\d+)%", promo_tipo)
-                    if m3:
-                        try:
-                            porcentaje = float(m3.group(1))
-                            precio_oferta_num = precio_regular_num * (1 - porcentaje / 100.0)
-                        except Exception:
-                            pass
-
-    # Si aún no se pudo determinar el precio de oferta, usar el precio base
-    if (isinstance(precio_oferta_num, float) and np.isnan(precio_oferta_num)):
-        # En caso de no tener promos, intentamos tomar 'precio' del dto_price
-        if isinstance(dto_price, dict) and "precio" in dto_price:
-            precio_oferta_num = parse_price(dto_price.get("precio"))
+        # EJ: "$2272.50c/u" -> 2272.5
+        raw_desc = d0.get("precioDescuento", "")
+        precio_desc_num = parse_price(raw_desc)
+        if isinstance(precio_desc_num, float) and not np.isnan(precio_desc_num):
+            precio_descuento = f"{round(precio_desc_num, 2)}"
+            precio_final = precio_descuento  # prioridad al unitario con descuento
         else:
-            precio_oferta_num = parse_price(precio_lista)
+            # fallback si no se puede parsear
+            precio_final = dto_price.get("precio", "") if isinstance(dto_price, dict) else ""
 
-    # Formatear el precio de oferta como cadena con dos decimales si es numérico
-    if precio_oferta_num is None or (isinstance(precio_oferta_num, float) and np.isnan(precio_oferta_num)):
-        precio_final = ""
+        comentarios_promo = str(d0.get("comentarios", "")).strip()
     else:
-        try:
-            precio_final = f"{float(precio_oferta_num):.2f}"
-        except Exception:
-            precio_final = str(precio_oferta_num)
+        # sin promo: usar precio de dtoPrice
+        precio_final = dto_price.get("precio", "") if isinstance(dto_price, dict) else ""
 
     fabricante = extract_fabricante(dto_caract)
     categoria, subcategoria = best_category(attrs)
@@ -306,11 +235,11 @@ def parse_record(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "marca":      clean(get_any(attrs, ["product.brand", "product.MARCA"])),
         "fabricante": clean(fabricante),
         "precio_lista":   clean(precio_lista),
-        "precio_oferta":  clean(precio_final),
+        "precio_oferta":  clean(precio_final),   # ahora: unitario del descuento, limpio
         "tipo_oferta":    clean(get_any(attrs, ["product.tipoOferta", "product.TipoOferta"])),
         "promo_tipo":     clean(promo_tipo),
-        "precio_regular_promo": clean(precio_regular_promo),
-        "precio_descuento":     clean(precio_descuento),
+        "precio_regular_promo": clean(precio_regular_promo),   # texto sin "Precio Contado:"
+        "precio_descuento":     clean(precio_descuento),       # numérico como texto (ej: "2272.5")
         "comentarios_promo":    clean(comentarios_promo),
         "categoria":    clean(categoria),
         "subcategoria": clean(subcategoria),
