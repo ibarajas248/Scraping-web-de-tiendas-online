@@ -25,7 +25,7 @@ EMAIL = os.getenv("ELABASTECEDOR_EMAIL", "mauro@factory-blue.com")
 PASSWORD = os.getenv("ELABASTECEDOR_PASSWORD", "Compras2025")
 
 
-def make_driver(headless=False):
+def make_driver(headless=True):
     opts = Options()
     if headless:
         # reCAPTCHA bloquea a menudo headless; mejor visible

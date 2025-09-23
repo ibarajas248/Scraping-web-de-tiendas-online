@@ -435,61 +435,48 @@ def iniciaReporte():
         """
         return read_df(q, p)
 
+    # ======= 🔄 NUEVA IMPLEMENTACIÓN: detalle con TODAS las capturas =======
     @st.cache_data(ttl=300, show_spinner=False)
     def get_detail(where_str: str, params: Dict, effective: bool, limit: int):
+        # La bandera "effective" no cambia las columnas visibles (mantenemos
+        # PRECIO_LISTA/PRECIO_OFERTA como en tu UI), pero dejamos el cálculo
+        # disponible si quieres añadirlo después.
         price_expr = EFFECTIVE_PRICE_EXPR if effective else "h.precio_lista"
         q = f"""
         SELECT
-          s.ean as EAN,
-          s.producto as PRODUCTO,
-          s.categoria as CATEGORIA,
-          s.subcategoria as SUBCATEGORIA,
-          s.fabricante as FABRICANTE,
-          s.marca as MARCA,
-          s.precio_lista as PRECIO_LISTA,
+          p.ean AS EAN,
+          COALESCE(pt.nombre_tienda, p.nombre) AS PRODUCTO,
+          p.categoria AS CATEGORIA,
+          p.subcategoria AS SUBCATEGORIA,
+          p.fabricante AS FABRICANTE,
+          p.marca AS MARCA,
+          h.precio_lista AS PRECIO_LISTA,
           CASE
-            WHEN s.precio_oferta IS NULL THEN NULL
-            WHEN s.precio_lista  IS NULL THEN s.precio_oferta
-            WHEN (s.tipo_oferta IS NULL AND s.precio_oferta = s.precio_lista OR s.tipo_oferta like '%Precio regular%') THEN NULL
-            ELSE s.precio_oferta
+            WHEN h.precio_oferta IS NULL THEN NULL
+            WHEN h.precio_lista  IS NULL THEN h.precio_oferta
+            WHEN (h.tipo_oferta IS NULL AND h.precio_oferta = h.precio_lista OR h.tipo_oferta like '%Precio regular%') THEN NULL
+            ELSE h.precio_oferta
           END AS PRECIO_OFERTA,
           CASE
-            WHEN s.tipo_oferta LIKE '%Precio%regular%' THEN NULL
-         ELSE s.tipo_oferta
-            END AS TIPO_OFERTA,
-          DATE(s.capturado_en) AS FECHA,
-          t.ref_tienda as ID_BANDERA, 
+            WHEN h.tipo_oferta LIKE '%Precio%regular%' THEN NULL
+            ELSE h.tipo_oferta
+          END AS TIPO_OFERTA,
+          DATE(h.capturado_en) AS FECHA,
+          t.ref_tienda AS ID_BANDERA, 
           t.nombre AS BANDERA,
-          s.url_tienda as URLs
-        FROM (
-          SELECT
-            h.tienda_id,
-            p.ean,
-            p.fabricante,
-            COALESCE(pt.nombre_tienda, p.nombre) AS producto,
-            p.marca, p.categoria, p.subcategoria,
-            h.precio_lista, h.precio_oferta,
-            {price_expr} AS precio_efectivo,
-            h.tipo_oferta, h.promo_texto_regular, h.promo_texto_descuento,
-            pt.sku_tienda, pt.record_id_tienda, pt.url_tienda,
-            h.capturado_en,
-            ROW_NUMBER() OVER (
-              PARTITION BY h.tienda_id, p.ean
-              ORDER BY h.capturado_en DESC
-            ) AS rn
-          FROM historico_precios h
-          JOIN producto_tienda pt ON pt.id = h.producto_tienda_id
-          JOIN productos p        ON p.id  = pt.producto_id
-          WHERE {where_str}
-        ) AS s
-        JOIN tiendas t ON t.id = s.tienda_id
-        WHERE s.rn = 1
-          AND s.precio_lista IS NOT NULL
-          AND s.precio_lista <> 0
-        ORDER BY t.nombre, s.ean
+          pt.url_tienda AS URLs
+        FROM historico_precios h
+        JOIN producto_tienda pt ON pt.id = h.producto_tienda_id
+        JOIN productos p        ON p.id  = pt.producto_id
+        JOIN tiendas t          ON t.id  = h.tienda_id
+        WHERE {where_str}
+          AND h.precio_lista IS NOT NULL
+          AND h.precio_lista <> 0
+        ORDER BY t.nombre, p.ean, h.capturado_en
         LIMIT {int(limit)}
         """
         return read_df(q, params)
+    # ======= FIN cambio =======
 
 
     # ---------- Navegación "tabs" con sidebars distintos ----------
@@ -761,7 +748,7 @@ def iniciaReporte():
                         st.dataframe(basket_comun, use_container_width=True)
 
         # ---------- Tabla detalle ----------
-        st.subheader("Tabla Reporte")
+        st.subheader("Tabla Reporte (todas las capturas en el rango)")
         detail = get_detail(where_str, where_params, use_effective, f["sample_limit"])
 
         # === Si hay maestro subido por Excel, usar SUS valores y SU orden ===
@@ -776,7 +763,6 @@ def iniciaReporte():
             # Orden requerido: ... MARCA, FABRICANTE
             master_cols = [c for c in ["CATEGORIA", "SUBCATEGORIA", "MARCA", "FABRICANTE", "PRODUCTO"] if c in m.columns]
 
-
             # Extras del detalle (para no pisar las 4 columnas del maestro)
             extras = detail.drop(columns=master_cols, errors="ignore")
 
@@ -785,7 +771,7 @@ def iniciaReporte():
             m["__ord__"] = np.arange(len(m))
 
             # Tomar m como base y completar con extras por EAN
-            detail = m.merge(extras, on="EAN", how="left").sort_values("__ord__").drop(columns="__ord__")
+            detail = m.merge(extras, on="EAN", how="left").sort_values(["__ord__", "FECHA"]).drop(columns="__ord__")
 
         # Reordenar columnas visibles: asegurar MARCA seguida de FABRICANTE
         desired_prefix = ["EAN", "PRODUCTO", "CATEGORIA", "SUBCATEGORIA", "MARCA", "FABRICANTE"]

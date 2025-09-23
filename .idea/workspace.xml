@@ -5,9 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="13_09_2025_2">
+      <change afterPath="$PROJECT_DIR$/final/11_anonima/proxy/prueba.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/11_anonima/proxy_mauro/proxy_almacen.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/elAbastecedor/apicaptcha.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/base_datos.py" beforeDir="false" afterPath="$PROJECT_DIR$/base_datos.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/5_coto/prubascorreccion/cotoMysql2.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/5_coto/prubascorreccion/cotoMysql2.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/elAbastecedor/prueba.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/elAbastecedor/prueba.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/reporte.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/reporte.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -23,6 +27,7 @@
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="UPDATE_TYPE" value="REBASE" />
   </component>
   <component name="GitHubPullRequestSearchHistory">{
   &quot;lastFilter&quot;: {
@@ -53,10 +58,12 @@
     &quot;Python.Coto_MySQL.executor&quot;: &quot;Run&quot;,
     &quot;Python.PRUEBA.executor&quot;: &quot;Run&quot;,
     &quot;Python.almacen.executor&quot;: &quot;Run&quot;,
+    &quot;Python.almacenProxy.executor&quot;: &quot;Run&quot;,
     &quot;Python.almacen_playwright.executor&quot;: &quot;Run&quot;,
     &quot;Python.alvear.executor&quot;: &quot;Run&quot;,
     &quot;Python.alvearMySQL.executor&quot;: &quot;Run&quot;,
     &quot;Python.anonima.executor&quot;: &quot;Run&quot;,
+    &quot;Python.apicaptcha.executor&quot;: &quot;Run&quot;,
     &quot;Python.app_regiones.executor&quot;: &quot;Run&quot;,
     &quot;Python.atomo.executor&quot;: &quot;Run&quot;,
     &quot;Python.atomomysql.executor&quot;: &quot;Run&quot;,
@@ -113,6 +120,7 @@
     &quot;Python.modoMarket.executor&quot;: &quot;Run&quot;,
     &quot;Python.modoMarketMysql.executor&quot;: &quot;Run&quot;,
     &quot;Python.pinguino.executor&quot;: &quot;Run&quot;,
+    &quot;Python.proxy_almacen.executor&quot;: &quot;Run&quot;,
     &quot;Python.prueba.executor&quot;: &quot;Run&quot;,
     &quot;Python.prueba2.executor&quot;: &quot;Run&quot;,
     &quot;Python.prueba3.executor&quot;: &quot;Run&quot;,
@@ -375,7 +383,39 @@
       <option name="project" value="LOCAL" />
       <updated>1757772254116</updated>
     </task>
-    <option name="localTasksCounter" value="24" />
+    <task id="LOCAL-00024" summary="13_09_2025_2">
+      <option name="closed" value="true" />
+      <created>1757982183480</created>
+      <option name="number" value="00024" />
+      <option name="presentableId" value="LOCAL-00024" />
+      <option name="project" value="LOCAL" />
+      <updated>1757982183480</updated>
+    </task>
+    <task id="LOCAL-00025" summary="13_09_2025_2">
+      <option name="closed" value="true" />
+      <created>1757982232346</created>
+      <option name="number" value="00025" />
+      <option name="presentableId" value="LOCAL-00025" />
+      <option name="project" value="LOCAL" />
+      <updated>1757982232346</updated>
+    </task>
+    <task id="LOCAL-00026" summary="13_09_2025_2">
+      <option name="closed" value="true" />
+      <created>1757982255135</created>
+      <option name="number" value="00026" />
+      <option name="presentableId" value="LOCAL-00026" />
+      <option name="project" value="LOCAL" />
+      <updated>1757982255135</updated>
+    </task>
+    <task id="LOCAL-00027" summary="13_09_2025_2">
+      <option name="closed" value="true" />
+      <created>1757982304028</created>
+      <option name="number" value="00027" />
+      <option name="presentableId" value="LOCAL-00027" />
+      <option name="project" value="LOCAL" />
+      <updated>1757982304028</updated>
+    </task>
+    <option name="localTasksCounter" value="28" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -398,6 +438,7 @@
     <MESSAGE value="11_09_2025" />
     <MESSAGE value="11_09_2025_" />
     <MESSAGE value="11_09_2025_2" />
+    <MESSAGE value="15_09_2025_2_" />
     <MESSAGE value="13_09_2025_2" />
     <option name="LAST_COMMIT_MESSAGE" value="13_09_2025_2" />
   </component>
