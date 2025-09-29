@@ -2,68 +2,50 @@
 # -*- coding: utf-8 -*-
 
 """
-La Anónima (categoría -> detalle) → MySQL + PROXY (DataImpulse, SIN Selenium Wire)
+La Anónima (categoría -> detalle) → MySQL (con proxy DataImpulse)
 
-- Reutiliza tu scraper Selenium+BS4 para recolectar detalles (sin EAN).
-- Inserta/actualiza:
-  * tiendas (codigo='laanonima', nombre='La Anónima Online')
-  * productos (ean=NULL; match por (nombre, marca) o por nombre)
-  * producto_tienda (sku_tienda=sku, record_id_tienda=id_item, url_tienda=url, nombre_tienda=nombre)
-  * historico_precios (precio_lista, precio_oferta=precio_plus si existe, tipo_oferta='PLUS')
-
-Índices/UNIQUE sugeridos:
-  tiendas(codigo) UNIQUE
-  producto_tienda(tienda_id, sku_tienda) UNIQUE
-  -- opcional: producto_tienda(tienda_id, record_id_tienda) UNIQUE
-  -- opcional: producto_tienda(tienda_id, url_tienda) UNIQUE (para fallback por URL)
-  historico_precios(tienda_id, producto_tienda_id, capturado_en) UNIQUE  [idempotencia temporal]
-
-PROXY soportado:
-- "none": sin proxy
-- "basic": --proxy-server (HTTP/HTTPS/SOCKS5) SIN credenciales
-- "auth_ext": con credenciales vía extensión MV3 de Chrome (recomendado aquí; sin Selenium Wire)
+Proxy DataImpulse:
+  Usuario base:   2cf8063dbace06f69df4
+  Password:       61425d26fb3c7287
+  Host:           gw.dataimpulse.com
+  Puerto:         823
+  Geotarget opcional: añadir a usuario "__cr.ar" p.ej: 2cf8063dbace06f69df4__cr.ar
 """
 
 import re
 import time
 import html
-import os
-import sys
-import json
-import tempfile
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any
 from urllib.parse import urljoin
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from bs4 import BeautifulSoup
 
-from selenium import webdriver
+# --- Selenium (con selenium-wire para proxy con auth) ---
+from seleniumwire import webdriver  # <-- cambio clave
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 from mysql.connector import Error as MySQLError
-
-# ===== Import base_datos.get_conn (ajusta ruta si es necesario) =====
+import sys, os
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )
-from base_datos import get_conn  # noqa: E402
-
+from base_datos import get_conn  # <- tu conexión MySQL
 
 # ================= Config scraping =================
 BASE = "https://supermercado.laanonimaonline.com"
 START = f"{BASE}/almacen/n1_1/pag/1/"
 
-HEADLESS = True  # Si usas PROXY_MODE='auth_ext' se forzará a False (Chrome no carga extensiones en headless)
-PAGE_LOAD_TIMEOUT = 30
+HEADLESS = True
+PAGE_LOAD_TIMEOUT = 25
 IMPLICIT_WAIT = 2
 SCROLL_PAUSES = [300, 600, 900]
 SLEEP_BETWEEN_PAGES = 1.2
@@ -73,27 +55,65 @@ MAX_PAGES: Optional[int] = None  # None = todas
 TIENDA_CODIGO = "laanonima"
 TIENDA_NOMBRE = "La Anónima Online"
 
-# ================= CONFIGURACIÓN DE PROXY =================
-"""
-DataImpulse (credenciales provistas):
-  Usuario:   2cf8063dbace06f69df4  (ej. con geotarget: 2cf8063dbace06f69df4__cr.ar)
-  Password:  61425d26fb3c7287
-  Host:      gw.dataimpulse.com
-  Puerto:    823
-"""
-PROXY_MODE = os.getenv("PROXY_MODE", "auth_ext").lower()  # "none" | "basic" | "auth_ext"
-PROXY_TYPE = os.getenv("PROXY_TYPE", "http").lower()      # "http" | "https" | "socks5"
-PROXY_HOST = os.getenv("PROXY_HOST", "gw.dataimpulse.com")
-PROXY_PORT = int(os.getenv("PROXY_PORT", "823"))
-# Puedes setear país/sesión en el usuario, p.ej. "__cr.ar" para Argentina, "__session-abc123" para fijar sesión
-PROXY_USER = os.getenv("PROXY_USER", "2cf8063dbace06f69df4__cr.ar")
-PROXY_PASS = os.getenv("PROXY_PASS", "61425d26fb3c7287")
+# ================= Proxy DataImpulse =================
+USE_PROXY = True
 
+PROXY_HOST = "gw.dataimpulse.com"
+PROXY_PORT = 823
+PROXY_USER_BASE = "2cf8063dbace06f69df4"
+PROXY_PASS = "61425d26fb3c7287"
 
-# ================= Utilidades =================
+# Geotarget opcional. Ejemplos: "cr.ar" (Argentina), "cr.br" (Brasil), etc.
+# Dejar en None para sin geotarget.
+PROXY_GEOTARGET = "cr.ar"  # cambia o deja None
+
+def build_proxy_username() -> str:
+    if PROXY_GEOTARGET and PROXY_GEOTARGET.strip():
+        return f"{PROXY_USER_BASE}__{PROXY_GEOTARGET.strip()}"
+    return PROXY_USER_BASE
+
+# ================= Selenium =================
+def setup_driver() -> webdriver.Chrome:
+    opts = Options()
+    if HEADLESS:
+        # usar headless "new" para Chrome moderno
+        opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--window-size=1280,1800")
+    opts.add_argument("--lang=es-AR")
+    opts.add_argument("--disable-notifications")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+
+    seleniumwire_options = None
+    if USE_PROXY:
+        proxy_user = build_proxy_username()
+        proxy_url_http = f"http://{proxy_user}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}"
+        proxy_url_https = f"https://{proxy_user}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}"
+        seleniumwire_options = {
+            "proxy": {
+                "http": proxy_url_http,
+                "https": proxy_url_https,
+                "no_proxy": "localhost,127.0.0.1"
+            },
+            # Para reducir overhead de captura si no la necesitas:
+            "exclude_hosts": []
+        }
+
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=opts, seleniumwire_options=seleniumwire_options)
+    driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
+    driver.implicitly_wait(IMPLICIT_WAIT)
+
+    # (Opcional) Si quieres validar qué proxy quedó configurado:
+    # print("Proxy activo:", driver.proxy)
+
+    return driver
+
 def wait_dom(driver, css: str, timeout: int = 15):
     return WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.CSS_SELECTOR, css)))
-
 
 def try_click_cookies(driver):
     for sel in [
@@ -111,30 +131,10 @@ def try_click_cookies(driver):
         except Exception:
             pass
 
-
 def smooth_scroll(driver):
     for y in SCROLL_PAUSES:
-        driver.execute_script(f"window.scrollTo(0, {y});")
-        time.sleep(0.3)
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(0.4)
-
-
-def parse_price_text(txt: str) -> Optional[float]:
-    if not txt:
-        return None
-    t = txt.strip().replace("$", "").replace(" ", "").replace(".", "").replace(",", ".")
-    try:
-        return float(t)
-    except ValueError:
-        return None
-
-
-def text_or_none(node) -> Optional[str]:
-    if not node:
-        return None
-    return re.sub(r"\s+", " ", node.get_text(strip=True)) or None
-
+        driver.execute_script(f"window.scrollTo(0, {y});"); time.sleep(0.3)
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);"); time.sleep(0.4)
 
 def get_list_links_from_page(driver) -> List[str]:
     soup = BeautifulSoup(driver.page_source, "lxml")
@@ -148,7 +148,6 @@ def get_list_links_from_page(driver) -> List[str]:
             links.append(full)
     return links
 
-
 def get_next_page_url(current_url: str, soup: BeautifulSoup) -> Optional[str]:
     m = re.search(r"/pag/(\d+)/", current_url)
     if not m:
@@ -158,21 +157,34 @@ def get_next_page_url(current_url: str, soup: BeautifulSoup) -> Optional[str]:
     a = soup.select_one(f"a[href*='/pag/{cur + 1}/']")
     return urljoin(BASE, a["href"]) if a and a.has_attr("href") else guess
 
+def parse_price_text(txt: str) -> Optional[float]:
+    if not txt:
+        return None
+    t = txt.strip().replace("$", "").replace(" ", "").replace(".", "").replace(",", ".")
+    try:
+        return float(t)
+    except ValueError:
+        return None
 
-def parse_detail(html_source: str, url: str) -> Dict[str, Any]:
+def text_or_none(node) -> Optional[str]:
+    if not node:
+        return None
+    return re.sub(r"\s+", " ", node.get_text(strip=True)) or None
+
+def parse_detail(html_source: str, url: str) -> Dict:
     soup = BeautifulSoup(html_source, "lxml")
 
     # -------- metadatos básicos --------
     nombre = text_or_none(soup.select_one("h1.titulo_producto.principal"))
 
     cod_txt = text_or_none(soup.select_one("div.codigo"))  # "Cod. 3115185"
-    sku: Optional[str] = None
+    sku = None
     if cod_txt:
         m = re.search(r"(\d+)", cod_txt)
         if m:
             sku = m.group(1)
 
-    # ocultos
+    # a veces viene oculto
     sku_hidden = soup.select_one("input[id^='sku_item_imetrics_'][value]")
     if sku_hidden and not sku:
         sku = sku_hidden.get("value")
@@ -228,7 +240,6 @@ def parse_detail(html_source: str, url: str) -> Dict[str, Any]:
         "imagenes": " | ".join(imagenes) if imagenes else None,
     }
 
-
 def grab_category(driver, start_url: str) -> List[Dict[str, Any]]:
     all_rows: List[Dict[str, Any]] = []
     visited = set()
@@ -246,18 +257,15 @@ def grab_category(driver, start_url: str) -> List[Dict[str, Any]]:
             try:
                 driver.get(page_url)
             except Exception:
-                print(f"⚠️ No se pudo cargar: {page_url}")
-                break
+                print(f"⚠️ No se pudo cargar: {page_url}"); break
 
         try_click_cookies(driver)
         try:
             wait_dom(driver, "div.producto.item")
         except TimeoutException:
-            print(f"⚠️ Sin productos visibles en: {page_url}")
-            break
+            print(f"⚠️ Sin productos visibles en: {page_url}"); break
 
-        smooth_scroll(driver)
-        time.sleep(0.3)
+        smooth_scroll(driver); time.sleep(0.3)
         links = get_list_links_from_page(driver)
         print(f"🔗 P{page_idx} {len(links)} productos - {page_url}")
         if not links:
@@ -269,8 +277,7 @@ def grab_category(driver, start_url: str) -> List[Dict[str, Any]]:
             visited.add(href)
             try:
                 driver.get(href)
-                wait_dom(driver, "h1.titulo_producto.principal")
-                time.sleep(0.25)
+                wait_dom(driver, "h1.titulo_producto.principal"); time.sleep(0.25)
                 row = parse_detail(driver.page_source, href)
                 all_rows.append(row)
                 print(f"  ✔ {row.get('nombre') or ''} [{row.get('sku') or ''}]")
@@ -284,11 +291,9 @@ def grab_category(driver, start_url: str) -> List[Dict[str, Any]]:
         next_url = get_next_page_url(page_url, soup)
         if not next_url or next_url == page_url:
             break
-        page_url = next_url
-        time.sleep(SLEEP_BETWEEN_PAGES)
+        page_url = next_url; time.sleep(SLEEP_BETWEEN_PAGES)
 
     return all_rows
-
 
 # ================= MySQL helpers =================
 def clean_txt(x: Any) -> Optional[str]:
@@ -297,7 +302,6 @@ def clean_txt(x: Any) -> Optional[str]:
     s = str(x).strip()
     return s if s else None
 
-
 def price_to_varchar(x: Any) -> Optional[str]:
     if x is None:
         return None
@@ -305,13 +309,12 @@ def price_to_varchar(x: Any) -> Optional[str]:
         v = float(x)
         if np.isnan(v):
             return None
-        return f"{round(v, 2)}"
+        return f"{round(v,2)}"
     except Exception:
         s = str(x).strip()
         return s if s else None
 
-
-def split_categoria(categorias: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+def split_categoria(categorias: Optional[str]) -> (Optional[str], Optional[str]):
     """Parte la cadena 'A > B > C' en (A, B)."""
     if not categorias:
         return None, None
@@ -319,7 +322,6 @@ def split_categoria(categorias: Optional[str]) -> Tuple[Optional[str], Optional[
     cat = parts[0] if len(parts) > 0 else None
     sub = parts[1] if len(parts) > 1 else None
     return cat, sub
-
 
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute(
@@ -330,15 +332,15 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
     return cur.fetchone()[0]
 
-
 def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
     """
     No hay EAN → ean=NULL.
     Match preferente por (nombre, marca). Fallback por nombre.
     Guarda categoría/subcategoría derivadas de 'categorias'.
     """
+    ean = None
     nombre = clean_txt(r.get("nombre"))
-    marca = clean_txt(r.get("marca"))
+    marca  = clean_txt(r.get("marca"))
     cat, sub = split_categoria(clean_txt(r.get("categorias")))
 
     if nombre and marca:
@@ -373,7 +375,6 @@ def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
         VALUES (NULL, NULLIF(%s,''), NULLIF(%s,''), NULL, NULLIF(%s,''), NULLIF(%s,''))
     """, (nombre or "", marca or "", cat or "", sub or ""))
     return cur.lastrowid
-
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
     """
@@ -420,7 +421,6 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
     """, (tienda_id, producto_id, url, nombre_tienda))
     return cur.lastrowid
 
-
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en: datetime):
     """
     Mapeo precios:
@@ -428,8 +428,8 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
       - precio_plus: si está presente, se guarda como 'precio_oferta' con tipo_oferta='PLUS'
     """
     precio_lista = price_to_varchar(r.get("precio_lista"))
-    precio_plus = price_to_varchar(r.get("precio_plus"))
-    tipo_oferta = "PLUS" if precio_plus is not None else None
+    precio_plus  = price_to_varchar(r.get("precio_plus"))
+    tipo_oferta  = "PLUS" if precio_plus is not None else None
 
     cur.execute("""
         INSERT INTO historico_precios
@@ -451,159 +451,11 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
         None, None, None, None
     ))
 
-
-# ================= Extensión Chrome (proxy con auth) =================
-def _build_proxy_extension_dir(proxy_host: str, proxy_port: int, username: str, password: str, scheme: str = "http") -> str:
-    """
-    Crea una extensión MV3 desempaquetada en un directorio temporal:
-      - Fija proxy (scheme://host:port)
-      - Responde a onAuthRequired con credenciales
-    Devuelve la ruta del directorio que se pasará a --load-extension.
-    """
-    ext_dir = Path(tempfile.mkdtemp(prefix="proxy_ext_"))
-    manifest = {
-        "name": "Proxy Auth Ext",
-        "version": "1.0",
-        "manifest_version": 3,
-        "permissions": [
-            "proxy",
-            "storage",
-            "tabs",
-            "webRequest",
-            "webRequestBlocking"
-        ],
-        "host_permissions": ["<all_urls>"],
-        "background": {"service_worker": "background.js"},
-        "minimum_chrome_version": "88"
-    }
-
-    background_js = f"""
-const config = {{
-  mode: "fixed_servers",
-  rules: {{
-    singleProxy: {{
-      scheme: "{scheme}",
-      host: "{proxy_host}",
-      port: {proxy_port}
-    }},
-    bypassList: ["localhost", "127.0.0.1"]
-  }}
-}};
-
-function setProxy() {{
-  chrome.proxy.settings.set({{ value: config, scope: "regular" }}, () => {{}});
-}}
-
-chrome.runtime.onInstalled.addListener(setProxy);
-chrome.runtime.onStartup.addListener(setProxy);
-
-chrome.webRequest.onAuthRequired.addListener(
-  function(details) {{
-    if (details.isProxy === true) {{
-      return {{
-        authCredentials: {{
-          username: "{username}",
-          password: "{password}"
-        }}
-      }};
-    }}
-    return {{}};
-  }},
-  {{ urls: ["<all_urls>"] }},
-  ["blocking"]
-);
-""".strip()
-
-    (ext_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    (ext_dir / "background.js").write_text(background_js, encoding="utf-8")
-    return str(ext_dir)
-
-
-# ================= Selenium (con soporte de proxy) =================
-def _build_chrome_options(headless: bool = True) -> Options:
-    opts = Options()
-    if headless:
-        # ⚠️ Las extensiones no cargan en headless. Solo se usa si NO estamos en auth_ext.
-        opts.add_argument("--headless=new")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--window-size=1280,1800")
-    opts.add_argument("--lang=es-AR")
-    opts.add_argument("--disable-notifications")
-    opts.add_argument("--disable-blink-features=AutomationControlled")
-    opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/123.0.0.0 Safari/537.36")
-    return opts
-
-
-def setup_driver() -> webdriver.Chrome:
-    """
-    Devuelve un driver listo:
-    - PROXY_MODE="none": driver Chrome estándar (headless según HEADLESS).
-    - PROXY_MODE="basic": usa --proxy-server=SCHEME://HOST:PORT (sin auth).
-    - PROXY_MODE="auth_ext": extensión que setea proxy + credenciales (requiere headed).
-    """
-    global HEADLESS
-
-    if PROXY_MODE == "auth_ext":
-        if HEADLESS:
-            print("[INFO] auth_ext requiere interfaz (no headless). Cambiando HEADLESS=False.")
-        HEADLESS = False
-
-    opts = _build_chrome_options(headless=HEADLESS)
-
-    # === Modo sin proxy ===
-    if PROXY_MODE == "none":
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=opts)
-        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
-        driver.implicitly_wait(IMPLICIT_WAIT)
-        return driver
-
-    # Validación de host/puerto
-    if not PROXY_HOST or not PROXY_PORT:
-        raise RuntimeError("Configura PROXY_HOST y PROXY_PORT para usar proxy (basic/auth_ext).")
-
-    # === Modo proxy básico (sin credenciales) ===
-    if PROXY_MODE == "basic":
-        proxy_url = f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}"
-        opts.add_argument(f"--proxy-server={proxy_url}")
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=opts)
-        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
-        driver.implicitly_wait(IMPLICIT_WAIT)
-        return driver
-
-    # === Modo proxy con credenciales vía extensión ===
-    if PROXY_MODE == "auth_ext":
-        ext_dir = _build_proxy_extension_dir(
-            proxy_host=PROXY_HOST,
-            proxy_port=PROXY_PORT,
-            username=PROXY_USER,
-            password=PROXY_PASS,
-            scheme=PROXY_TYPE
-        )
-        # Cargar la extensión desempaquetada
-        opts.add_argument(f"--load-extension={ext_dir}")
-        # (opcional) limita a sólo esa extensión:
-        opts.add_argument(f"--disable-extensions-except={ext_dir}")
-
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=opts)
-        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
-        driver.implicitly_wait(IMPLICIT_WAIT)
-        return driver
-
-    raise RuntimeError(f"PROXY_MODE desconocido: {PROXY_MODE}")
-
-
 # ================= Orquestación =================
 def main():
     driver = setup_driver()
     try:
-        print("[INFO] Scrapeando La Anónima…")
+        print("[INFO] Scrapeando La Anónima (con proxy)…")
         rows = grab_category(driver, START)
     finally:
         try:
@@ -645,27 +497,5 @@ def main():
         except Exception:
             pass
 
-
 if __name__ == "__main__":
-    """
-    Ejemplos de ejecución:
-
-    # 1) Sin proxy:
-    PROXY_MODE=none python3 laanonima_mysql_proxy_dataimpulse.py
-
-    # 2) Proxy básico SIN credenciales (HTTP/SOCKS):
-    PROXY_MODE=basic PROXY_TYPE=http PROXY_HOST=gw.dataimpulse.com PROXY_PORT=823 \
-    python3 laanonima_mysql_proxy_dataimpulse.py
-
-    # 3) DataImpulse con credenciales (SIN Selenium Wire) usando extensión:
-    PROXY_MODE=auth_ext PROXY_TYPE=http PROXY_HOST=gw.dataimpulse.com PROXY_PORT=823 \
-    PROXY_USER=2cf8063dbace06f69df4__cr.ar PROXY_PASS=61425d26fb3c7287 \
-    python3 laanonima_mysql_proxy_dataimpulse.py
-
-    # En VPS sin GUI:
-    xvfb-run -a -s "-screen 0 1280x1024x24" \
-      PROXY_MODE=auth_ext PROXY_TYPE=http PROXY_HOST=gw.dataimpulse.com PROXY_PORT=823 \
-      PROXY_USER=2cf8063dbace06f69df4__cr.ar PROXY_PASS=61425d26fb3c7287 \
-      python3 laanonima_mysql_proxy_dataimpulse.py
-    """
     main()

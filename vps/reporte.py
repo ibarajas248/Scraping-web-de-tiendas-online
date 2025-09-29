@@ -435,16 +435,13 @@ def iniciaReporte():
         """
         return read_df(q, p)
 
-    # ======= 🔄 NUEVA IMPLEMENTACIÓN: detalle con TODAS las capturas =======
     @st.cache_data(ttl=300, show_spinner=False)
     def get_detail(where_str: str, params: Dict, effective: bool, limit: int):
-        # La bandera "effective" no cambia las columnas visibles (mantenemos
-        # PRECIO_LISTA/PRECIO_OFERTA como en tu UI), pero dejamos el cálculo
-        # disponible si quieres añadirlo después.
         price_expr = EFFECTIVE_PRICE_EXPR if effective else "h.precio_lista"
         q = f"""
         SELECT
           p.ean AS EAN,
+          pt.sku_tienda AS COD,
           COALESCE(pt.nombre_tienda, p.nombre) AS PRODUCTO,
           p.categoria AS CATEGORIA,
           p.subcategoria AS SUBCATEGORIA,
@@ -476,6 +473,7 @@ def iniciaReporte():
         LIMIT {int(limit)}
         """
         return read_df(q, params)
+
     # ======= FIN cambio =======
 
 
@@ -773,12 +771,12 @@ def iniciaReporte():
             # Tomar m como base y completar con extras por EAN
             detail = m.merge(extras, on="EAN", how="left").sort_values(["__ord__", "FECHA"]).drop(columns="__ord__")
 
-        # Reordenar columnas visibles: asegurar MARCA seguida de FABRICANTE
-        desired_prefix = ["EAN", "PRODUCTO", "CATEGORIA", "SUBCATEGORIA", "MARCA", "FABRICANTE"]
-        # Añadir resto sin duplicar
+        # Reordenar columnas visibles: COD primero
+        desired_prefix = ["COD", "EAN", "PRODUCTO", "CATEGORIA", "SUBCATEGORIA", "MARCA", "FABRICANTE"]
         visible = [c for c in desired_prefix if c in detail.columns]
         rest = [c for c in detail.columns if c not in visible]
         detail = detail[visible + rest]
+        detail = detail.drop_duplicates(keep="first").reset_index(drop=True)
 
         st.dataframe(detail, use_container_width=True, height=350)
         st.download_button("⬇️ Descargar detalle (CSV)", detail.to_csv(index=False).encode("utf-8"),

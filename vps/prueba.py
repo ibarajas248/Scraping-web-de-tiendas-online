@@ -7,6 +7,7 @@
 # - Modo por defecto: "Solo último snapshot".
 # - Índices: se intentan crear automáticamente (silencioso) al lanzar la consulta (una vez por sesión).
 # - Tabla limitada para visualización; descargas traen el resultado completo.
+# - NUEVO: se eliminan filas duplicadas (todas las columnas iguales).
 
 import io, os, re, unicodedata
 from typing import List, Dict, Tuple
@@ -66,9 +67,9 @@ def _read_df(engine: Engine, q: str, params: Dict | None = None) -> pd.DataFrame
 # Índices sugeridos (silencioso)
 # ==========================
 @st.cache_data(ttl=3600, show_spinner=False)
-def _current_schema(engine: Engine) -> str:
+def _current_schema(_engine: Engine) -> str:
     q = "SELECT DATABASE() AS dbname"
-    with engine.connect() as conn:
+    with _engine.connect() as conn:
         row = conn.execute(text(q)).mappings().first()
         return row["dbname"]
 
@@ -89,13 +90,13 @@ def _create_index(engine: Engine, table: str, index_name: str, columns_sql: str)
         conn.execute(text(ddl))
 
 @st.cache_resource(show_spinner=False)
-def _ensure_perf_indexes_once(engine: Engine) -> bool:
+def _ensure_perf_indexes_once(_engine: Engine) -> bool:
     """
     Intenta crear índices útiles una sola vez por proceso.
     Devuelve True si se crearon/ya existían, False si falló algo.
     """
     try:
-        schema = _current_schema(engine)
+        schema = _current_schema(_engine)
         todo = [
             ("historico_precios", "idx_hp_tienda_prod_capturado", "(`tienda_id`,`producto_tienda_id`,`capturado_en`)"),
             ("historico_precios", "idx_hp_capturado", "(`capturado_en`)"),
@@ -109,8 +110,8 @@ def _ensure_perf_indexes_once(engine: Engine) -> bool:
         ]
         for table, idx, cols in todo:
             try:
-                if not _index_exists(engine, schema, table, idx):
-                    _create_index(engine, table, idx, cols)
+                if not _index_exists(_engine, schema, table, idx):
+                    _create_index(_engine, table, idx, cols)
             except Exception:
                 # Ignorar errores por índice individual (no bloquea la consulta)
                 pass
@@ -479,13 +480,17 @@ def prueba(engine: Engine):
         else:
             df_full = get_last_snapshot(engine, where_str, params, f["use_effective"], f["download_limit"])
 
+    # --- NUEVO: eliminar filas duplicadas exactas (todas las columnas) ---
+    if not df_full.empty:
+        df_full = df_full.drop_duplicates()
+
     if df_full.empty:
         st.info("No hay datos con los filtros actuales.")
         return
 
     price_col = "PRECIO_EFECTIVO" if f["use_effective"] else "PRECIO_LISTA"
 
-    # KPIs (sobre df completo)
+    # KPIs (sobre df completo ya deduplicado)
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Filas (resultado)", len(df_full))
     c2.metric("SKUs distintos", df_full["SKU_TIENDA"].nunique())

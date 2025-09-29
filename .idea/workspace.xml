@@ -4,8 +4,19 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="v_sk">
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="alps">
+      <change afterPath="$PROJECT_DIR$/final/1_carrefour/carrefor_bandera_disponibilidad/carrefour.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/8_disco/sucursales/sucursales_prueba dos/disco_cordoba_alto_cordoba_cabrera_493_myslq.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/elAbastecedor/abastecedor_ampliado/abastecedor_captcha_myslq.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/request/elAbastecedor/abastecedor_captcha_myslq.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/11_anonima/proxy_mauro/proxy_almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/proxy_mauro/proxy_almacen.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/elAbastecedor/apicaptcha.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/elAbastecedor/apicaptcha.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/jumbo/jumboMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/jumbo/jumboMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/prueba.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/prueba.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/reporte.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/reporte.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -39,111 +50,120 @@
   &quot;associatedIndex&quot;: 2
 }</component>
   <component name="ProjectId" id="2ybZm5QCRe50WcgLZw46aRq2yet" />
-  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python tests.Doctests in builtins.executor&quot;: &quot;Run&quot;,
-    &quot;Python.CABA.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Coto.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Coto_MySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PRUEBA.executor&quot;: &quot;Run&quot;,
-    &quot;Python.almacen.executor&quot;: &quot;Run&quot;,
-    &quot;Python.almacenProxy.executor&quot;: &quot;Run&quot;,
-    &quot;Python.almacen_playwright.executor&quot;: &quot;Run&quot;,
-    &quot;Python.alvear.executor&quot;: &quot;Run&quot;,
-    &quot;Python.alvearMySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.anonima.executor&quot;: &quot;Run&quot;,
-    &quot;Python.apicaptcha.executor&quot;: &quot;Run&quot;,
-    &quot;Python.app_regiones.executor&quot;: &quot;Run&quot;,
-    &quot;Python.atomo.executor&quot;: &quot;Run&quot;,
-    &quot;Python.atomomysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.base_datos.executor&quot;: &quot;Run&quot;,
-    &quot;Python.bebida.executor&quot;: &quot;Run&quot;,
-    &quot;Python.bebidas.executor&quot;: &quot;Run&quot;,
-    &quot;Python.carrefour.executor&quot;: &quot;Run&quot;,
-    &quot;Python.carrefour_MySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.comodin.executor&quot;: &quot;Run&quot;,
-    &quot;Python.comodinMySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.conectar.executor&quot;: &quot;Run&quot;,
-    &quot;Python.copeprueba.executor&quot;: &quot;Run&quot;,
-    &quot;Python.cordiez.executor&quot;: &quot;Run&quot;,
-    &quot;Python.cordiezMysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.cormoran.executor&quot;: &quot;Run&quot;,
-    &quot;Python.coto.executor&quot;: &quot;Run&quot;,
-    &quot;Python.cotoMysql2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.cotoRequestJson.executor&quot;: &quot;Run&quot;,
-    &quot;Python.darentucasa.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dia.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dia_mysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dino.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dino2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dinoMySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dinoPaginado.executor&quot;: &quot;Run&quot;,
-    &quot;Python.disco.executor&quot;: &quot;Run&quot;,
-    &quot;Python.disco_MySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.disco_cordoba.executor&quot;: &quot;Run&quot;,
-    &quot;Python.disco_cordoba_alto_cordoba_cabrera_493.executor&quot;: &quot;Run&quot;,
-    &quot;Python.disco_cordoba_alto_cordoba_cabrera_493_myslq.executor&quot;: &quot;Run&quot;,
-    &quot;Python.ean.executor&quot;: &quot;Run&quot;,
-    &quot;Python.elPuente.executor&quot;: &quot;Run&quot;,
-    &quot;Python.estructura_coto.executor&quot;: &quot;Run&quot;,
-    &quot;Python.gallega1.executor&quot;: &quot;Run&quot;,
-    &quot;Python.genovesamysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.hiperlibertad.executor&quot;: &quot;Run&quot;,
-    &quot;Python.hiperlibertad_Mysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.josimar.executor&quot;: &quot;Run&quot;,
-    &quot;Python.jumbo.executor&quot;: &quot;Run&quot;,
-    &quot;Python.jumboMysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.kilbel.executor&quot;: &quot;Run&quot;,
-    &quot;Python.kilbeldb.executor&quot;: &quot;Run&quot;,
-    &quot;Python.laAnonima.executor&quot;: &quot;Run&quot;,
-    &quot;Python.laAnonima_MySQL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.laGallega.executor&quot;: &quot;Run&quot;,
-    &quot;Python.laReinaOnline.executor&quot;: &quot;Run&quot;,
-    &quot;Python.laanonima_tunel.executor&quot;: &quot;Run&quot;,
-    &quot;Python.lacoopeencasa.executor&quot;: &quot;Run&quot;,
-    &quot;Python.libreria.executor&quot;: &quot;Run&quot;,
-    &quot;Python.localidadprueba.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;Python.mascotas.executor&quot;: &quot;Run&quot;,
-    &quot;Python.masonline.executor&quot;: &quot;Run&quot;,
-    &quot;Python.modoMarket.executor&quot;: &quot;Run&quot;,
-    &quot;Python.modoMarketMysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pinguino.executor&quot;: &quot;Run&quot;,
-    &quot;Python.proxy_almacen.executor&quot;: &quot;Run&quot;,
-    &quot;Python.prueba.executor&quot;: &quot;Run&quot;,
-    &quot;Python.prueba2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.prueba3.executor&quot;: &quot;Run&quot;,
-    &quot;Python.prueba_vea.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebaean.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebagenovesa.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebas.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebasMysqlCarrefour.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebaspaginacion.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pruebavps.executor&quot;: &quot;Run&quot;,
-    &quot;Python.puenteMysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.reinaMysql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.reporte.executor&quot;: &quot;Run&quot;,
-    &quot;Python.solvercaptcha.executor&quot;: &quot;Run&quot;,
-    &quot;Python.sql.executor&quot;: &quot;Run&quot;,
-    &quot;Python.vea.executor&quot;: &quot;Run&quot;,
-    &quot;Python.veaMysql.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/USER/PycharmProjects/ScrapingTiendas/final/24_kilbel&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python tests.Doctests in builtins.executor": "Run",
+    "Python.CABA.executor": "Run",
+    "Python.Coto.executor": "Run",
+    "Python.Coto_MySQL.executor": "Run",
+    "Python.PRUEBA.executor": "Run",
+    "Python.abastecedor_captcha_myslq.executor": "Run",
+    "Python.almacen.executor": "Run",
+    "Python.almacenProxy.executor": "Run",
+    "Python.almacen_playwright.executor": "Run",
+    "Python.alvear.executor": "Run",
+    "Python.alvearMySQL.executor": "Run",
+    "Python.anonima.executor": "Run",
+    "Python.apicaptcha.executor": "Run",
+    "Python.app_regiones.executor": "Run",
+    "Python.atomo.executor": "Run",
+    "Python.atomomysql.executor": "Run",
+    "Python.base_datos.executor": "Run",
+    "Python.bebida.executor": "Run",
+    "Python.bebidas.executor": "Run",
+    "Python.carrefour.executor": "Run",
+    "Python.carrefour_MySQL.executor": "Run",
+    "Python.comodin.executor": "Run",
+    "Python.comodinMySQL.executor": "Run",
+    "Python.conectar.executor": "Run",
+    "Python.copeprueba.executor": "Run",
+    "Python.cordiez.executor": "Run",
+    "Python.cordiezMysql.executor": "Run",
+    "Python.cormoran.executor": "Run",
+    "Python.coto.executor": "Run",
+    "Python.cotoMysql2.executor": "Run",
+    "Python.cotoRequestJson.executor": "Run",
+    "Python.darentucasa.executor": "Run",
+    "Python.dia.executor": "Run",
+    "Python.dia_mysql.executor": "Run",
+    "Python.dino.executor": "Run",
+    "Python.dino2.executor": "Run",
+    "Python.dinoMySQL.executor": "Run",
+    "Python.dinoPaginado.executor": "Run",
+    "Python.disco.executor": "Run",
+    "Python.disco_MySQL.executor": "Run",
+    "Python.disco_cordoba.executor": "Run",
+    "Python.disco_cordoba_alto_cordoba_cabrera_493.executor": "Run",
+    "Python.disco_cordoba_alto_cordoba_cabrera_493_myslq.executor": "Run",
+    "Python.ean.executor": "Run",
+    "Python.elPuente.executor": "Run",
+    "Python.estructura_coto.executor": "Run",
+    "Python.gallega1.executor": "Run",
+    "Python.genovesamysql.executor": "Run",
+    "Python.hiperlibertad.executor": "Run",
+    "Python.hiperlibertad_Mysql.executor": "Run",
+    "Python.josimar.executor": "Run",
+    "Python.jumbo.executor": "Run",
+    "Python.jumboMysql.executor": "Run",
+    "Python.kilbel.executor": "Run",
+    "Python.kilbeldb.executor": "Run",
+    "Python.laAnonima.executor": "Run",
+    "Python.laAnonima_MySQL.executor": "Run",
+    "Python.laGallega.executor": "Run",
+    "Python.laReinaOnline.executor": "Run",
+    "Python.laanonima_tunel.executor": "Run",
+    "Python.lacoopeencasa.executor": "Run",
+    "Python.libreria.executor": "Run",
+    "Python.localidadprueba.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.mascotas.executor": "Run",
+    "Python.masonline.executor": "Run",
+    "Python.modoMarket.executor": "Run",
+    "Python.modoMarketMysql.executor": "Run",
+    "Python.pinguino.executor": "Run",
+    "Python.proxy_almacen.executor": "Run",
+    "Python.prueba.executor": "Run",
+    "Python.prueba2.executor": "Run",
+    "Python.prueba3.executor": "Run",
+    "Python.prueba_vea.executor": "Run",
+    "Python.pruebaean.executor": "Run",
+    "Python.pruebagenovesa.executor": "Run",
+    "Python.pruebas.executor": "Run",
+    "Python.pruebasMysqlCarrefour.executor": "Run",
+    "Python.pruebaspaginacion.executor": "Run",
+    "Python.pruebavps.executor": "Run",
+    "Python.puenteMysql.executor": "Run",
+    "Python.reinaMysql.executor": "Run",
+    "Python.reporte.executor": "Run",
+    "Python.solvercaptcha.executor": "Run",
+    "Python.sql.executor": "Run",
+    "Python.vea.executor": "Run",
+    "Python.veaMysql.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "master",
+    "ignore.virus.scanning.warn.message": "true",
+    "last_opened_file_path": "C:/Users/David/PycharmProjects/Scraping-web-de-tiendas-online/final/1_carrefour/carrefor_bandera_disponibilidad",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\Scraping-web-de-tiendas-online\request\elAbastecedor\abastecedor_ampliado" />
+      <recent name="C:\Users\David\PycharmProjects\Scraping-web-de-tiendas-online\final\8_disco\sucursales\sucursales_prueba dos" />
       <recent name="C:\Users\USER\PycharmProjects\ScrapingTiendas\final\24_kilbel" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\25_pinguino" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\18_lagenovesa" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\8_disco\sucursales" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\8_disco\sucursales" />
@@ -167,6 +187,7 @@
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/main.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
@@ -180,7 +201,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-98f27166c754-ba05f1cad1b1-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-242.21829.153" />
+        <option value="bundled-js-predefined-d6986cc7102b-9c94529fcfe0-JavaScript-PY-252.26199.168" />
+        <option value="bundled-python-sdk-b3d66beaba9a-c6efb3732140-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.26199.168" />
       </set>
     </attachedChunks>
   </component>
@@ -192,6 +214,11 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1750105389705</updated>
+      <workItem from="1758928248441" duration="552000" />
+      <workItem from="1758961011556" duration="10753000" />
+      <workItem from="1758999854047" duration="3702000" />
+      <workItem from="1759054374522" duration="1551000" />
+      <workItem from="1759137742756" duration="3709000" />
     </task>
     <task id="LOCAL-00001" summary="inicio">
       <option name="closed" value="true" />
@@ -420,6 +447,9 @@
     <option name="localTasksCounter" value="29" />
     <servers />
   </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="inicio" />
     <MESSAGE value="request_coto" />
@@ -443,6 +473,18 @@
     <MESSAGE value="15_09_2025_2_" />
     <MESSAGE value="13_09_2025_2" />
     <MESSAGE value="v_sk" />
-    <option name="LAST_COMMIT_MESSAGE" value="v_sk" />
+    <MESSAGE value="alps" />
+    <option name="LAST_COMMIT_MESSAGE" value="alps" />
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$laanonima_tunel.coverage" NAME="laanonima_tunel Coverage Results" MODIFIED="1758964027051" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/laAnonima" />
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$abastecedor_captcha_myslq.coverage" NAME="abastecedor_captcha_myslq Coverage Results" MODIFIED="1759003919584" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/elAbastecedor" />
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$disco_cordoba_alto_cordoba_cabrera_493_myslq.coverage" NAME="disco_cordoba_alto_cordoba_cabrera_493_myslq Coverage Results" MODIFIED="1759004616433" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/final/8_disco/sucursales" />
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$proxy_almacen.coverage" NAME="proxy_almacen Coverage Results" MODIFIED="1758962397658" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/final/11_anonima/proxy_mauro" />
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$laAnonima_MySQL.coverage" NAME="laAnonima_MySQL Coverage Results" MODIFIED="1758963895482" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/laAnonima" />
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$almacenProxy.coverage" NAME="almacenProxy Coverage Results" MODIFIED="1758963385242" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/final/11_anonima/proxy" />
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$almacen.coverage" NAME="almacen Coverage Results" MODIFIED="1758963820232" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/final/11_anonima" />
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$laAnonima.coverage" NAME="laAnonima Coverage Results" MODIFIED="1758964019113" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/laAnonima" />
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$apicaptcha.coverage" NAME="apicaptcha Coverage Results" MODIFIED="1758968592118" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/elAbastecedor" />
   </component>
 </project>
