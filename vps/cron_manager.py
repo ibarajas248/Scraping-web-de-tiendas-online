@@ -17,7 +17,7 @@ def cron_manager():
     DEFAULT_SSH_HOST = "179.61.219.207"
     DEFAULT_SSH_PORT = 22
     DEFAULT_SSH_USER = "intelligenceblue-scrap"
-    DEFAULT_SSH_PASS = ""
+    DEFAULT_SSH_PASS = "WLlMf047NTAskTjijHju"
 
     BASE_DIR = "/home/intelligenceblue-scrap/htdocs/scrap.intelligenceblue.com.ar/scrap_tiendas"
     DEFAULT_PYTHON_BIN = "/home/intelligenceblue-scrap/.venvs/scrap/bin/python"

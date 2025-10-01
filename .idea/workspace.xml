@@ -5,18 +5,20 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="alps">
-      <change afterPath="$PROJECT_DIR$/final/1_carrefour/carrefor_bandera_disponibilidad/carrefour.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/8_disco/sucursales/sucursales_prueba dos/disco_cordoba_alto_cordoba_cabrera_493_myslq.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/elAbastecedor/abastecedor_ampliado/abastecedor_captcha_myslq.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/request/elAbastecedor/abastecedor_captcha_myslq.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/18_lagenovesa/categorias/Bazar.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/18_lagenovesa/categorias/almacen.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/18_lagenovesa/categorias/bebidas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/18_lagenovesa/categorias/congelados.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/18_lagenovesa/categorias/frescos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/18_lagenovesa/categorias/limpieza.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/18_lagenovesa/categorias/perfumeria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/18_lagenovesa/categorias/sintac.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/21_cormoran/correccion/cormoran.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/11_anonima/proxy_mauro/proxy_almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/proxy_mauro/proxy_almacen.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/elAbastecedor/apicaptcha.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/elAbastecedor/apicaptcha.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/jumbo/jumboMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/jumbo/jumboMysql.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vps/prueba.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/prueba.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vps/reporte.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/reporte.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/jumboMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/10_jumbo/jumboMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/18_lagenovesa/genovesamysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/18_lagenovesa/genovesamysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/almacen.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/cron_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/cron_manager.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -148,7 +150,7 @@
     "RunOnceActivity.git.unshallow": "true",
     "git-widget-placeholder": "master",
     "ignore.virus.scanning.warn.message": "true",
-    "last_opened_file_path": "C:/Users/David/PycharmProjects/Scraping-web-de-tiendas-online/final/1_carrefour/carrefor_bandera_disponibilidad",
+    "last_opened_file_path": "C:/Users/David/PycharmProjects/Scraping-web-de-tiendas-online/final/18_lagenovesa/categorias",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -159,11 +161,11 @@
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\Scraping-web-de-tiendas-online\final\18_lagenovesa\categorias" />
+      <recent name="C:\Users\David\PycharmProjects\Scraping-web-de-tiendas-online\final\21_cormoran\correccion" />
       <recent name="C:\Users\David\PycharmProjects\Scraping-web-de-tiendas-online\request\elAbastecedor\abastecedor_ampliado" />
       <recent name="C:\Users\David\PycharmProjects\Scraping-web-de-tiendas-online\final\8_disco\sucursales\sucursales_prueba dos" />
       <recent name="C:\Users\USER\PycharmProjects\ScrapingTiendas\final\24_kilbel" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\25_pinguino" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\18_lagenovesa" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\8_disco\sucursales" />
@@ -173,7 +175,30 @@
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final" />
     </key>
   </component>
-  <component name="RunManager">
+  <component name="RunManager" selected="Python.genovesamysql">
+    <configuration name="genovesamysql" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="scrapingTiendas" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/final/18_lagenovesa" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/final/18_lagenovesa/genovesamysql.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="main" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
       <module name="scrapingTiendas" />
       <option name="ENV_FILES" value="" />
@@ -197,6 +222,11 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.genovesamysql" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
@@ -219,6 +249,8 @@
       <workItem from="1758999854047" duration="3702000" />
       <workItem from="1759054374522" duration="1551000" />
       <workItem from="1759137742756" duration="3709000" />
+      <workItem from="1759263773212" duration="6875000" />
+      <workItem from="1759317937398" duration="4927000" />
     </task>
     <task id="LOCAL-00001" summary="inicio">
       <option name="closed" value="true" />
@@ -450,6 +482,17 @@
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="inicio" />
     <MESSAGE value="request_coto" />
@@ -477,9 +520,11 @@
     <option name="LAST_COMMIT_MESSAGE" value="alps" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$genovesamysql.coverage" NAME="genovesamysql Coverage Results" MODIFIED="1759320054284" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/final/18_lagenovesa" />
     <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$laanonima_tunel.coverage" NAME="laanonima_tunel Coverage Results" MODIFIED="1758964027051" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/laAnonima" />
     <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$abastecedor_captcha_myslq.coverage" NAME="abastecedor_captcha_myslq Coverage Results" MODIFIED="1759003919584" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/elAbastecedor" />
     <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$disco_cordoba_alto_cordoba_cabrera_493_myslq.coverage" NAME="disco_cordoba_alto_cordoba_cabrera_493_myslq Coverage Results" MODIFIED="1759004616433" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/final/8_disco/sucursales" />
+    <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$jumboMysql.coverage" NAME="jumboMysql Coverage Results" MODIFIED="1759265310481" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/final/10_jumbo" />
     <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$proxy_almacen.coverage" NAME="proxy_almacen Coverage Results" MODIFIED="1758962397658" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/final/11_anonima/proxy_mauro" />
     <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$laAnonima_MySQL.coverage" NAME="laAnonima_MySQL Coverage Results" MODIFIED="1758963895482" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/laAnonima" />
     <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$almacenProxy.coverage" NAME="almacenProxy Coverage Results" MODIFIED="1758963385242" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/final/11_anonima/proxy" />

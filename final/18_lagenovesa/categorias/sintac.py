@@ -69,7 +69,7 @@ from base_datos import get_conn  # <- tu conexión MySQL
 BASE = "https://www.lagenovesadigital.com.ar"
 DEFAULT_URL = (
     "https://www.lagenovesadigital.com.ar/ProdFiltrados_DFS"
-    "?id=2&dptoID=2&descripcion=ALMACEN%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20"
+    "?id=1016&dptoID=1016&descripcion=SIN%20TACC%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20"
 )
 
 # Listado
