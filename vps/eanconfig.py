@@ -332,12 +332,10 @@ def ean():
         if x is None:
             return None
         s = str(x).strip()
-        if not s or s.lower() in {"nan", "none"}:
+        if s == "" or s.lower() in {"nan", "none"}:
             return None
-        s = re.sub(r"\D+", "", s)  # solo dígitos
-        if len(s) in {8, 12, 13, 14}:
-            return s
-        return None
+        # Sin restricciones: no forzamos dígitos, no quitamos guiones, no validamos longitud.
+        return s
 
     def _ean_checksum_ok(ean: str) -> Optional[bool]:
         if not ean or not ean.isdigit():
@@ -477,9 +475,49 @@ def ean():
                 return "error", "EAN vacío o inválido"
 
             # ¿Ese EAN ya lo usa otro producto?
+
             used_by = _ean_in_use(ean)
             if used_by and used_by != int(producto_id):
-                return "conflict", f"EAN {ean} ya pertenece a producto_id {used_by}"
+                # Fusionar: mover SKUs del producto actual al que ya tiene el EAN
+                conn = get_conn()
+                conn.start_transaction()
+                moved = 0
+                try:
+                    cur = conn.cursor()
+                    # 1) Mover todas las filas de producto_tienda al producto destino (used_by)
+                    cur.execute(
+                        "UPDATE producto_tienda SET producto_id=%s WHERE producto_id=%s",
+                        (int(used_by), int(producto_id))
+                    )
+                    moved = cur.rowcount or 0
+
+                    # 2) (Opcional) limpiar EAN del producto viejo por consistencia
+                    cur.execute("UPDATE productos SET ean=NULL WHERE id=%s", (int(producto_id),))
+
+                    # 3) Intentar borrar el producto viejo si quedó huérfano y sin EAN
+                    cur.execute("""
+                        DELETE FROM productos
+                        WHERE id=%s
+                          AND ean IS NULL
+                          AND NOT EXISTS (
+                                SELECT 1 FROM producto_tienda pt
+                                WHERE pt.producto_id = productos.id
+                          )
+                    """, (int(producto_id),))
+
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+                finally:
+                    cur.close()
+                    conn.close()
+
+                return "merged", (
+                    f"EAN {ean} ya estaba en producto_id {used_by}. "
+                    f"Se fusionó producto_id {int(producto_id)} → {int(used_by)}; "
+                    f"SKUs movidos={moved}."
+                )
 
             if current and not override:
                 if current == ean:

@@ -8,7 +8,7 @@ def get_conn():
     """
     return connect(
         host="localhost",   # conexión local
-        port=3306,          # 🔹 puerto cambiado a 3310
+        port=3310,          # 🔹 puerto cambiado a 3310
         user="root",        # usuario MySQL
         password="",        # contraseña MySQL
         database="analisis_retail"  # nombre de la base

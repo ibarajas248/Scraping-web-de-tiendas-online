@@ -5,17 +5,14 @@
 17_Toledo Digital (VTEX) — Scraper catálogo completo + inserción MySQL
 
 Inserta en:
-
 - tiendas (toledo)
 - productos (catálogo)
 - producto_tienda (vínculo por SKU tienda y/o productId)
 - historico_precios (precios con timestamp)
 
 Salida por fila (SKU):
-
 EAN | Código Interno | Nombre Producto | Categoría | Subcategoría | Marca | Fabricante |
 Precio de Lista | Precio de Oferta | Tipo de Oferta | URL
-
 """
 
 import time
@@ -66,7 +63,7 @@ HEADERS = {
 TIENDA_CODIGO = "toledo"
 TIENDA_NOMBRE = "17_Toledo Digital"
 
-# Si alguna vez necesitás forzar EAN por SKU/producto:
+# Si alguna vez necesitás forzar EAN por SKU/producto (IGNORADO en esta versión):
 EAN_MAP: Dict[str, str] = {
     # "itemId_o_productId": "ean_corregido",
 }
@@ -146,26 +143,9 @@ def first_or_empty(seq, key=None):
 
 def extract_ean(item: dict, product: dict) -> str:
     """
-    Estrategia usual VTEX:
-    - item['ean']
-    - item['referenceId'][0]['Value'] (o 'value' o 'Id'=='EAN')
-    - fallback por mapeo manual EAN_MAP con itemId/productId
+    Versión forzada: NUNCA devuelve EAN.
     """
-    ean = safe_get(item, "ean", "")
-    if not ean:
-        refs = item.get("referenceId") or item.get("ReferenceId") or []
-        ean = ""
-        for ref in refs:
-            key = (ref.get("Key") or ref.get("key") or "").upper()
-            val = ref.get("Value") or ref.get("value") or ""
-            if key in ("EAN", "GTIN", "BARRAS") and val:
-                ean = val
-                break
-        if not ean and refs:
-            ean = first_or_empty(refs, "Value") or first_or_empty(refs, "value")
-    if not ean:
-        ean = EAN_MAP.get(item.get("itemId") or product.get("productId"), "")
-    return str(ean).strip()
+    return ""
 
 def extract_teaser(co: dict) -> str:
     teasers = co.get("Teasers") or []
@@ -205,7 +185,7 @@ def row_from_product(product: dict) -> List[dict]:
     items: List[dict] = product.get("items") or product.get("Items") or []
     for it in items:
         item_id = str(it.get("itemId", "")).strip() or product_id
-        ean = extract_ean(it, product)
+        ean = extract_ean(it, product)  # siempre ""
 
         sellers = it.get("sellers") or it.get("Sellers") or []
         seller = sellers[0] if sellers else {}
@@ -273,7 +253,7 @@ def fetch_category(session: requests.Session, path: str, map_str: str, sc: Optio
         for p in data:
             filas = row_from_product(p)
             for fila in filas:
-                print(f"[{path}] EAN: {fila['EAN']} | SKU: {fila['Código Interno']} | {fila['Nombre Producto']}")
+                print(f"[{path}] SKU: {fila['Código Interno']} | {fila['Nombre Producto']}")
             all_rows.extend(filas)
 
         if n < STEP:
@@ -316,8 +296,7 @@ def scrape_toledo() -> pd.DataFrame:
     df = pd.DataFrame(rows)
 
     # Normalizaciones ligeras
-    df["EAN"] = df["EAN"].fillna("").astype(str).str.strip()
-
+    df["EAN"] = ""  # <-- forzar vacío (salida) y NUNCA usar para DB
     df["Código Interno"] = df["Código Interno"].astype(str)
     df["Precio de Lista"]  = pd.to_numeric(df["Precio de Lista"], errors="coerce")
     df["Precio de Oferta"] = pd.to_numeric(df["Precio de Oferta"], errors="coerce")
@@ -346,28 +325,15 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     return cur.fetchone()[0]
 
 def find_or_create_producto(cur, p: Dict[str, any]) -> int:
-    ean = clean(p.get("ean"))
-    if ean:
-        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
-        row = cur.fetchone()
-        if row:
-            pid = row[0]
-            cur.execute("""
-                UPDATE productos SET
-                  nombre = COALESCE(NULLIF(%s,''), nombre),
-                  marca = COALESCE(NULLIF(%s,''), marca),
-                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
-                  categoria = COALESCE(NULLIF(%s,''), categoria),
-                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
-                WHERE id=%s
-            """, (
-                p.get("nombre") or "", p.get("marca") or "", p.get("fabricante") or "",
-                p.get("categoria") or "", p.get("subcategoria") or "", pid
-            ))
-            return pid
-
+    """
+    Versión SIN EAN:
+      - Nunca busca por EAN.
+      - Nunca actualiza ni inserta EAN.
+      - Criterio: (nombre, marca) si ambos existen; si no, inserta nuevo.
+    """
     nombre = clean(p.get("nombre")) or ""
     marca  = clean(p.get("marca")) or ""
+
     if nombre and marca:
         cur.execute("""SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1""",
                     (nombre, marca))
@@ -376,23 +342,27 @@ def find_or_create_producto(cur, p: Dict[str, any]) -> int:
             pid = row[0]
             cur.execute("""
                 UPDATE productos SET
-                  ean = COALESCE(NULLIF(%s,''), ean),
                   fabricante = COALESCE(NULLIF(%s,''), fabricante),
                   categoria = COALESCE(NULLIF(%s,''), categoria),
                   subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
                 WHERE id=%s
             """, (
-                p.get("ean") or "", p.get("fabricante") or "",
-                p.get("categoria") or "", p.get("subcategoria") or "", pid
+                p.get("fabricante") or "",
+                p.get("categoria") or "",
+                p.get("subcategoria") or "",
+                pid
             ))
             return pid
 
+    # Insertar SIEMPRE con ean = NULL
     cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
-        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
+        VALUES (NULL, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
     """, (
-        p.get("ean") or "", nombre, marca,
-        p.get("fabricante") or "", p.get("categoria") or "", p.get("subcategoria") or ""
+        nombre, marca,
+        p.get("fabricante") or "",
+        p.get("categoria") or "",
+        p.get("subcategoria") or ""
     ))
     return cur.lastrowid
 
@@ -497,7 +467,7 @@ def main():
             p = {
                 "sku": clean(r.get("Código Interno")),      # SKU (itemId)
                 "record_id": clean(r.get("productId")),     # productId VTEX
-                "ean": clean(r.get("EAN")),
+                # "ean": ""  # Intencionalmente omitido/ignorado
                 "nombre": clean(r.get("Nombre Producto")),
                 "marca": clean(r.get("Marca")),
                 "fabricante": clean(r.get("Fabricante")),
@@ -511,7 +481,6 @@ def main():
                 "precio_descuento": None,
                 "comentarios_promo": None,
                 "url": clean(r.get("URL")),
-                "nombre": clean(r.get("Nombre Producto")),
             }
 
             producto_id = find_or_create_producto(cur, p)
