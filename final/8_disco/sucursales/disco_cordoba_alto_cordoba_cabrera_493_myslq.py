@@ -4,6 +4,7 @@
 import os, re, time, json, unicodedata, signal, subprocess, contextlib
 import sys
 import tempfile, shutil, atexit
+import threading
 from datetime import datetime
 from typing import Dict, Any, List, Tuple, Optional
 
@@ -16,7 +17,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver import ActionChains
-from selenium.common.exceptions import SessionNotCreatedException, WebDriverException
+from selenium.common.exceptions import SessionNotCreatedException, WebDriverException, TimeoutException
 
 # añade la carpeta raíz (2 niveles más arriba) al sys.path
 sys.path.append(
@@ -24,8 +25,19 @@ sys.path.append(
 )
 
 # --- Tu helper de conexión ---
-# Asegúrate que base_datos.get_conn() funcione en el VPS (MariaDB local).
 from base_datos import get_conn
+
+# =========================
+# Ctrl+C / ENTER para corte ordenado
+# =========================
+STOP_EVENT = threading.Event()
+
+def _enter_listener():
+    try:
+        input("🔴 Presioná ENTER para terminar y guardar lo recolectado hasta ahora...\n")
+    except EOFError:
+        pass
+    STOP_EVENT.set()
 
 # =========================
 # Parámetros de negocio (ENV primero, con default)
@@ -36,18 +48,16 @@ BASE        = "https://www.disco.com.ar"
 DISCO_USER  = os.getenv("DISCO_USER", "comercial@factory-blue.com")
 DISCO_PASS  = os.getenv("DISCO_PASS", "Compras2025")
 
-PROVINCIA   = os.getenv("DISCO_PROVINCIA", "CORDOBA").strip()
-TIENDA_NOM  = os.getenv("DISCO_TIENDA", "Disco Alta Córdoba Cabrera 493").strip()
+PROVINCIA     = os.getenv("DISCO_PROVINCIA", "CORDOBA").strip()
+TIENDA_NOM    = os.getenv("DISCO_TIENDA", "Disco Alta Córdoba Cabrera 493").strip()
 CATEGORIA_URL = os.getenv("DISCO_CATEGORIA_URL", "/almacen").strip()  # punto de entrada de scraping
-MAX_EMPTY   = int(os.getenv("DISCO_MAX_EMPTY", "1"))  # páginas vacías toleradas
-SLEEP_PDP   = float(os.getenv("DISCO_SLEEP_PDP", "0.6"))
-SLEEP_PAGE  = float(os.getenv("DISCO_SLEEP_PAGE", "1.0"))
+MAX_EMPTY     = int(os.getenv("DISCO_MAX_EMPTY", "1"))  # páginas vacías toleradas
+SLEEP_PDP     = float(os.getenv("DISCO_SLEEP_PDP", "0.6"))
+SLEEP_PAGE    = float(os.getenv("DISCO_SLEEP_PAGE", "1.0"))
 
-TIENDA_CODIGO = "disco_cordoba_alto_cordoba_cabrera_493"      # clave de cadena
-TIENDA_NOMBRE = "Disco_cordoba_alto_cordoba_cabrera_493"      # nombre de cadena
-
-# Si quieres etiquetar esta corrida a una sucursal específica en 'tiendas':
-TIENDA_REF   = os.getenv("DISCO_REF_TIENDA", "disco_cordoba_cabrera_493")
+TIENDA_CODIGO = "disco_cordoba_alto_cordoba_cabrera_493"
+TIENDA_NOMBRE = "Disco_cordoba_alto_cordoba_cabrera_493"
+TIENDA_REF    = os.getenv("DISCO_REF_TIENDA", "disco_cordoba_cabrera_493")
 
 # Opcional: matar huérfanos Chrome lanzados por perfiles temporales previos (0/1)
 KILL_STALE_CHROME=1
@@ -55,13 +65,24 @@ KILL_STALE_CHROME=1
 # =========================
 # Utilidades
 # =========================
+def _safe_get(driver, url, tries=4, base_sleep=1.0):
+    """driver.get con reintentos/backoff."""
+    for i in range(1, tries+1):
+        try:
+            driver.get(url)
+            return True
+        except (TimeoutException, WebDriverException):
+            time.sleep(base_sleep * i)  # backoff lineal
+            if i == tries:
+                raise
+    return False
+
 def _normalize(s: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFKD', s or '') if not unicodedata.combining(c)).strip().lower()
 
 def _clean_text(s: Optional[str]) -> Optional[str]:
     if s is None:
         return None
-    # quita NBSP y espacios raros
     return re.sub(r"\s+", " ", s.replace("\xa0", " ")).strip()
 
 def _clip(s: Optional[str], maxlen: int) -> Optional[str]:
@@ -134,13 +155,11 @@ def _select_by_text_case_insensitive(driver, wait, select_xpath: str, target_tex
             sel = wait.until(EC.presence_of_element_located((By.XPATH, select_xpath)))
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
             wait.until(lambda d: len(sel.find_elements(By.TAG_NAME, "option")) > 1)
-
             try:
                 Select(sel).select_by_visible_text(target_text)
                 return
             except Exception:
                 pass
-
             value = None
             for o in sel.find_elements(By.TAG_NAME, "option"):
                 if o.get_attribute("disabled"):
@@ -150,7 +169,6 @@ def _select_by_text_case_insensitive(driver, wait, select_xpath: str, target_tex
                     break
             if value is None:
                 raise RuntimeError(f"Opción no encontrada: {target_text}")
-
             try:
                 Select(sel).select_by_value(value)
                 return
@@ -185,6 +203,65 @@ def _collect_product_links_on_page(driver, timeout=12):
         time.sleep(0.5)
     return list(links)
 
+def _load_all_products_on_list(driver, wait, max_wait: float = 20, max_clicks: int = 20) -> None:
+    """Fuerza a cargar todos los productos de la lista (scroll + 'Mostrar más')."""
+    try:
+        wait.until(EC.presence_of_element_located((
+            By.XPATH,
+            "//a[contains(@class,'vtex-product-summary-2-x-clearLink') and contains(@href,'/p')]"
+        )))
+    except Exception:
+        time.sleep(0.8)
+
+    last_count = -1
+    stable_since = time.time()
+    clicks = 0
+
+    while True:
+        cards = driver.find_elements(
+            By.XPATH,
+            "//a[contains(@class,'vtex-product-summary-2-x-clearLink') and contains(@href,'/p')]"
+        )
+        count = len(cards)
+        if count != last_count:
+            last_count = count
+            stable_since = time.time()
+
+        # 1) Botón "Mostrar más" / "Ver más"
+        show_more_btns = driver.find_elements(
+            By.XPATH,
+            "//button[contains(@class,'vtex-search-result-3-x-buttonShowMore') or contains(.,'Mostrar más') or contains(.,'Ver más')]"
+        )
+        if show_more_btns:
+            try:
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", show_more_btns[0])
+                time.sleep(0.2)
+                try:
+                    show_more_btns[0].click()
+                except Exception:
+                    driver.execute_script("arguments[0].click();", show_more_btns[0])
+                clicks += 1
+                time.sleep(1.2)
+                continue
+            except Exception:
+                pass
+
+        # 2) Scroll para lazy-load
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(0.8)
+        driver.execute_script("window.scrollBy(0,-150);")
+        time.sleep(0.2)
+
+        # salidas
+        if (time.time() - stable_since) > 2.5 and not show_more_btns:
+            break
+        if (time.time() - stable_since) > max_wait:
+            break
+        if clicks >= max_clicks:
+            break
+        if STOP_EVENT.is_set():
+            break
+
 def _extract_jsonld_ean(driver) -> Optional[str]:
     """Intenta leer EAN/GTIN desde JSON-LD."""
     try:
@@ -206,7 +283,7 @@ def _extract_jsonld_ean(driver) -> Optional[str]:
                             return vs
     except Exception:
         pass
-    # fallback: buscar identificador "EAN" visible
+    # fallback visible
     try:
         ean_el = driver.find_element(
             By.XPATH,
@@ -221,8 +298,7 @@ def _extract_jsonld_ean(driver) -> Optional[str]:
 
 def _scrape_pdp(driver, wait, pdp_url_rel: str) -> dict:
     url_full = f"{BASE}{pdp_url_rel}"
-    driver.get(url_full)
-
+    _safe_get(driver, url_full)
     try:
         wait.until(EC.presence_of_element_located((By.XPATH, "//h1[contains(@class,'productNameContainer')]")))
     except Exception:
@@ -254,7 +330,7 @@ def _scrape_pdp(driver, wait, pdp_url_rel: str) -> dict:
         except Exception:
             sku = ""
 
-    # Intentar EAN
+    # EAN
     ean = _extract_jsonld_ean(driver)
 
     # Precios
@@ -303,14 +379,14 @@ def _scrape_pdp(driver, wait, pdp_url_rel: str) -> dict:
         "precio_actual_raw": price_now_raw,
         "precio_regular": price_reg,
         "precio_regular_raw": price_reg_raw,
-        "descuento_texto": discount_text,   # lo mapeamos a promo_tipo
+        "descuento_texto": discount_text,
         "unitario_texto": unit_text,
         "iva_texto": iva_text,
         "capturado_en": datetime.now(),
     }
 
 # =========================
-# MySQL helpers (mismo patrón que Coto) + “airbag” long text
+# MySQL helpers
 # =========================
 def clean(val):
     if val is None:
@@ -331,7 +407,6 @@ def parse_price_text(val) -> Optional[str]:
         return None
 
 def upsert_tienda(cur, codigo: str, nombre: str, ref_tienda: str, provincia: str, sucursal: str) -> int:
-    # clip por si el schema tiene longitudes más cortas
     nombre = _clip(_clean_text(nombre), 255) or ""
     ref_tienda = _clip(_clean_text(ref_tienda), 80)
     provincia = _clip(_clean_text(provincia), 80)
@@ -357,7 +432,6 @@ def upsert_tienda(cur, codigo: str, nombre: str, ref_tienda: str, provincia: str
     return cur.fetchone()[0]
 
 def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
-    # aplica limpieza y clip seguro
     nombre_in = _clip(_clean_text(p.get("nombre")), 512) or ""
     marca_in  = _clip(_clean_text(p.get("marca")), 256) or ""
     ean = clean(p.get("ean"))
@@ -413,7 +487,7 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
         """, (tienda_id, producto_id, sku, url, nombre_tienda))
         return cur.lastrowid
 
-    # sin SKU: usa URL como quasi id (si tienes UNIQUE(tienda_id, url_tienda) súbela)
+    # sin SKU: usa URL como quasi id
     try:
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
@@ -425,7 +499,6 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
         """, (tienda_id, producto_id, url, nombre_tienda))
         return cur.lastrowid
     except Exception:
-        # último recurso sin llave natural
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
             VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
@@ -433,7 +506,6 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
         return cur.lastrowid
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
-    # Mapear a tus columnas estándar
     precio_lista_f   = p.get("precio_regular")
     precio_oferta_f  = p.get("precio_actual")
     tipo_oferta      = _clip(_clean_text(p.get("descuento_texto") or None), 255)
@@ -456,7 +528,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
         tienda_id, producto_tienda_id, capturado_en,
         parse_price_text(precio_lista_f), parse_price_text(precio_oferta_f),
         tipo_oferta,
-        tipo_oferta,           # promo_tipo (reusamos el mismo texto)
+        tipo_oferta,
         _clip(p.get("precio_regular_raw") or None, 255),
         _clip(p.get("precio_actual_raw") or None, 255),
         _clip(f"unit:{p.get('unitario_texto') or ''} | iva:{p.get('iva_texto') or ''}", 512)
@@ -466,11 +538,9 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
 # Driver para VPS (headless) con perfil único + retries + cleanup
 # =========================
 def _best_effort_kill_stale_chrome():
-    """Mata procesos Chrome asociados a perfiles temporales previos (opcional)."""
     if not KILL_STALE_CHROME:
         return
     try:
-        # Solo mata los que usen /tmp/chrome-prof-*
         out = subprocess.run(["pgrep", "-a", "chrome"], capture_output=True, text=True, timeout=2)
         for line in (out.stdout or "").splitlines():
             if "--user-data-dir=/tmp/chrome-prof-" in line:
@@ -481,7 +551,6 @@ def _best_effort_kill_stale_chrome():
         pass
 
 def _make_driver_once() -> Tuple[webdriver.Chrome, str]:
-    """Crea una instancia de Chrome con perfil temporal; retorna (driver, prof_dir)."""
     prof_dir = tempfile.mkdtemp(prefix="chrome-prof-")
     cache_dir = os.path.join(prof_dir, "cache")
     os.makedirs(cache_dir, exist_ok=True)
@@ -496,7 +565,6 @@ def _make_driver_once() -> Tuple[webdriver.Chrome, str]:
     os.environ.setdefault("XDG_RUNTIME_DIR", prof_dir)
 
     options = webdriver.ChromeOptions()
-    # options.binary_location = "/usr/bin/google-chrome"  # si usas Chrome en lugar de chromium
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -506,7 +574,6 @@ def _make_driver_once() -> Tuple[webdriver.Chrome, str]:
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
 
-    # Perfil/Cache/Cookies totalmente aislados
     options.add_argument(f"--user-data-dir={prof_dir}")
     options.add_argument("--profile-directory=Default")
     options.add_argument(f"--disk-cache-dir={cache_dir}")
@@ -516,11 +583,9 @@ def _make_driver_once() -> Tuple[webdriver.Chrome, str]:
     options.add_argument("--disable-crash-reporter")
     options.add_argument("--disable-features=Translate,BackForwardCache")
 
-    # Puerto de debug único por proceso para evitar conflictos
     dbg_port = 9222 + (os.getpid() % 1000)
     options.add_argument(f"--remote-debugging-port={dbg_port}")
 
-    # (Opcional) Si /dev/shm es chico en el VPS, forzamos a usar disco:
     options.add_argument(f"--homedir={prof_dir}")
     options.add_argument(f"--data-path={prof_dir}")
 
@@ -529,24 +594,20 @@ def _make_driver_once() -> Tuple[webdriver.Chrome, str]:
     return driver, prof_dir
 
 def _make_driver(max_retries: int = 3) -> webdriver.Chrome:
-    """Crea el driver; si falla por 'user-data-dir in use', reintenta con otro perfil."""
     _best_effort_kill_stale_chrome()
     last_err = None
-    for attempt in range(1, max_retries + 1):
+    for _ in range(1, max_retries + 1):
         try:
-            driver, prof_dir = _make_driver_once()
-            # registro de cleanup adicional si el proceso recibe SIGTERM
+            driver, _ = _make_driver_once()
             def _sigterm_handler(signum, frame):
                 with contextlib.suppress(Exception):
                     driver.quit()
-                # el atexit ya limpia prof_dir
                 os._exit(0)
             signal.signal(signal.SIGTERM, _sigterm_handler)
             return driver
         except SessionNotCreatedException as e:
             last_err = e
             msg = str(e)
-            # si es el error clásico de perfil en uso, reintenta con otro perfil
             if "user data directory is already in use" in msg:
                 time.sleep(0.8)
                 continue
@@ -572,24 +633,38 @@ def _dismiss_cookies(driver, wait):
         pass
 
 def login_and_select_store(driver, wait):
-    driver.get(BASE)
+    _safe_get(driver, BASE)
     _dismiss_cookies(driver, wait)
 
     # Mi cuenta
     _click_with_retry(driver, wait, "//span[normalize-space()='Mi Cuenta']")
     time.sleep(1)
 
-    # Entrar con e-mail y contraseña
+    # 2) Entrar con e-mail y contraseña (actualizado)
     try:
-        _click_with_retry(driver, wait, "//span[normalize-space()='Entrar con e-mail y contraseña']/ancestor::button[1]")
+        wait.until(EC.presence_of_element_located(
+            (By.XPATH, "//div[contains(@class,'vtex-login-2-x-button')]")
+        ))
     except Exception:
-        _click_with_retry(driver, wait, "//button[.//span[contains(normalize-space(),'Entrar con e-mail')]]")
+        pass
 
-    # Email
+    # Botón principal + fallbacks
     try:
-        _type_with_retry(driver, wait, "//input[@placeholder='Ej. nombre@mail.com']", DISCO_USER)
+        _click_with_retry(driver, wait, "//div[contains(@class,'vtex-login-2-x-emailPasswordOptionBtn')]//button")
     except Exception:
-        _type_with_retry(driver, wait, "//input[contains(@placeholder,'mail.com')]", DISCO_USER)
+        try:
+            _click_with_retry(driver, wait, "//button[.//span[normalize-space()='Email y contraseña']]")
+        except Exception:
+            _click_with_retry(driver, wait, "//button[.//span[contains(normalize-space(),'Entrar con e-mail')]]")
+
+    # 3) Email (actualizado)
+    try:
+        _type_with_retry(driver, wait, "//input[@placeholder='Email' and @type='text']", DISCO_USER)
+    except Exception:
+        try:
+            _type_with_retry(driver, wait, "//input[contains(@class,'vtex-styleguide-9-x-input') and not(@type='password')]", DISCO_USER)
+        except Exception:
+            _type_with_retry(driver, wait, "(//input[not(@type='password') and not(@type='hidden')])[1]", DISCO_USER)
 
     # Password
     try:
@@ -647,22 +722,33 @@ def login_and_select_store(driver, wait):
     time.sleep(1.2)
 
 def run_scrape_and_persist():
+    # Listener de ENTER en paralelo
+    t_listener = threading.Thread(target=_enter_listener, daemon=True)
+    t_listener.start()
+
     driver = _make_driver(max_retries=3)
     wait = WebDriverWait(driver, 30)
 
+    data: List[Dict[str, Any]] = []
     try:
         # 1) login + tienda
         login_and_select_store(driver, wait)
 
         # 2) Crawl por páginas
-        data: List[Dict[str, Any]] = []
         page = 1
         empty_pages = 0
         while True:
+            if STOP_EVENT.is_set():
+                print("🛑 Corte solicitado por usuario (ENTER). Saliendo del bucle de páginas…")
+                break
+
             list_url = f"{BASE}{CATEGORIA_URL}?page={page}"
             print(f"\n📄 Página: {page} -> {list_url}")
-            driver.get(list_url)
+            _safe_get(driver, list_url)
             time.sleep(SLEEP_PAGE)
+
+            # cargar todos los productos renderizados de la página
+            _load_all_products_on_list(driver, wait, max_wait=20, max_clicks=20)
 
             links = _collect_product_links_on_page(driver, timeout=14)
             if not links:
@@ -679,6 +765,9 @@ def run_scrape_and_persist():
             print(f"🔗 Productos encontrados: {len(links)}")
 
             for i, rel in enumerate(links, 1):
+                if STOP_EVENT.is_set():
+                    print("🛑 Corte solicitado por usuario (ENTER). Deteniendo productos restantes en esta página…")
+                    break
                 try:
                     print(f"  → [{i}/{len(links)}] {rel}")
                     item = _scrape_pdp(driver, wait, rel)
@@ -687,8 +776,11 @@ def run_scrape_and_persist():
                     print(f"    × Error en {rel}: {e}")
                 finally:
                     # volver a la lista para mantener el contexto/cookies
-                    driver.get(list_url)
+                    _safe_get(driver, list_url)
                     time.sleep(SLEEP_PDP)
+
+            if STOP_EVENT.is_set():
+                break
 
             page += 1
 
@@ -696,7 +788,7 @@ def run_scrape_and_persist():
             print("⚠️ No se capturaron productos; no se escribe MySQL.")
             return
 
-        # 3) Persistencia MySQL
+        # 3) Persistencia MySQL (commits por bloques para resiliencia)
         capturado_en = datetime.now()
         conn = None
         try:
@@ -712,14 +804,18 @@ def run_scrape_and_persist():
                                       TIENDA_NOM)
 
             insertados = 0
-            for p in data:
+            for idx, p in enumerate(data, 1):
                 producto_id = find_or_create_producto(cur, p)
                 pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
                 insert_historico(cur, tienda_id, pt_id, p, capturado_en)
                 insertados += 1
 
+                if insertados % 50 == 0:
+                    conn.commit()
+                    print(f"💾 Commit intermedio: {insertados} filas…")
+
             conn.commit()
-            print(f"💾 Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOM} ({capturado_en})")
+            print(f"✅ Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOM} ({capturado_en})")
 
         except MySQLError as e:
             if conn: conn.rollback()

@@ -42,9 +42,23 @@ def _pick_free_port() -> int:
 def _enter_listener():
     try:
         input("🔴 Presioná ENTER para terminar y guardar lo recolectado hasta ahora...\n")
+        # Si llegamos acá es porque el usuario presionó ENTER en una TTY real
+        STOP_EVENT.set()
     except EOFError:
+        # En cron/no TTY: no hagas nada, NO tocar STOP_EVENT
+        return
+
+def start_enter_listener_if_tty():
+    # Solo iniciar el listener si hay stdin interactivo
+    try:
+        if sys.stdin and sys.stdin.isatty():
+            t_listener = threading.Thread(target=_enter_listener, daemon=True)
+            t_listener.start()
+        else:
+            print("ℹ️  stdin no interactivo (cron). No se inicia listener ENTER.")
+    except Exception:
+        # Si algo raro pasa, seguimos sin listener
         pass
-    STOP_EVENT.set()
 
 # =========================
 # Parámetros de negocio (ENV primero, con default)
@@ -57,7 +71,7 @@ DISCO_PASS  = os.getenv("DISCO_PASS", "Compras2025")
 
 PROVINCIA     = os.getenv("DISCO_PROVINCIA", "CORDOBA").strip()
 TIENDA_NOM    = os.getenv("DISCO_TIENDA", "Disco Alta Córdoba Cabrera 493").strip()
-CATEGORIA_URL = os.getenv("DISCO_CATEGORIA_URL", "/bebidas").strip()  # punto de entrada de scraping
+CATEGORIA_URL = os.getenv("DISCO_CATEGORIA_URL", "/bebes-y-ninos").strip()  # punto de entrada de scraping
 MAX_EMPTY     = int(os.getenv("DISCO_MAX_EMPTY", "1"))  # páginas vacías toleradas
 SLEEP_PDP     = float(os.getenv("DISCO_SLEEP_PDP", "0.6"))
 SLEEP_PAGE    = float(os.getenv("DISCO_SLEEP_PAGE", "1.0"))
@@ -862,8 +876,7 @@ def login_and_select_store(driver, wait):
 
 def run_scrape_and_persist():
     # Listener de ENTER en paralelo
-    t_listener = threading.Thread(target=_enter_listener, daemon=True)
-    t_listener.start()
+    start_enter_listener_if_tty()
 
     driver = _make_driver(max_retries=3)
     wait = WebDriverWait(driver, 30)

@@ -40,7 +40,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 
 BASE = "https://supermercado.laanonimaonline.com"
-START = f"{BASE}/almacen/n1_1/pag/1/"
+START = f"{BASE}/almacen/n1_512/pag/1/"
 
 # ---------- Ajustes ----------
 HEADLESS = True          # ponlo en False si quieres ver el navegador

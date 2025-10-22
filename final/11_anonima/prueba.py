@@ -1,380 +1,280 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-La Anónima (categoría -> detalle) → MySQL, sin Selenium (httpx + BS4)
-
-- Reutiliza la misma lógica de inserción que tu script con Selenium.
-- Lee HTML server-rendered (no hay que ejecutar JS).
-"""
-
-import re, time, html, random
-from typing import List, Dict, Optional, Any, Tuple
+from time import sleep
+import re
+import pandas as pd
 from urllib.parse import urljoin
-from datetime import datetime
 
-import numpy as np
-import httpx
-from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 
-from mysql.connector import Error as MySQLError
-from base_datos import get_conn  # tu función de conexión
+URL = "https://www.laanonima.com.ar/hogar-jardin-y-automotor/n1_1/"
+POSTAL_CODE = "1001"
+OUT_XLSX = "laanonima_hogar_jardin_automotor_optimizado.xlsx"
 
-# ================= Config scraping =================
-BASE = "https://supermercado.laanonimaonline.com"
-START = f"{BASE}/almacen/n1_1/pag/1/"
+# Si quieres ver el navegador, ponlo en False. En servidor, True.
+HEADLESS = False
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/123.0.0.0 Safari/537.36",
-    "Accept-Language": "es-AR,es;q=0.9",
-}
-TIMEOUT = 20.0
-RETRY = 3
-SLEEP_BETWEEN_PRODUCTS = (0.25, 0.6)  # min, max
-SLEEP_BETWEEN_PAGES = (0.6, 1.2)
-MAX_PAGES: Optional[int] = None  # None = recorrer todas
+# Dominios/recursos que bloquearemos para aligerar
+BLOCK_URL_PATTERNS = [
+    "*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp", "*.svg",
+    "*.woff", "*.woff2", "*.ttf", "*.otf", "*.eot",
+    "*.css.map", "*.js.map",
+    "*doubleclick.net*", "*googletagmanager.com*", "*google-analytics.com*",
+    "*facebook.net*", "*hotjar.com*", "*newrelic.com*", "*optimizely.com*"
+]
 
-TIENDA_CODIGO = "laanonima"
-TIENDA_NOMBRE = "La Anónima Online"
-
-# ================= Helpers scraping =================
-def get(client: httpx.Client, url: str) -> httpx.Response:
-    for i in range(RETRY):
-        try:
-            r = client.get(url, timeout=TIMEOUT)
-            if r.status_code == 200:
-                return r
-        except httpx.HTTPError:
-            pass
-        time.sleep(0.5 * (i + 1))
-    raise RuntimeError(f"No se pudo GET {url}")
-
-def parse_price_text(txt: str) -> Optional[float]:
-    if not txt: return None
-    t = txt.strip().replace("$", "").replace(" ", "").replace(".", "").replace(",", ".")
+def parse_money_to_number(txt: str):
+    if not txt:
+        return None
+    t = re.sub(r"[^\d.,-]", "", txt)
+    if not t:
+        return None
+    # Formato AR: coma decimal
+    if "," in t and t.rfind(",") > t.rfind("."):
+        t = t.replace(".", "").replace(",", ".")
+    else:
+        t = t.replace(",", "")
     try:
         return float(t)
-    except ValueError:
-        return None
-
-def text_or_none(node) -> Optional[str]:
-    if not node: return None
-    s = re.sub(r"\s+", " ", node.get_text(strip=True))
-    return s or None
-
-def get_list_links_from_page(html_source: str) -> List[str]:
-    soup = BeautifulSoup(html_source, "lxml")
-    out = []
-    for a in soup.select("div.producto.item a[href*='/almacen/'][href*='/art_']"):
-        href = a.get("href") or ""
-        if not href:
-            continue
-        full = urljoin(BASE, href)
-        if "/art_" in full and full not in out:
-            out.append(full)
-    return out
-
-def get_next_page_url(current_url: str, html_source: str) -> Optional[str]:
-    soup = BeautifulSoup(html_source, "lxml")
-    m = re.search(r"/pag/(\d+)/", current_url)
-    if not m:
-        return None
-    cur = int(m.group(1))
-    # si existe un link explícito, úsalo
-    a = soup.select_one(f"a[href*='/pag/{cur + 1}/']")
-    if a and a.has_attr("href"):
-        return urljoin(BASE, a["href"])
-    # fallback: incrementa
-    guess = re.sub(r"/pag/\d+/", f"/pag/{cur + 1}/", current_url)
-    return guess
-
-def parse_detail(html_source: str, url: str) -> Dict[str, Any]:
-    soup = BeautifulSoup(html_source, "lxml")
-
-    nombre = text_or_none(soup.select_one("h1.titulo_producto.principal"))
-
-    cod_txt = text_or_none(soup.select_one("div.codigo"))  # "Cod. 3115185"
-    sku = None
-    if cod_txt:
-        m = re.search(r"(\d+)", cod_txt)
-        if m:
-            sku = m.group(1)
-
-    # a veces en inputs ocultos
-    sku_hidden = soup.select_one("input[id^='sku_item_imetrics_'][value]")
-    if sku_hidden and not sku:
-        sku = sku_hidden.get("value")
-
-    id_item = None
-    id_item_hidden = soup.select_one("input#id_item[value], input[id^='id_item_'][value]")
-    if id_item_hidden:
-        id_item = id_item_hidden.get("value")
-
-    marca_hidden = soup.select_one("input[id^='brand_item_imetrics_'][value]")
-    marca = marca_hidden.get("value") if marca_hidden else None
-
-    cat_hidden = soup.select_one("input[id^='categorias_item_imetrics_'][value]")
-    categorias = None
-    if cat_hidden:
-        categorias = html.unescape(cat_hidden.get("value") or "").strip()
-
-    descripcion = text_or_none(soup.select_one("div.descripcion div.texto"))
-
-    # precios
-    precio_lista = None
-    caja_lista = soup.select_one("div.precio.anterior")
-    if caja_lista:
-        precio_lista = parse_price_text(caja_lista.get_text(" ", strip=True))
-    else:
-        alt = soup.select_one(".precio_complemento .precio.destacado, .precio.destacado")
-        if alt:
-            precio_lista = parse_price_text(alt.get_text(" ", strip=True))
-
-    precio_plus = None
-    plus_node = soup.select_one(".precio-plus .precio b, .precio-plus .precio")
-    if plus_node:
-        precio_plus = parse_price_text(plus_node.get_text(" ", strip=True))
-
-    # imágenes
-    imagenes = []
-    for im in soup.select("#img_producto img[src], #galeria_img img[src]"):
-        src = im.get("src")
-        if src and src not in imagenes:
-            imagenes.append(src)
-
-    return {
-        "url": url,
-        "nombre": nombre,
-        "sku": sku,
-        "id_item": id_item,
-        "marca": marca,
-        "categorias": categorias,
-        "precio_lista": precio_lista,
-        "precio_plus": precio_plus,
-        "descripcion": descripcion,
-        "imagenes": " | ".join(imagenes) if imagenes else None,
-    }
-
-def random_sleep(a_b: Tuple[float, float]):
-    lo, hi = a_b
-    time.sleep(random.uniform(lo, hi))
-
-def grab_category(client: httpx.Client, start_url: str) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    seen = set()
-    page_url = start_url
-    page_idx = 0
-
-    while True:
-        page_idx += 1
-        if MAX_PAGES is not None and page_idx > MAX_PAGES:
-            break
-
-        r = get(client, page_url)
-        links = get_list_links_from_page(r.text)
-        print(f"🔗 P{page_idx} {len(links)} productos - {page_url}")
-        if not links:
-            break
-
-        for href in links:
-            if href in seen:
-                continue
-            seen.add(href)
-            try:
-                rr = get(client, href)
-                row = parse_detail(rr.text, href)
-                out.append(row)
-                print(f"  ✔ {row.get('nombre') or ''} [{row.get('sku') or ''}]")
-            except Exception as e:
-                print(f"  ⚠️ Error detalle: {href} -> {e}")
-            random_sleep(SLEEP_BETWEEN_PRODUCTS)
-
-        next_url = get_next_page_url(page_url, r.text)
-        if not next_url or next_url == page_url:
-            break
-        page_url = next_url
-        random_sleep(SLEEP_BETWEEN_PAGES)
-
-    return out
-
-# ================= MySQL helpers (idénticos a tu versión) =================
-def clean_txt(x: Any) -> Optional[str]:
-    if x is None: return None
-    s = str(x).strip()
-    return s if s else None
-
-def price_to_varchar(x: Any) -> Optional[str]:
-    if x is None: return None
-    try:
-        v = float(x)
-        if np.isnan(v): return None
-        return f"{round(v,2)}"
     except Exception:
-        s = str(x).strip()
-        return s if s else None
+        return None
 
-def split_categoria(categorias: Optional[str]) -> (Optional[str], Optional[str]):
-    if not categorias: return None, None
-    parts = [p.strip() for p in re.split(r">|›", categorias) if p.strip()]
-    cat = parts[0] if len(parts) > 0 else None
-    sub = parts[1] if len(parts) > 1 else None
-    return cat, sub
+def setup_driver() -> webdriver.Chrome:
+    opts = Options()
+    if HEADLESS:
+        # Headless moderno (más estable/rápido)
+        opts.add_argument("--headless=new")
+        opts.add_argument("--window-size=1366,900")
+    else:
+        opts.add_argument("--start-maximized")
 
-def upsert_tienda(cur, codigo: str, nombre: str) -> int:
-    cur.execute(
-        "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
-        "ON DUPLICATE KEY UPDATE nombre=VALUES(nombre)",
-        (codigo, nombre)
-    )
-    cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
-    return cur.fetchone()[0]
+    # Ahorro de recursos
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-background-timer-throttling")
+    opts.add_argument("--disable-backgrounding-occluded-windows")
+    opts.add_argument("--disable-renderer-backgrounding")
+    # No cargar imágenes por si se cuela alguna
+    opts.add_argument("--blink-settings=imagesEnabled=false")
 
-def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
-    ean = None
-    nombre = clean_txt(r.get("nombre"))
-    marca  = clean_txt(r.get("marca"))
-    cat, sub = split_categoria(clean_txt(r.get("categorias")))
+    # Suavizar huellas
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option("useAutomationExtension", False)
+    prefs = {
+        "profile.managed_default_content_settings.images": 2,
+        "profile.default_content_setting_values.images": 2,
+    }
+    opts.add_experimental_option("prefs", prefs)
 
-    if nombre and marca:
-        cur.execute("SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1", (nombre, marca))
-        row = cur.fetchone()
-        if row:
-            pid = row[0]
-            cur.execute("""
-                UPDATE productos SET
-                  categoria = COALESCE(NULLIF(%s,''), categoria),
-                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
-                WHERE id=%s
-            """, (cat or "", sub or "", pid))
-            return pid
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
 
-    if nombre:
-        cur.execute("SELECT id FROM productos WHERE nombre=%s LIMIT 1", (nombre,))
-        row = cur.fetchone()
-        if row:
-            pid = row[0]
-            cur.execute("""
-                UPDATE productos SET
-                  marca = COALESCE(NULLIF(%s,''), marca),
-                  categoria = COALESCE(NULLIF(%s,''), categoria),
-                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
-                WHERE id=%s
-            """, (marca or "", cat or "", sub or "", pid))
-            return pid
+    # Ocultar navigator.webdriver
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+    })
 
-    cur.execute("""
-        INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
-        VALUES (NULL, NULLIF(%s,''), NULLIF(%s,''), NULL, NULLIF(%s,''), NULLIF(%s,''))
-    """, (nombre or "", marca or "", cat or "", sub or ""))
-    return cur.lastrowid
-
-def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
-    sku = clean_txt(r.get("sku"))
-    record_id = clean_txt(r.get("id_item"))
-    url = clean_txt(r.get("url"))
-    nombre_tienda = clean_txt(r.get("nombre"))
-
-    if sku:
-        cur.execute("""
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-              id = LAST_INSERT_ID(id),
-              producto_id = VALUES(producto_id),
-              record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
-              url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
-              nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
-        return cur.lastrowid
-
-    if record_id:
-        cur.execute("""
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, NULL, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-              id = LAST_INSERT_ID(id),
-              producto_id = VALUES(producto_id),
-              url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
-              nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, record_id, url, nombre_tienda))
-        return cur.lastrowid
-
-    cur.execute("""
-        INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
-        VALUES (%s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-          id = LAST_INSERT_ID(id),
-          producto_id = VALUES(producto_id),
-          nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-    """, (tienda_id, producto_id, url, nombre_tienda))
-    return cur.lastrowid
-
-def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en: datetime):
-    precio_lista = price_to_varchar(r.get("precio_lista"))
-    precio_plus  = price_to_varchar(r.get("precio_plus"))
-    tipo_oferta  = "PLUS" if precio_plus is not None else None
-
-    cur.execute("""
-        INSERT INTO historico_precios
-          (tienda_id, producto_tienda_id, capturado_en,
-           precio_lista, precio_oferta, tipo_oferta,
-           promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-          precio_lista = VALUES(precio_lista),
-          precio_oferta = VALUES(precio_oferta),
-          tipo_oferta = VALUES(tipo_oferta),
-          promo_tipo = VALUES(promo_tipo),
-          promo_texto_regular = VALUES(promo_texto_regular),
-          promo_texto_descuento = VALUES(promo_texto_descuento),
-          promo_comentarios = VALUES(promo_comentarios)
-    """, (
-        tienda_id, producto_tienda_id, capturado_en,
-        precio_lista, precio_plus, tipo_oferta,
-        None, None, None, None
-    ))
-
-# ================= Orquestación =================
-def main():
-    print("[INFO] Scrapeando La Anónima (sin Selenium)…")
-    rows: List[Dict[str, Any]] = []
-    with httpx.Client(headers=HEADERS, http2=True, follow_redirects=True) as client:
-        # (opcional) setear cookie de OneTrust si el banner bloquea algo en tu región
-        # client.cookies.set("OptanonConsent", "isIABGlobal=false&datestamp=...;")
-        rows = grab_category(client, START)
-
-    if not rows:
-        print("[INFO] No se extrajeron registros."); return
-
-    capturado_en = datetime.now()
-    conn = None
+    # Bloquear recursos pesados / analytics
     try:
-        conn = get_conn()
-        conn.autocommit = False
-        cur = conn.cursor()
+        driver.execute_cdp_cmd("Network.enable", {})
+        driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": BLOCK_URL_PATTERNS})
+    except Exception:
+        pass
 
-        tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
+    return driver
 
-        insertados = 0
-        for r in rows:
-            producto_id = find_or_create_producto(cur, r)
-            pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, r)
-            insert_historico(cur, tienda_id, pt_id, r, capturado_en)
-            insertados += 1
-
-        conn.commit()
-        print(f"💾 Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOMBRE} ({capturado_en})")
-
-    except MySQLError as e:
-        if conn: conn.rollback()
-        print(f"❌ Error MySQL: {e}")
-    finally:
+def apply_postal_code(driver: webdriver.Chrome, wait: WebDriverWait, postal_code: str):
+    try:
+        cp_input = wait.until(EC.presence_of_element_located((By.ID, "idCodigoPostalUnificado")))
+        cp_input.clear()
+        cp_input.send_keys(postal_code)
+        cp_input.send_keys(Keys.ENTER)
+        driver.execute_script("""
+            const inp = document.getElementById('idCodigoPostalUnificado');
+            if (inp) { inp.dispatchEvent(new Event('input', { bubbles: true })); }
+        """)
         try:
-            if conn: conn.close()
+            close_btn = WebDriverWait(driver, 4).until(
+                EC.element_to_be_clickable((By.ID, "btnCerrarCodigoPostal"))
+            )
+            close_btn.click()
         except Exception:
             pass
+        sleep(1.0)
+    except Exception as e:
+        print(f"[AVISO] No se pudo interactuar con el modal de CP: {e}")
+
+def smart_infinite_scroll(driver: webdriver.Chrome, wait_css: str, pause=0.9, max_plateaus=5):
+    """
+    Hace scroll hasta el fondo mientras el número de tarjetas siga creciendo.
+    Se detiene tras 'max_plateaus' rondas sin incremento de tarjetas.
+    """
+    WebDriverWait(driver, 25).until(EC.presence_of_element_located((By.CSS_SELECTOR, wait_css)))
+
+    last_count = 0
+    plateaus = 0
+
+    while plateaus < max_plateaus:
+        # Scroll suave: 3 saltos para disparar distintos lazy-loaders
+        for _ in range(3):
+            driver.execute_script("window.scrollBy(0, document.body.scrollHeight/3);")
+            sleep(pause)
+
+        # Rebote final
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        sleep(pause)
+
+        # Medimos progreso por número de tarjetas
+        count = len(driver.find_elements(By.CSS_SELECTOR, wait_css))
+        if count <= last_count:
+            plateaus += 1
+        else:
+            plateaus = 0
+            last_count = count
+
+    # pequeño ajuste final
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    sleep(0.6)
+
+JS_EXTRACT = """
+return Array.from(document.querySelectorAll('div.card a[data-codigo]')).map(a => {
+  const card = a.closest('.card');
+  const q = sel => {
+    const el = card ? card.querySelector(sel) : null;
+    return el ? el.textContent.trim() : '';
+  };
+  const img = card ? card.querySelector('.imagen img') : null;
+  return {
+    codigo: a.dataset.codigo || '',
+    nombre_data: a.dataset.nombre || '',
+    marca: a.dataset.marca || '',
+    modelo: a.dataset.modelo || '',
+    ruta_categorias: a.dataset.rutacategorias || '',
+    data_precio: a.dataset.precio || '',
+    data_precio_anterior: a.dataset.precioAnterior || '',
+    data_precio_oferta: a.dataset.precioOferta || '',
+    data_precio_desde: a.dataset.precioDesde || '',
+    data_precio_hasta: a.dataset.precioHasta || '',
+    data_precio_minimo: a.dataset.precioMinimo || '',
+    data_precio_maximo: a.dataset.precioMaximo || '',
+    data_es_padre_matriz: a.dataset.esPadreMatriz || '',
+    data_primer_hijo_stock: a.dataset.primerHijoStock || '',
+    titulo_card: q('.titulo'),
+    precio_tachado_txt: q('.precio-anterior .tachado'),
+    precio_visible_txt: q('.precio span'),
+    impuestos_nacionales_txt: q('.impuestos-nacionales'),
+    detalle_url: a.href || '',
+    img_url: img ? (img.getAttribute('src') || img.getAttribute('data-src') || '') : ''
+  };
+});
+"""
+
+def main():
+    driver = setup_driver()
+    driver.get(URL)
+    wait = WebDriverWait(driver, 25)
+
+    # 1) CP si aparece
+    apply_postal_code(driver, wait, POSTAL_CODE)
+
+    # 2) Scroll eficiente controlando conteo de tarjetas
+    css_card_anchor = "div.card a[data-codigo]"
+    smart_infinite_scroll(driver, css_card_anchor, pause=0.8, max_plateaus=5)
+
+    # 3) Extracción masiva en **una sola llamada JS**
+    rows = driver.execute_script(JS_EXTRACT) or []
+
+    # 4) Cerrar navegador
+    driver.quit()
+
+    # 5) Limpieza numérica y guardado
+    for r in rows:
+        r["precio_visible_num"] = parse_money_to_number(r.get("precio_visible_txt", ""))
+        r["precio_tachado_num"] = parse_money_to_number(r.get("precio_tachado_txt", ""))
+        r["impuestos_sin_nacionales_num"] = parse_money_to_number(r.get("impuestos_nacionales_txt", ""))
+        # por si quieres números "data_*"
+        r["data_precio_num"] = parse_money_to_number(r.get("data_precio", ""))
+        r["data_precio_anterior_num"] = parse_money_to_number(r.get("data_precio_anterior", ""))
+        r["data_precio_oferta_num"] = parse_money_to_number(r.get("data_precio_oferta", ""))
+        r["data_precio_minimo_num"] = parse_money_to_number(r.get("data_precio_minimo", ""))
+        r["data_precio_maximo_num"] = parse_money_to_number(r.get("data_precio_maximo", ""))
+
+        # =======================
+        # REGLA DE PRECIOS (solo esto)
+        # - Si hay tachado (DOM) o data_precio_anterior > 0 => hay oferta:
+        #     precio_lista   = tachado (o data_precio_anterior; fallback visible)
+        #     precio_oferta  = visible (o data_precio_oferta; fallback data_precio)
+        # - Si NO hay tachado => no hay oferta:
+        #     precio_lista   = visible (o data_precio)
+        #     precio_oferta  = None
+        # =======================
+        pt_txt_present = bool((r.get("precio_tachado_txt") or "").strip())
+        pt = r.get("precio_tachado_num")
+        if pt is None:
+            pt = parse_money_to_number(r.get("data_precio_anterior") or "")
+        hay_tachado = pt_txt_present or (pt is not None and pt > 0)
+
+        pv = r.get("precio_visible_num")
+        if pv is None:
+            if hay_tachado:
+                pv = parse_money_to_number(r.get("data_precio_oferta") or "") \
+                     or parse_money_to_number(r.get("data_precio") or "")
+            else:
+                pv = parse_money_to_number(r.get("data_precio") or "")
+
+        if hay_tachado and pv is not None:
+            precio_lista_num = pt if (pt is not None and pt > 0) else None
+            if precio_lista_num is None:
+                precio_lista_num = parse_money_to_number(r.get("data_precio_anterior") or "")
+            if precio_lista_num is None:
+                precio_lista_num = pv
+            r["precio_lista"] = precio_lista_num
+            r["precio_oferta"] = pv
+        else:
+            base_lista = pv if pv is not None else parse_money_to_number(r.get("data_precio") or "")
+            r["precio_lista"] = base_lista
+            r["precio_oferta"] = None
+        # ====== FIN REGLA DE PRECIOS ======
+
+    # De-dup por "codigo" (por si la página duplica componentes)
+    seen = set()
+    dedup = []
+    for r in rows:
+        c = r.get("codigo", "")
+        if c and c in seen:
+            continue
+        seen.add(c)
+        dedup.append(r)
+
+    df = pd.DataFrame(dedup)
+    # orden sugerido
+    prefer = [
+        "codigo", "titulo_card", "nombre_data", "marca", "modelo", "ruta_categorias",
+        "detalle_url", "img_url",
+        "precio_visible_txt", "precio_tachado_txt", "impuestos_nacionales_txt",
+        "precio_visible_num", "precio_tachado_num", "impuestos_sin_nacionales_num",
+        "data_precio", "data_precio_anterior", "data_precio_oferta",
+        "data_precio_desde", "data_precio_hasta", "data_precio_minimo", "data_precio_maximo",
+        "data_precio_num", "data_precio_anterior_num", "data_precio_oferta_num",
+        "data_precio_minimo_num", "data_precio_maximo_num",
+        "data_es_padre_matriz", "data_primer_hijo_stock",
+        # añadimos las dos nuevas columnas calculadas:
+        "precio_lista", "precio_oferta",
+    ]
+    cols = [c for c in prefer if c in df.columns] + [c for c in df.columns if c not in prefer]
+    df = df[cols]
+
+    df.to_excel(OUT_XLSX, index=False)
+    print(f"✅ Capturados: {len(df)} productos")
+    print(f"📄 XLSX: {OUT_XLSX}")
 
 if __name__ == "__main__":
     main()

@@ -1,201 +1,276 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import argparse, datetime as dt, json, re, sys, time
-from typing import List, Dict, Any, Tuple
-import requests
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+import time, re
 import pandas as pd
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from html import unescape
-from bs4 import BeautifulSoup
 
-BASE = "https://api.lacoopeencasa.coop"
-API_SECTOR = f"{BASE}/api/contenido/articulos_sector"
-API_ATTR = f"{BASE}/api/articulo/atributos"  # ?cod_interno=XXXX
+HOME_URL = "https://www.lacoopeencasa.coop/"
+BASE_CAT  = "https://www.lacoopeencasa.coop/listado/categoria/almacen/2"
+PAGE_FMT  = BASE_CAT + "/pagina--{page}"   # page >= 2
+MAX_PAGES = 300                             # límite de seguridad
 
-# ----- Limpieza -----
-ILLEGAL_XLSX = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F]')
-def clean_text(v):
-    if v is None: return ""
-    if not isinstance(v, str): return v
+# ---------------- Utilidades seguras ----------------
+
+def s_find(el, by, sel):
     try:
-        v = BeautifulSoup(unescape(v), "html.parser").get_text(" ", strip=True)
+        return el.find_element(by, sel)
     except Exception:
-        pass
-    return ILLEGAL_XLSX.sub("", v)
+        return None
 
-def make_session() -> requests.Session:
-    s = requests.Session()
-    s.headers.update({
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json, text/plain, */*",
-        "Origin": "https://www.lacoopeencasa.coop",
-        "Referer": "https://www.lacoopeencasa.coop/",
-    })
-    retries = Retry(
-        total=4, backoff_factor=0.6,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"]
+def s_attr(el, name):
+    try:
+        return el.get_attribute(name)
+    except Exception:
+        return None
+
+def inner_text(driver, el):
+    """Lee texto real pintado por Angular (innerText/textContent)."""
+    try:
+        return (driver.execute_script(
+            "return (arguments[0].innerText || arguments[0].textContent || '').trim();", el
+        ) or "").strip()
+    except Exception:
+        return ""
+
+def limpiar_precio_a_float(entero_txt, decimal_txt):
+    """
+    Convierte partes de precio (entero y decimal) a float.
+    entero_txt: e.g. '2.200 ' ; decimal_txt: e.g. ' 00 '
+    """
+    if entero_txt is None:
+        return None
+    e = re.sub(r"[^\d\.]", "", (entero_txt or ""))
+    d = re.sub(r"[^\d]", "", (decimal_txt or ""))
+    if not e:
+        return None
+    if not d:
+        d = "00"
+    e_sin_miles = e.replace(".", "")
+    try:
+        return float(f"{e_sin_miles}.{d}")
+    except Exception:
+        return None
+
+def scroll_hasta_cargar_todo(driver, pausa=0.8, max_intentos_sin_cambio=4):
+    """
+    Hace scroll hasta fondo repetidamente hasta que no aumente el número de tarjetas
+    durante 'max_intentos_sin_cambio' intentos.
+    """
+    last_count = -1
+    estancados = 0
+    while True:
+        cards = driver.find_elements(By.CSS_SELECTOR, "col-listado-articulo div.card.hoverable")
+        count = len(cards)
+        if count == last_count:
+            estancados += 1
+        else:
+            estancados = 0
+        if estancados >= max_intentos_sin_cambio:
+            break
+        last_count = count
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(pausa)
+
+def get_nombre_desde_card(driver, card):
+    """
+    Intenta en orden:
+    1) .card-descripcion[id^='descripcion'] p -> innerText
+    2) alt/title de la imagen (corta ' - $' si viene precio junto)
+    3) atributo data-nombre del <a>
+    """
+    # 1) principal
+    nombre_el = s_find(card, By.CSS_SELECTOR, ".card-descripcion[id^='descripcion'] p")
+    nombre = inner_text(driver, nombre_el) if nombre_el else ""
+
+    # 2) alt/title
+    if not nombre:
+        img = s_find(card, By.CSS_SELECTOR, ".card-image img")
+        alt = s_attr(img, "alt") if img else ""
+        title = s_attr(img, "title") if img else ""
+        candidato = (alt or title or "").strip()
+        if candidato:
+            nombre = re.split(r"\s+-\s*\$", candidato, maxsplit=1)[0].strip()
+
+    # 3) data-nombre
+    if not nombre:
+        a_det = s_find(card, By.CSS_SELECTOR, "a[data-nombre]")
+        if a_det:
+            nombre = (s_attr(a_det, "data-nombre") or "").strip()
+
+    return nombre
+
+def extraer_tarjetas(driver):
+    """
+    Devuelve lista de dicts con:
+    codigo, nombre, precio, precio_texto, precio_unitario, precio_sin_impuestos, imagen_url, detalle_url
+    """
+    cards = driver.find_elements(By.CSS_SELECTOR, "col-listado-articulo div.card.hoverable")
+    filas = []
+    for c in cards:
+        # Código desde ids como imagen208826 / descripcion208826
+        imagen_div = s_find(c, By.CSS_SELECTOR, "[id^='imagen']")
+        desc_div   = s_find(c, By.CSS_SELECTOR, "[id^='descripcion']")
+        codigo = None
+        for divpos in (imagen_div, desc_div):
+            if divpos:
+                m = re.search(r"(\d+)$", s_attr(divpos, "id") or "")
+                if m:
+                    codigo = m.group(1)
+                    break
+
+        # Imagen
+        img = s_find(c, By.CSS_SELECTOR, ".card-image img")
+        imagen_url = None
+        if img:
+            imagen_url = s_attr(img, "src") or s_attr(img, "data-src") or s_attr(img, "data-lazy")
+
+        # Nombre (robusto)
+        nombre = get_nombre_desde_card(driver, c)
+
+        # Precio: entero + decimal
+        entero_el  = s_find(c, By.CSS_SELECTOR, ".precio-listado .precio-entero")
+        decimal_el = s_find(c, By.CSS_SELECTOR, ".precio-listado .precio-complemento .precio-decimal")
+        entero_txt  = inner_text(driver, entero_el) if entero_el else ""
+        decimal_txt = inner_text(driver, decimal_el) if decimal_el else ""
+
+        precio_float = limpiar_precio_a_float(entero_txt, decimal_txt)
+
+        # Precio textual tal como se ve (reconstruido)
+        precio_texto = ""
+        if entero_txt:
+            dec_t = decimal_txt if decimal_txt else "00"
+            precio_texto = f"${entero_txt.strip()}{dec_t.strip()}".replace("  ", " ")
+
+        # Precio unitario
+        unit_el = s_find(c, By.CSS_SELECTOR, ".precio-unitario")
+        precio_unitario = inner_text(driver, unit_el) if unit_el else ""
+
+        # Precio sin impuestos (segundo span)
+        psi_el = s_find(c, By.CSS_SELECTOR, ".precio-sin-impuestos span:last-child")
+        precio_sin_impuestos = inner_text(driver, psi_el) if psi_el else ""
+
+        # Link al detalle (si existe)
+        a_det = s_find(c, By.CSS_SELECTOR, "a[href]")
+        detalle_url = None
+        if a_det:
+            href = (s_attr(a_det, "href") or "").strip()
+            if href.startswith("/"):
+                detalle_url = "https://www.lacoopeencasa.coop" + href
+            elif href.startswith("http"):
+                detalle_url = href
+
+        filas.append({
+            "codigo": codigo,
+            "nombre": nombre,
+            "precio": precio_float,
+            "precio_texto": precio_texto,
+            "precio_unitario": precio_unitario,
+            "precio_sin_impuestos": precio_sin_impuestos,
+            "imagen_url": imagen_url,
+            "detalle_url": detalle_url,
+        })
+    return filas
+
+def cargar_y_extraer_pagina(driver, url, wait_cards=True):
+    """
+    Carga una URL de categoría/página, espera tarjetas, hace scroll y devuelve filas.
+    Retorna (filas, count_cards).
+    """
+    driver.get(url)
+    WebDriverWait(driver, 30).until(
+        lambda d: d.execute_script("return document.readyState") == "complete"
     )
-    s.mount("https://", HTTPAdapter(max_retries=retries))
-    return s
 
-def parse_extra_kv(extras: List[str]) -> Dict[str, str]:
-    params = {}
-    for kv in extras or []:
-        if "=" in kv:
-            k, v = kv.split("=", 1)
-            params[k.strip()] = v.strip()
-    return params
-
-def fetch_sector(tag: str, template_id: int, extra: Dict[str,str], timeout: int = 25) -> List[Dict[str,Any]]:
-    s = make_session()
-    params = {"tag": tag, "id_template": str(template_id)}
-    params.update(extra)
-    r = s.get(API_SECTOR, params=params, timeout=timeout)
-    r.raise_for_status()
-    data = r.json()
-
-    if not isinstance(data, dict) or "datos" not in data:
-        raise ValueError(f"Estructura inesperada para tag '{tag}'. Respuesta: {str(data)[:250]}")
-    if data.get("estado") not in (1, "1", True):
-        msg = data.get("mensaje", "Sin mensaje")
-        raise RuntimeError(f"API rechazó tag '{tag}': estado={data.get('estado')} mensaje={msg}")
-
-    items = data.get("datos") or []
-    norm = []
-    for it in items:
-        cleaned = {str(k): (clean_text(v) if isinstance(v, str) else v) for k, v in it.items()}
-        cleaned["_tag"] = tag  # traza
-        norm.append(cleaned)
-    return norm
-
-def enrich_with_ean(items: List[Dict[str,Any]], pause: float = 0.05) -> None:
-    """Agrega campo 'ean' si se encuentra en atributos del artículo."""
-    s = make_session()
-    for it in items:
-        cod = it.get("cod_interno")
-        if not cod: continue
+    if wait_cards:
         try:
-            r = s.get(API_ATTR, params={"cod_interno": str(cod)}, timeout=20)
-            r.raise_for_status()
-            data = r.json()
-            # Este endpoint suele devolver lista de 'atributos' por clasificaciones
-            # Buscamos una clave/valor que parezca EAN
-            ean = None
-            if isinstance(data, dict) and "datos" in data:
-                bloques = data["datos"]
-            else:
-                bloques = data
-            # Recorremos estructura flexible
-            def walk(obj):
-                if isinstance(obj, dict):
-                    for k,v in obj.items():
-                        yield k, v
-                        yield from walk(v)
-                elif isinstance(obj, list):
-                    for x in obj:
-                        yield from walk(x)
-            for k,v in walk(bloques):
-                if isinstance(v, str) and re.fullmatch(r"\d{8,14}", v):
-                    # heurística: si clave sugiere EAN o GTIN o COD_BARRAS, mejor
-                    if isinstance(k, str) and re.search(r"(ean|gtin|barra)", k, re.I):
-                        ean = v; break
-                    # si no, nos quedamos con el mejor candidato si aún no hay ean
-                    if ean is None: ean = v
-            if ean:
-                it["ean"] = ean
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "col-listado-articulo div.card.hoverable"))
+            )
         except Exception:
-            pass
-        time.sleep(pause)
+            # No hay tarjetas en esta página
+            return [], 0
 
-def to_dataframe(items: List[Dict[str,Any]]) -> pd.DataFrame:
-    if not items: return pd.DataFrame()
-    df = pd.DataFrame(items)
+    # Además, esperar a que aparezca algún texto real en descripciones (si existen)
+    descs = driver.find_elements(By.CSS_SELECTOR, ".card-descripcion[id^='descripcion'] p")
+    if descs:
+        try:
+            WebDriverWait(driver, 10).until(
+                lambda d: any(inner_text(d, el) for el in d.find_elements(By.CSS_SELECTOR, ".card-descripcion[id^='descripcion'] p"))
+            )
+        except Exception:
+            pass  # si no aparece, igual seguimos
 
-    preferred = [
-        "cod_interno","ean","descripcion",
-        "precio","precio_anterior","precio_promo","tipo_precio",
-        "precio_sin_impuestos","precio_no_asociado",
-        "precio_unitario","unimed_unitario_desc",
-        "gramaje","uxc","unimed_desc",
-        "estado","existe_promo","vigencia_promo","vigencia_promo_desde",
-        "id_categoria","categoria_desc",
-        "id_marca","marca_desc",
-        "tipo_articulo","id_promocion","id_sub_promocion",
-        "cantidad_promo","tipo_promo","tipo_promo_2",
-        "icono_promo_especial_inf_izq","icono_promo_especial_inf_der",
-        "tipo_carga_promo_2","tipo_sub_promo",
-        "cant_base","cant_variacion",
-        "descuento_porcentaje_promo","descuento_precio_promo","descuento_precio_bono",
-        "editable","orden","imagen","imagenes","_tag"
-    ]
-    cols = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
-    df = df[cols]
+    # Scroll para cargar todas las tarjetas lazy
+    scroll_hasta_cargar_todo(driver, pausa=0.8, max_intentos_sin_cambio=4)
 
-    for c in ["cod_interno","id_categoria","id_marca","id_promocion","id_sub_promocion","estado","ean"]:
-        if c in df.columns:
-            df[c] = df[c].astype(str)
-    return df
+    # Extraer
+    filas = extraer_tarjetas(driver)
+    return filas, len(filas)
 
-def export_excel(df: pd.DataFrame, out_path: str) -> None:
-    if df.empty:
-        print("⚠️ Sin datos; no genero Excel.")
-        return
-    with pd.ExcelWriter(out_path, engine="xlsxwriter") as xw:
-        df.to_excel(xw, index=False, sheet_name="datos")
-        ws = xw.sheets["datos"]
-        for i, col in enumerate(df.columns):
-            maxlen = int(df[col].astype(str).str.len().quantile(0.95)) if len(df) else 10
-            ws.set_column(i, i, min(max(10, maxlen + 2), 60))
+# ---------------- Main ----------------
 
 def main():
-    ap = argparse.ArgumentParser(description="Extrae artículos por uno o varios 'tag' de /articulos_sector.")
-    ap.add_argument("--tags", default="slider-articulos", help="Lista de tags separada por comas.")
-    ap.add_argument("--template-id", type=int, default=61, help="id_template (por defecto 61).")
-    ap.add_argument("--extra", nargs="*", default=None, help="Parámetros extra k=v (p.ej. cantidad=200 inicio=0).")
-    ap.add_argument("--fetch-ean", action="store_true", help="Enriquecer con EAN desde /api/articulo/atributos.")
-    ap.add_argument("--out", default=None, help="Ruta Excel salida.")
-    args = ap.parse_args()
+    # Configuración del navegador (sin headless)
+    opts = Options()
+    opts.add_argument("--start-maximized")
+    opts.add_argument("--lang=es-AR")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option("useAutomationExtension", False)
 
-    ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_xlsx = args.out or f"lacoope_sector_{ts}.xlsx"
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
 
-    extra = parse_extra_kv(args.extra)
-    tags = [t.strip() for t in args.tags.split(",") if t.strip()]
-    print(f"▶ Tags: {tags} | template={args.template_id} | extra={extra}")
+    try:
+        print("Abriendo página principal…")
+        driver.get(HOME_URL)
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+        time.sleep(1.2)
 
-    all_items: List[Dict[str,Any]] = []
-    seen = set()
-    for tag in tags:
-        try:
-            items = fetch_sector(tag, args.template_id, extra)
-            print(f"  • {tag}: {len(items)} items")
-            for it in items:
-                key = it.get("cod_interno") or (it.get("descripcion"), it.get("precio"))
-                if key in seen: continue
-                seen.add(key)
-                all_items.append(it)
-        except Exception as e:
-            print(f"  ! {tag}: {e}")
+        todas = []
 
-    print(f"✅ Total acumulado (dedup): {len(all_items)}")
-    if args.fetch_ean and all_items:
-        print("🔎 Enriqueciendo con EAN...")
-        enrich_with_ean(all_items)
+        # Página 1 (sin sufijo)
+        print("➡️ Página 1 (base):", BASE_CAT)
+        filas, n = cargar_y_extraer_pagina(driver, BASE_CAT, wait_cards=True)
+        print(f"   • items: {n}")
+        todas.extend(filas)
 
-    df = to_dataframe(all_items)
-    export_excel(df, out_xlsx)
-    print(f"💾 Excel: {out_xlsx}")
+        # Páginas 2..MAX_PAGES
+        for page in range(2, MAX_PAGES + 1):
+            url = PAGE_FMT.format(page=page)
+            print(f"➡️ Página {page}: {url}")
+            filas, n = cargar_y_extraer_pagina(driver, url, wait_cards=False)
+            print(f"   • items: {n}")
+            if n == 0:
+                print("   ⛳ No hay más productos. Fin de paginación.")
+                break
+            todas.extend(filas)
+
+        print(f"🛒 Total artículos capturados: {len(todas)}")
+
+        # A XLSX
+        df = pd.DataFrame(todas)
+        cols = ["codigo", "nombre", "precio", "precio_texto",
+                "precio_unitario", "precio_sin_impuestos",
+                "imagen_url", "detalle_url"]
+        df = df[[c for c in cols if c in df.columns]]
+
+        out_xlsx = "la_coope_almacen_full.xlsx"
+        df.to_excel(out_xlsx, index=False)
+        print(f"✅ XLSX guardado: {out_xlsx}")
+
+        input("Presiona ENTER para cerrar el navegador…")
+
+    finally:
+        driver.quit()
 
 if __name__ == "__main__":
-    try:
-        main()
-    except requests.HTTPError as e:
-        body = getattr(e.response, "text", "")
-        print(f"❌ HTTPError: {e}\n{body[:500]}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"❌ Error: {e}", file=sys.stderr)
-        sys.exit(1)
+    main()

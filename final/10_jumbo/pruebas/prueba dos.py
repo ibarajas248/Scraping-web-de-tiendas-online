@@ -636,5 +636,4 @@ def main():
         print(f"🏁 Finalizado. Histórico insertado: {total_insertados} filas para {TIENDA_NOMBRE} ({capturado_en})")
 
 if __name__ == "__main__":
-
     main()

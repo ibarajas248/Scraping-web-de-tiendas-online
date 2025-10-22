@@ -37,7 +37,7 @@ BASE = "https://www.lacoopeencasa.coop"
 CATEGORY = "almacen"    # solo se usa como fallback
 CAT_ID = 2
 
-PAGE_START = 1
+PAGE_START = 2
 PAGE_END = 20000             # alto por si hay muchas páginas
 WAIT = 25
 HUMAN_SLEEP = 0.2

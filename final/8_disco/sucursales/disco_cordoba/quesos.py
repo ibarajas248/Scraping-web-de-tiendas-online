@@ -57,7 +57,7 @@ DISCO_PASS  = os.getenv("DISCO_PASS", "Compras2025")
 
 PROVINCIA     = os.getenv("DISCO_PROVINCIA", "CORDOBA").strip()
 TIENDA_NOM    = os.getenv("DISCO_TIENDA", "Disco Alta Córdoba Cabrera 493").strip()
-CATEGORIA_URL = os.getenv("DISCO_CATEGORIA_URL", "/bebidas").strip()  # punto de entrada de scraping
+CATEGORIA_URL = os.getenv("DISCO_CATEGORIA_URL", "/quesos-y-fiambres").strip()  # punto de entrada de scraping
 MAX_EMPTY     = int(os.getenv("DISCO_MAX_EMPTY", "1"))  # páginas vacías toleradas
 SLEEP_PDP     = float(os.getenv("DISCO_SLEEP_PDP", "0.6"))
 SLEEP_PAGE    = float(os.getenv("DISCO_SLEEP_PAGE", "1.0"))

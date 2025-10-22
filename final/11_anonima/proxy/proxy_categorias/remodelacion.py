@@ -18,8 +18,8 @@ sys.path.append(
 )
 from base_datos import get_conn  # <- tu conexión MySQL
 
-# ===== Selenium
-from selenium import webdriver
+# ===== Selenium (selenium-wire para proxy con auth)
+from seleniumwire import webdriver as wire_webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -28,14 +28,13 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-
 # =================== Config scraping ===================
-URL = "https://www.laanonima.com.ar/hogar-jardin-y-automotor/n1_1/"
+URL = "https://www.laanonima.com.ar/construccion-y-remodelacion-del-hogar/n1_366/"
 POSTAL_CODE = "1001"
 OUT_XLSX = "laanonima_hogar_jardin_automotor_optimizado.xlsx"
 
-# Si quieres ver el navegador, ponlo en False. En servidor, True.
-HEADLESS = False
+# En VPS: headless recomendado
+HEADLESS = True
 
 # Dominios/recursos que bloquearemos para aligerar
 BLOCK_URL_PATTERNS = [
@@ -50,11 +49,22 @@ BLOCK_URL_PATTERNS = [
 TIENDA_CODIGO = "laanonima"
 TIENDA_NOMBRE = "La Anónima"
 # Política de precios:
-# - precio_lista: tomamos "precio_tachado" si existe; si no, "precio_visible".
-# - precio_oferta: tomamos "precio_visible" si hay precio tachado; si no, NULL.
+# - precio_lista: "precio_tachado" si existe; si no, "precio_visible".
+# - precio_oferta: "precio_visible" si hay tachado; si no, NULL.
+
+# =================== Proxy DataImpulse ===================
+PROXY_HOST = "gw.dataimpulse.com"
+PROXY_PORT = 823
+PROXY_USER_BASE = "2cf8063dbace06f69df4"
+PROXY_PASS = "61425d26fb3c7287"
+# Geotarget opcional: "__cr.ar" (Argentina) o "" para desactivar
+PROXY_COUNTRY_SUFFIX = "__cr.ar"
+
+def build_proxy_url():
+    user = PROXY_USER_BASE + (PROXY_COUNTRY_SUFFIX or "")
+    return f"http://{user}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}"
 
 # =================== Utils ===================
-_price_clean_re = re.compile(r"[^\d,.\-]")
 _slug_spaces = re.compile(r"\s+")
 
 def parse_money_to_number(txt: str):
@@ -74,7 +84,6 @@ def parse_money_to_number(txt: str):
         return None
 
 def to_txt_price_or_none(v) -> Optional[str]:
-    """Convierte a texto numérico (dos decimales) o None para guardar como VARCHAR."""
     if v is None:
         return None
     try:
@@ -93,10 +102,6 @@ def clean_text(s: Optional[str]) -> Optional[str]:
     return s or None
 
 def split_categoria(ruta: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Ej: 'Hogar, jardín y automotor  > Colchones y Sommiers  > Colchones'
-    -> cat='Hogar, jardín y automotor', subcat='Colchones'
-    """
     if not ruta:
         return None, None
     parts = [p.strip() for p in re.split(r">\s*", ruta.replace("&gt;", ">")) if p.strip()]
@@ -106,24 +111,41 @@ def split_categoria(ruta: str) -> Tuple[Optional[str], Optional[str]]:
         return parts[0], None
     return parts[0], parts[-1]
 
-def setup_driver() -> webdriver.Chrome:
+def looks_like_blocked(html: str) -> bool:
+    """Heurística simple para detectar captcha/challenge."""
+    if not html:
+        return False
+    needles = [
+        "cf-challenge", "captcha", "hcaptcha", "cloudflare", "verifica que eres humano",
+        "Access Denied", "Request unsuccessful", "Temporarily unavailable"
+    ]
+    html_low = html.lower()
+    return any(n in html_low for n in needles)
+
+def setup_driver() -> wire_webdriver.Chrome:
     opts = Options()
     if HEADLESS:
-        # Headless moderno (más estable/rápido)
         opts.add_argument("--headless=new")
         opts.add_argument("--window-size=1366,900")
     else:
         opts.add_argument("--start-maximized")
 
-    # Ahorro de recursos
+    # Ahorro de recursos / huella baja
     opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-background-timer-throttling")
     opts.add_argument("--disable-backgrounding-occluded-windows")
     opts.add_argument("--disable-renderer-backgrounding")
-    # No cargar imágenes por si se cuela alguna
     opts.add_argument("--blink-settings=imagesEnabled=false")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+
+    # User Agent realista
+    UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/127.0.0.0 Safari/537.36"
+    )
 
     # Suavizar huellas
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -134,15 +156,35 @@ def setup_driver() -> webdriver.Chrome:
     }
     opts.add_experimental_option("prefs", prefs)
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
+    # Proxy con selenium-wire
+    proxy_url = build_proxy_url()
+    sw_options = {
+        'proxy': {
+            'http': proxy_url,
+            'https': proxy_url,
+            'no_proxy': 'localhost,127.0.0.1'
+        },
+        'verify_ssl': False,   # por si hay MITM TLS
+        'request_storage': 'memory',
+    }
 
-    # Ocultar navigator.webdriver
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
-    })
+    driver = wire_webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=opts,
+        seleniumwire_options=sw_options
+    )
 
-    # Bloquear recursos pesados / analytics
+    # Parcheo de webdriver + UA + idioma
     try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+        })
+        driver.execute_cdp_cmd(
+            "Network.setUserAgentOverride",
+            {"userAgent": UA, "acceptLanguage": "es-AR,es;q=0.9,en;q=0.8", "platform": "Win32"}
+        )
+        driver.execute_cdp_cmd("Emulation.setLocaleOverride", {"locale": "es-AR"})
+        driver.execute_cdp_cmd("Emulation.setTimezoneOverride", {"timezoneId": "America/Argentina/Buenos_Aires"})
         driver.execute_cdp_cmd("Network.enable", {})
         driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": BLOCK_URL_PATTERNS})
     except Exception:
@@ -150,48 +192,102 @@ def setup_driver() -> webdriver.Chrome:
 
     return driver
 
-def apply_postal_code(driver: webdriver.Chrome, wait: WebDriverWait, postal_code: str):
+def apply_postal_code(driver, wait: WebDriverWait, postal_code: str):
+    """
+    Tolerante: intenta por ID conocido y por otros posibles selectores;
+    si no encuentra, simplemente sigue (no bloquea el flujo).
+    """
     try:
+        # Variante 1: ID conocido
         cp_input = wait.until(EC.presence_of_element_located((By.ID, "idCodigoPostalUnificado")))
+    except Exception:
+        # Variante 2: inputs alternativos (por si cambió el ID/estructura)
+        try:
+            cp_input = wait.until(EC.presence_of_element_located((
+                By.CSS_SELECTOR, "input[name*='CodigoPostal'], input[placeholder*='Postal']"
+            )))
+        except Exception as e:
+            print(f"[AVISO] No se pudo interactuar con el modal de CP (no encontrado): {e}")
+            return
+
+    try:
         cp_input.clear()
         cp_input.send_keys(postal_code)
         cp_input.send_keys(Keys.ENTER)
+        # disparamos input event por si usan listeners
         driver.execute_script("""
-            const inp = document.getElementById('idCodigoPostalUnificado');
+            const inp = arguments[0];
             if (inp) { inp.dispatchEvent(new Event('input', { bubbles: true })); }
-        """)
+        """, cp_input)
+
+        # intentamos cerrar modal si aparece botón de cerrar
         try:
             close_btn = WebDriverWait(driver, 4).until(
-                EC.element_to_be_clickable((By.ID, "btnCerrarCodigoPostal"))
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "#btnCerrarCodigoPostal, .btn-cerrar, .modal-close, button.close"))
             )
             close_btn.click()
         except Exception:
             pass
+
         sleep(1.0)
     except Exception as e:
         print(f"[AVISO] No se pudo interactuar con el modal de CP: {e}")
 
-def smart_infinite_scroll(driver: webdriver.Chrome, wait_css: str, pause=0.9, max_plateaus=5):
+def wait_for_cards_or_diagnose(driver, css_card_anchor: str, timeout: int = 30) -> bool:
+    """
+    Espera cartas; si no aparecen, guarda HTML y screenshot para diagnóstico
+    y retorna False.
+    """
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, css_card_anchor))
+        )
+        return True
+    except Exception:
+        # Dump para diagnóstico
+        try:
+            html = driver.page_source
+            with open("debug_laaanonima.html", "w", encoding="utf-8") as f:
+                f.write(html)
+            driver.save_screenshot("debug_laaanonima.png")
+            print("🧪 Guardado debug_laaanonima.html y debug_laaanonima.png")
+            print(f"URL actual: {driver.current_url}")
+            print(f"Título: {driver.title}")
+            if looks_like_blocked(html):
+                print("⚠️ Señal de captcha/bloqueo detectada en el HTML.")
+        except Exception:
+            pass
+        return False
+
+def smart_infinite_scroll(driver, wait_css: str, pause=0.9, max_plateaus=5):
     """
     Hace scroll hasta el fondo mientras el número de tarjetas siga creciendo.
-    Se detiene tras 'max_plateaus' rondas sin incremento de tarjetas.
+    Si al inicio no hay tarjetas, intenta un scroll “forzado” y reintenta una vez.
     """
-    WebDriverWait(driver, 25).until(EC.presence_of_element_located((By.CSS_SELECTOR, wait_css)))
+    # Primer intento de espera
+    ok = wait_for_cards_or_diagnose(driver, wait_css, timeout=30)
+    if not ok:
+        # Scroll forzado y reintento
+        for _ in range(6):
+            driver.execute_script("window.scrollBy(0, document.body.scrollHeight/2);")
+            sleep(pause)
+        ok = wait_for_cards_or_diagnose(driver, wait_css, timeout=20)
+        if not ok:
+            # No hay cartas; devolvemos sin lanzar excepción → el llamador decidirá.
+            print("⚠️ No se detectaron tarjetas; se continúa para diagnóstico.")
+            return
 
     last_count = 0
     plateaus = 0
 
     while plateaus < max_plateaus:
-        # Scroll suave: 3 saltos para disparar distintos lazy-loaders
         for _ in range(3):
             driver.execute_script("window.scrollBy(0, document.body.scrollHeight/3);")
             sleep(pause)
 
-        # Rebote final
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         sleep(pause)
 
-        # Medimos progreso por número de tarjetas
         count = len(driver.find_elements(By.CSS_SELECTOR, wait_css))
         if count <= last_count:
             plateaus += 1
@@ -199,10 +295,8 @@ def smart_infinite_scroll(driver: webdriver.Chrome, wait_css: str, pause=0.9, ma
             plateaus = 0
             last_count = count
 
-    # pequeño ajuste final
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     sleep(0.6)
-
 
 JS_EXTRACT = """
 return Array.from(document.querySelectorAll('div.card a[data-codigo]')).map(a => {
@@ -237,7 +331,7 @@ return Array.from(document.querySelectorAll('div.card a[data-codigo]')).map(a =>
 });
 """
 
-# =================== MySQL helpers (idéntico a tu patrón) ===================
+# =================== MySQL helpers ===================
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute(
         "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
@@ -248,7 +342,6 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     return cur.fetchone()[0]
 
 def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
-    # La Anónima no expone EAN aquí → dejamos ean NULL y “pegamos” por (nombre, marca) cuando sea confiable
     ean = (p.get("ean") or "").strip() or None
     if ean:
         cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
@@ -301,8 +394,8 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
     return cur.lastrowid
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
-    sku = (p.get("sku") or "").strip() or None  # aquí usamos "codigo" como SKU de tienda
-    rec = None  # La Anónima no tiene record_id
+    sku = (p.get("sku") or "").strip() or None
+    rec = None
     url = p.get("url") or ""
     nombre_tienda = p.get("nombre") or ""
 
@@ -319,7 +412,6 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
         """, (tienda_id, producto_id, sku, rec, url, nombre_tienda))
         return cur.lastrowid
 
-    # último recurso
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
@@ -354,25 +446,24 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
 
 # =================== MAIN ===================
 def main():
-    # ========== SCRAPING ==========
     driver = setup_driver()
     driver.get(URL)
-    wait = WebDriverWait(driver, 25)
+    wait = WebDriverWait(driver, 30)
 
-    # 1) CP si aparece
+    # 1) CP (tolerante)
     apply_postal_code(driver, wait, POSTAL_CODE)
 
     # 2) Scroll eficiente
     css_card_anchor = "div.card a[data-codigo]"
-    smart_infinite_scroll(driver, css_card_anchor, pause=0.8, max_plateaus=5)
+    smart_infinite_scroll(driver, css_card_anchor, pause=0.9, max_plateaus=5)
 
-    # 3) Extracción masiva con JS
+    # 3) Extracción masiva
     rows = driver.execute_script(JS_EXTRACT) or []
 
     # 4) Cerrar navegador
     driver.quit()
 
-    # 5) Limpieza numérica y enriquecimiento
+    # 5) Limpieza y enriquecimiento
     dedup = []
     seen = set()
     for r in rows:
@@ -391,7 +482,6 @@ def main():
         seen.add(codigo)
         dedup.append(r)
 
-    # 6) DataFrame (export XLSX como antes)
     df = pd.DataFrame(dedup)
     prefer = [
         "codigo", "titulo_card", "nombre_data", "marca", "modelo", "ruta_categorias",
@@ -407,7 +497,7 @@ def main():
     cols = [c for c in prefer if c in df.columns] + [c for c in df.columns if c not in prefer]
     if not df.empty:
         df = df[cols]
-        df.to_excel(OUT_XLSX, index=False)
+        #df.to_excel(OUT_XLSX, index=False)
     print(f"✅ Capturados: {len(df)} productos")
     print(f"📄 XLSX: {OUT_XLSX}")
 
@@ -415,23 +505,15 @@ def main():
         print("⚠️ No hay datos para insertar en MySQL.")
         return
 
-    # ========== PREP: map a tu modelo para MySQL ==========
+    # 6) Map a modelo MySQL (con lógica de precios validada)
     mapped: List[Dict[str, Any]] = []
     for _, r in df.iterrows():
         ruta = r.get("ruta_categorias") or ""
         cat, subcat = split_categoria(ruta)
 
-        # nombre preferimos título visible; caemos a data-nombre si está vacío
         nombre = clean_text(r.get("titulo_card")) or clean_text(r.get("nombre_data")) or None
         marca  = clean_text(r.get("marca")) or None
 
-        # =======================
-        # REGLA DE PRECIOS (corregida)
-        # - Hay oferta si existe tachado (DOM) o data_precio_anterior > 0
-        # - Oferta = visible (fallback data_precio_oferta o data_precio)
-        # - Lista  = tachado (fallback data_precio_anterior; fallback visible)
-        # - Sin oferta: lista=visible (o data_precio), oferta=NULL
-        # =======================
         pt_txt_present = bool((r.get("precio_tachado_txt") or "").strip())
         pt_num = r.get("precio_tachado_num")
         if pt_num is None:
@@ -457,24 +539,18 @@ def main():
             base_lista = pv if pv is not None else parse_money_to_number(r.get("data_precio") or "")
             precio_lista  = to_txt_price_or_none(base_lista)
             precio_oferta = None
-        # ====== FIN REGLA DE PRECIOS ======
 
         p: Dict[str, Any] = {
-            # Producto
-            "ean": None,  # La Anónima (listado) no expone EAN → dejar NULL
+            "ean": None,
             "nombre": nombre,
             "marca": marca,
-            "fabricante": None,  # no disponible en listado
+            "fabricante": None,
             "categoria": clean_text(cat),
             "subcategoria": clean_text(subcat),
-
-            # Producto-Tienda
-            "sku": clean_text(str(r.get("codigo") or "")),  # ← usamos "codigo" como sku_tienda
+            "sku": clean_text(str(r.get("codigo") or "")),
             "record_id": None,
             "url": clean_text(r.get("detalle_url") or ""),
-            "nombre_tienda": nombre,  # opcional
-
-            # Historico Precios
+            "nombre_tienda": nombre,
             "precio_lista": precio_lista,
             "precio_oferta": precio_oferta,
             "tipo_oferta": None,
@@ -485,9 +561,8 @@ def main():
         }
         mapped.append(p)
 
-    # ========== INSERTAR EN MySQL ==========
+    # 7) INSERTAR EN MySQL
     capturado_en = datetime.now()
-
     conn = None
     try:
         conn = get_conn()
@@ -514,7 +589,6 @@ def main():
             if conn: conn.close()
         except Exception:
             pass
-
 
 if __name__ == "__main__":
     main()
