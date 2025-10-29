@@ -6,7 +6,8 @@
 # - Inserta en: tiendas, productos, producto_tienda, historico_precios
 # - Mapea VTEX → dict p (sku, record_id, ean, nombre, marca, categoria, subcategoria, url, precio_lista, precio_oferta, promo_tipo, etc.)
 # - Parada por ENTER para guardar parcial.
-# - Manejo de locks, truncado seguro de columnas de texto y commits incrementales.
+# - Manejo de locks, truncado seguro de columnas de texto, commits incrementales
+#   y tolerancia a 1264 (out-of-range) en columnas numéricas de precio.
 
 import requests, time, re, json, sys, os, threading
 import pandas as pd
@@ -46,6 +47,7 @@ MAXLEN_TIPO_OFERTA  = 191
 MAXLEN_PROMO_TXT    = 191
 MAXLEN_PROMO_COMENT = 255
 LOCK_ERRNOS = {1205, 1213}
+OUT_OF_RANGE_ERRNO = 1264  # DataError: out of range value for column
 
 # ========= Parada por ENTER =========
 class StopController:
@@ -284,9 +286,14 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
     return cur.lastrowid
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
-    # Precios como VARCHAR (compat con tu patrón)
-    precio_lista  = _price_txt_or_none(p.get("precio_lista"))
-    precio_oferta = _price_txt_or_none(p.get("precio_oferta"))
+    """
+    Inserta histórico. Si el esquema tiene DECIMAL ajustado (p.ej. DECIMAL(5,2))
+    y el precio excede el rango → MySQL arroja 1264.
+    Ante 1264, reintenta **una vez** con precios = NULL; si vuelve a fallar, omite.
+    """
+    # Precios como string o None (si no convertibles)
+    precio_lista_txt  = _price_txt_or_none(p.get("precio_lista"))
+    precio_oferta_txt = _price_txt_or_none(p.get("precio_oferta"))
 
     # tipo_oferta/promo recortados
     tipo_oferta = _truncate(clean(p.get("tipo_oferta")), MAXLEN_TIPO_OFERTA)
@@ -302,7 +309,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
     if p.get("subcategoria"):comentarios.append(f"sub={p['subcategoria']}")
     promo_comentarios = _truncate(" | ".join(comentarios), MAXLEN_PROMO_COMENT) if comentarios else None
 
-    exec_retry(cur, """
+    sql = """
         INSERT INTO historico_precios
           (tienda_id, producto_tienda_id, capturado_en,
            precio_lista, precio_oferta, tipo_oferta,
@@ -316,9 +323,34 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
           promo_texto_regular = VALUES(promo_texto_regular),
           promo_texto_descuento = VALUES(promo_texto_descuento),
           promo_comentarios = VALUES(promo_comentarios)
-    """, (tienda_id, producto_tienda_id, capturado_en,
-          precio_lista, precio_oferta, tipo_oferta,
-          promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios))
+    """
+
+    params = (
+        tienda_id, producto_tienda_id, capturado_en,
+        precio_lista_txt, precio_oferta_txt, tipo_oferta,
+        promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios
+    )
+
+    try:
+        exec_retry(cur, sql, params)
+        return
+    except myerr.DatabaseError as e:
+        # Si es out-of-range en DECIMAL → reintento con precios NULL y sigo
+        if getattr(e, "errno", None) == OUT_OF_RANGE_ERRNO:
+            print(f"[WARN] 1264 out-of-range en precios (pid_tienda={producto_tienda_id}). Reintentando con NULL…")
+            params_null = (
+                tienda_id, producto_tienda_id, capturado_en,
+                None, None, tipo_oferta,
+                promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios
+            )
+            try:
+                exec_retry(cur, sql, params_null)
+                return
+            except Exception as e2:
+                print(f"[WARN] No se pudo insertar ni con precios NULL (pid_tienda={producto_tienda_id}). Omito. Detalle: {e2}")
+                return
+        # Otros errores: propagar (serán manejados por el caller con rollback/commit)
+        raise
 
 # ========= Parsing de producto (mapea a dict p) =========
 def parse_rows_from_product_and_ps(p, base):

@@ -32,7 +32,7 @@ from base_datos import get_conn  # <- tu conexión MySQL
 # from carrefour_scraper import fetch_all_categories
 
 # --------- Config tienda ---------
-TIENDA_CODIGO = "carrefour"
+TIENDA_CODIGO = "https://www.carrefour.com.ar"
 TIENDA_NOMBRE = "Carrefour Argentina"
 
 # --------- Helpers numéricos ---------

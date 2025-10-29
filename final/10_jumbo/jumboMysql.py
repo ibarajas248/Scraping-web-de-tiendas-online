@@ -6,7 +6,8 @@
 # - Inserta en: tiendas, productos, producto_tienda, historico_precios
 # - Mapea VTEX → dict p (sku, record_id, ean, nombre, marca, categoria, subcategoria, url, precio_lista, precio_oferta, promo_tipo, etc.)
 # - Parada por ENTER para guardar parcial.
-# - Manejo de locks, truncado seguro de columnas de texto y commits incrementales.
+# - Manejo de locks, truncado seguro de columnas de texto, commits incrementales
+#   y tolerancia a 1264 (out-of-range) en columnas numéricas de precio.
 
 import requests, time, re, json, sys, os, threading
 import pandas as pd
@@ -46,6 +47,8 @@ MAXLEN_TIPO_OFERTA  = 191
 MAXLEN_PROMO_TXT    = 191
 MAXLEN_PROMO_COMENT = 255
 LOCK_ERRNOS = {1205, 1213}
+OUT_OF_RANGE_ERRNO = 1264  # DataError: out of range value for column
+COMMIT_EVERY = 150
 
 # ========= Parada por ENTER =========
 class StopController:
@@ -284,9 +287,14 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
     return cur.lastrowid
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
-    # Precios como VARCHAR (compat con tu patrón)
-    precio_lista  = _price_txt_or_none(p.get("precio_lista"))
-    precio_oferta = _price_txt_or_none(p.get("precio_oferta"))
+    """
+    Inserta histórico. Si el esquema tiene DECIMAL ajustado (p.ej. DECIMAL(5,2))
+    y el precio excede el rango → MySQL arroja 1264.
+    Ante 1264, reintenta **una vez** con precios = NULL; si vuelve a fallar, omite.
+    """
+    # Precios como string o None (si no convertibles)
+    precio_lista_txt  = _price_txt_or_none(p.get("precio_lista"))
+    precio_oferta_txt = _price_txt_or_none(p.get("precio_oferta"))
 
     # tipo_oferta/promo recortados
     tipo_oferta = _truncate(clean(p.get("tipo_oferta")), MAXLEN_TIPO_OFERTA)
@@ -302,7 +310,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
     if p.get("subcategoria"):comentarios.append(f"sub={p['subcategoria']}")
     promo_comentarios = _truncate(" | ".join(comentarios), MAXLEN_PROMO_COMENT) if comentarios else None
 
-    exec_retry(cur, """
+    sql = """
         INSERT INTO historico_precios
           (tienda_id, producto_tienda_id, capturado_en,
            precio_lista, precio_oferta, tipo_oferta,
@@ -316,9 +324,34 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
           promo_texto_regular = VALUES(promo_texto_regular),
           promo_texto_descuento = VALUES(promo_texto_descuento),
           promo_comentarios = VALUES(promo_comentarios)
-    """, (tienda_id, producto_tienda_id, capturado_en,
-          precio_lista, precio_oferta, tipo_oferta,
-          promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios))
+    """
+
+    params = (
+        tienda_id, producto_tienda_id, capturado_en,
+        precio_lista_txt, precio_oferta_txt, tipo_oferta,
+        promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios
+    )
+
+    try:
+        exec_retry(cur, sql, params)
+        return
+    except myerr.DatabaseError as e:
+        # Si es out-of-range en DECIMAL → reintento con precios NULL y sigo
+        if getattr(e, "errno", None) == OUT_OF_RANGE_ERRNO:
+            print(f"[WARN] 1264 out-of-range en precios (pid_tienda={producto_tienda_id}). Reintentando con NULL…")
+            params_null = (
+                tienda_id, producto_tienda_id, capturado_en,
+                None, None, tipo_oferta,
+                promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios
+            )
+            try:
+                exec_retry(cur, sql, params_null)
+                return
+            except Exception as e2:
+                print(f"[WARN] No se pudo insertar ni con precios NULL (pid_tienda={producto_tienda_id}). Omito. Detalle: {e2}")
+                return
+        # Otros errores: propagar (serán manejados por el caller con rollback/commit)
+        raise
 
 # ========= Parsing de producto (mapea a dict p) =========
 def parse_rows_from_product_and_ps(p, base):
@@ -553,21 +586,91 @@ def fetch_category(session, cat_path, stopper: StopController):
 
 # ========= Inserción incremental =========
 def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: datetime) -> int:
-    """Inserta un lote (ya dentro de una transacción abierta)."""
+    """Inserta un lote con commits pequeños y manejo fino de 1205 por fila."""
     if not ps:
         return 0
-    cur = conn.cursor()
+
     total = 0
     seen = set()
+    done_in_batch = 0
+
+    def _new_cursor():
+        try:
+            return conn.cursor()
+        except Exception:
+            # reconectar si hizo falta
+            conn.ping(reconnect=True, attempts=3, delay=1)
+            return conn.cursor()
+
+    cur = _new_cursor()
+
     for p in ps:
         key = (p.get("sku"), p.get("record_id"), p.get("url"), p.get("precio_oferta"))
         if key in seen:
             continue
         seen.add(key)
-        producto_id = find_or_create_producto(cur, p)
-        pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
-        insert_historico(cur, tienda_id, pt_id, p, capturado_en)
-        total += 1
+
+        # mini-reintento por fila
+        for attempt in range(2):  # 0 y 1
+            try:
+                producto_id = find_or_create_producto(cur, p)
+                pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
+                insert_historico(cur, tienda_id, pt_id, p, capturado_en)
+                total += 1
+                done_in_batch += 1
+                break  # fila OK
+            except MySQLError as e:
+                errno = getattr(e, "errno", None)
+                if errno == 1205:  # lock wait
+                    # revertimos lo de esta subtransacción
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    # esperar un poco exponencial y reintentar 1 vez
+                    wait = 0.7 * (2 ** attempt)
+                    print(f"[WARN] 1205 en fila (sku={p.get('sku')}, rec={p.get('record_id')}). Retry en {wait:.2f}s…")
+                    time.sleep(wait)
+                    # renovar cursor (evitar cursor roto)
+                    cur.close()
+                    cur = _new_cursor()
+                    if attempt == 1:
+                        print(f"[SKIP] Fila omitida por lock persistente (sku={p.get('sku')}, rec={p.get('record_id')}).")
+                    continue
+                else:
+                    # otros errores: tiramos hacia arriba para que main haga rollback y log
+                    raise
+
+        # commit por lotes para soltar locks temprano
+        if done_in_batch >= COMMIT_EVERY:
+            try:
+                conn.commit()
+                print(f"[mini-commit] +{done_in_batch} filas")
+            except Exception as e:
+                print(f"[WARN] Commit de mini-lote falló: {e}; rollback...")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            done_in_batch = 0
+
+    # commit final
+    if done_in_batch:
+        try:
+            conn.commit()
+            print(f"[mini-commit] +{done_in_batch} filas (final)")
+        except Exception as e:
+            print(f"[WARN] Commit final del mini-lote falló: {e}; rollback...")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+    try:
+        cur.close()
+    except Exception:
+        pass
+
     return total
 
 # ========= Main =========
@@ -590,7 +693,7 @@ def main():
         # Afinar sesión para menos bloqueos
         try:
             with conn.cursor() as cset:
-                cset.execute("SET SESSION innodb_lock_wait_timeout = 5")
+                cset.execute("SET SESSION innodb_lock_wait_timeout = 15")  # antes lo habíamos bajado a 5
                 cset.execute("SET SESSION transaction_isolation = 'READ-COMMITTED'")
         except Exception:
             pass
@@ -636,5 +739,4 @@ def main():
         print(f"🏁 Finalizado. Histórico insertado: {total_insertados} filas para {TIENDA_NOMBRE} ({capturado_en})")
 
 if __name__ == "__main__":
-
     main()
