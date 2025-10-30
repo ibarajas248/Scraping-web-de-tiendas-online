@@ -37,7 +37,7 @@ HEADERS = {
     "Accept": "application/json"
 }
 
-TIENDA_CODIGO = "jumbo_ar"
+TIENDA_CODIGO = "https://www.jumbo.com.ar"
 TIENDA_NOMBRE = "Jumbo Argentina"
 
 # ========= Límites columnas (ajusta si tu schema difiere) =========

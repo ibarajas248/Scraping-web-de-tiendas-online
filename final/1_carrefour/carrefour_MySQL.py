@@ -5,11 +5,13 @@
 Inserción en MySQL para el scraper de Carrefour (VTEX)
 Tablas: tiendas, productos, producto_tienda, historico_precios
 
-Cambios clave:
-- Manejo robusto de pd.NA/NaN: clean() y safe_float() usan pd.isna().
-- Normalización del DataFrame: df = df.where(pd.notna(df), None)
-- Construcción de 'p' ya limpio para evitar 'boolean value of NA is ambiguous'.
-- Uso de clean()/safe_float() al preparar parámetros SQL.
+Cambios clave (FIX 1406: Data too long):
+- Se leen los límites reales de columnas desde INFORMATION_SCHEMA.
+- Función fit(table, col, val, digits_only=False): si el valor excede el largo permitido, se omite (None).
+- EAN: se fuerzan solo dígitos y si excede el largo de productos.ean => None.
+- Normalización robusta de NaN/pd.NA/None con clean() y safe_float().
+- df = df.where(pd.notna(df), None) para evitar "boolean value of NA is ambiguous".
+- Todos los textos de entrada a SQL ya vienen “encajados” por fit().
 """
 
 import time
@@ -27,10 +29,6 @@ sys.path.append(
 )
 from base_datos import get_conn  # <- tu conexión MySQL
 
-
-# Importa tu scraper o pega aquí sus funciones y usa fetch_all_categories()
-# from carrefour_scraper import fetch_all_categories
-
 # --------- Config tienda ---------
 TIENDA_CODIGO = "https://www.carrefour.com.ar"
 TIENDA_NOMBRE = "Carrefour Argentina"
@@ -40,7 +38,6 @@ def safe_float(x) -> Optional[float]:
     try:
         if x is None:
             return None
-        # Maneja pd.NA / NaN / strings numéricos
         if pd.isna(x):
             return None
         v = float(x)
@@ -63,15 +60,70 @@ def clean(val):
     s = str(val).strip()
     return s if s else None
 
-# ================== Helpers BD (mismo patrón que Coto/DIA) ==================
-def upsert_tienda(cur, codigo: str, nombre: str) -> int:
+# ================== Helpers BD: límites de columnas ==================
+def load_schema_limits(cur):
+    """
+    Retorna un dict:
+       limits[tabla][columna] = CHARACTER_MAXIMUM_LENGTH (o None si no aplica)
+    Solo carga las tablas involucradas.
+    """
+    targets = ("tiendas", "productos", "producto_tienda", "historico_precios")
+    q = """
+    SELECT TABLE_NAME, COLUMN_NAME, CHARACTER_MAXIMUM_LENGTH
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME IN (%s,%s,%s,%s)
+    """
+    cur.execute(q, targets)
+    limits: Dict[str, Dict[str, Optional[int]]] = {}
+    for t, c, maxlen in cur.fetchall():
+        limits.setdefault(t, {})[c] = maxlen  # None para numerics/textos sin límite explícito
+    return limits
+
+def make_fit_fn(limits):
+    """
+    Crea una función fit(table, column, val, digits_only=False) que:
+    - Limpia y normaliza val -> str o None.
+    - Si digits_only=True, conserva solo dígitos (útil para EAN).
+    - Si el largo de val supera el CHARACTER_MAXIMUM_LENGTH -> devuelve None (omite).
+    """
+    def fit(table: str, column: str, val: Any, *, digits_only: bool = False) -> Optional[str]:
+        v = clean(val)
+        if v is None:
+            return None
+        if digits_only:
+            v = "".join(ch for ch in str(v) if ch.isdigit())
+            if not v:
+                return None
+        try:
+            maxlen = limits.get(table, {}).get(column)
+        except Exception:
+            maxlen = None
+        if isinstance(v, str) and maxlen is not None and maxlen > 0:
+            if len(v) > maxlen:
+                # Política: NO truncar; omitir el valor para evitar 1406
+                return None
+        return v
+    return fit
+
+# ================== Helpers BD (upserts) ==================
+def upsert_tienda(cur, codigo: Optional[str], nombre: Optional[str]) -> int:
+    """
+    Recibe ya valores “encajados” por fit(). Si alguno es None y tu esquema
+    requiere NOT NULL, ajusta la fuente (TIENDA_*) para que no exceda.
+    """
     cur.execute(
         "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
         "ON DUPLICATE KEY UPDATE nombre=VALUES(nombre)",
         (clean(codigo), clean(nombre))
     )
     cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (clean(codigo),))
-    return cur.fetchone()[0]
+    row = cur.fetchone()
+    if not row:
+        # fallback muy defensivo: si no logró crear/ubicar, intenta con el nombre
+        cur.execute("SELECT id FROM tiendas WHERE nombre=%s LIMIT 1", (clean(nombre),))
+        row = cur.fetchone()
+    return row[0]
 
 def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
     ean = clean(p.get("ean"))
@@ -123,8 +175,8 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
     return cur.lastrowid
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
-    sku = clean(p.get("sku"))                 # "Código Interno"
-    record_id = clean(p.get("record_id"))     # opcional si lo incorporas luego
+    sku = clean(p.get("sku"))                 # "Código Interno" mapeado a sku_tienda
+    record_id = clean(p.get("record_id"))     # si se usa más adelante
     url = clean(p.get("url")) or ""
     nombre_tienda = clean(p.get("nombre")) or ""
 
@@ -161,12 +213,30 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
     """, (tienda_id, producto_id, url, nombre_tienda))
     return cur.lastrowid
 
-def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
+def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime, fit=None):
     def to_txt_or_none(x):
         v = safe_float(x)
         if v is None:
             return None
         return f"{round(float(v), 2)}"
+
+    precio_lista_txt  = to_txt_or_none(p.get("precio_lista"))
+    precio_oferta_txt = to_txt_or_none(p.get("precio_oferta"))
+
+    if fit is not None:
+        precio_lista_txt  = fit("historico_precios", "precio_lista", precio_lista_txt)
+        precio_oferta_txt = fit("historico_precios", "precio_oferta", precio_oferta_txt)
+        tipo_oferta       = fit("historico_precios", "tipo_oferta", p.get("tipo_oferta"))
+        promo_tipo        = fit("historico_precios", "promo_tipo", p.get("promo_tipo"))
+        promo_reg         = fit("historico_precios", "promo_texto_regular", p.get("precio_regular_promo"))
+        promo_desc        = fit("historico_precios", "promo_texto_descuento", p.get("precio_descuento"))
+        promo_comm        = fit("historico_precios", "promo_comentarios", p.get("comentarios_promo"))
+    else:
+        tipo_oferta = clean(p.get("tipo_oferta"))
+        promo_tipo  = clean(p.get("promo_tipo"))
+        promo_reg   = clean(p.get("precio_regular_promo"))
+        promo_desc  = clean(p.get("precio_descuento"))
+        promo_comm  = clean(p.get("comentarios_promo"))
 
     cur.execute("""
         INSERT INTO historico_precios
@@ -184,12 +254,8 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
           promo_comentarios = VALUES(promo_comentarios)
     """, (
         tienda_id, producto_tienda_id, capturado_en,
-        to_txt_or_none(p.get("precio_lista")), to_txt_or_none(p.get("precio_oferta")),
-        clean(p.get("tipo_oferta")),
-        clean(p.get("promo_tipo")),
-        clean(p.get("precio_regular_promo")),
-        clean(p.get("precio_descuento")),
-        clean(p.get("comentarios_promo")),
+        precio_lista_txt, precio_oferta_txt,
+        tipo_oferta, promo_tipo, promo_reg, promo_desc, promo_comm
     ))
 
 # ================== Pipeline: DF de Carrefour → MySQL ==================
@@ -224,9 +290,18 @@ def persist_carrefour_df_to_mysql(df: pd.DataFrame):
         conn.autocommit = False
         cur = conn.cursor()
 
-        tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
+        # Cargar límites de columnas y crear fit()
+        limits = load_schema_limits(cur)
+        fit = make_fit_fn(limits)
+
+        # Asegurar que TIENDA_* también cumplen largo
+        tienda_codigo_fit = fit("tiendas", "codigo", TIENDA_CODIGO)
+        tienda_nombre_fit = fit("tiendas", "nombre", TIENDA_NOMBRE)
+
+        tienda_id = upsert_tienda(cur, tienda_codigo_fit, tienda_nombre_fit)
 
         inserted_hist = 0
+
         # itertuples(..., name=None) devuelve tuplas simples (sin atributos)
         for row in df.itertuples(index=False, name=None):
             # Helper para leer por nombre usando índice
@@ -234,33 +309,37 @@ def persist_carrefour_df_to_mysql(df: pd.DataFrame):
                 i = col.get(name)
                 return row[i] if i is not None else None
 
-            # Construye p ya limpio para evitar pd.NA aguas abajo
+            # Construye p ya encajado/limpio contra límites de esquema
             p = {
-                "ean":          clean(val("EAN")),
-                "nombre":       clean(val("Nombre Producto")),
-                "marca":        clean(val("Marca")),
-                "fabricante":   clean(val("Fabricante")),
-                "categoria":    clean(val("Categoría")),
-                "subcategoria": clean(val("Subcategoría")),
-                "precio_lista": safe_float(val("Precio de Lista")),
-                "precio_oferta":safe_float(val("Precio de Oferta")),
-                "tipo_oferta":  clean(val("Tipo de Oferta")),
-                "url":          clean(val("URL")),
+                # productos.*
+                "ean":          fit("productos", "ean", val("EAN"), digits_only=True),
+                "nombre":       fit("productos", "nombre", val("Nombre Producto")),
+                "marca":        fit("productos", "marca", val("Marca")),
+                "fabricante":   fit("productos", "fabricante", val("Fabricante")),
+                "categoria":    fit("productos", "categoria", val("Categoría")),
+                "subcategoria": fit("productos", "subcategoria", val("Subcategoría")),
 
-                # Identificadores por tienda:
-                "sku":          clean(val("Código Interno")),   # usamos Código Interno como sku_tienda
-                "record_id":    None,
+                # precios (se convertirán a texto 2 decimales dentro de insert_historico)
+                "precio_lista":  safe_float(val("Precio de Lista")),
+                "precio_oferta": safe_float(val("Precio de Oferta")),
+                "tipo_oferta":   fit("historico_precios", "tipo_oferta", val("Tipo de Oferta")),
 
-                # Promos (no vienen en este DF; quedan en None):
-                "promo_tipo":             None,
-                "precio_regular_promo":   None,
-                "precio_descuento":       None,
-                "comentarios_promo":      None,
+                # producto_tienda.*
+                "url":           fit("producto_tienda", "url_tienda", val("URL")),
+                "sku":           fit("producto_tienda", "sku_tienda", val("Código Interno")),
+                "record_id":     None,  # si algún día lo usas: fit("producto_tienda","record_id_tienda", ...),
+                "nombre_tienda": fit("producto_tienda", "nombre_tienda", val("Nombre Producto")),
+
+                # promos (si las traes del scraper, aplica fit para evitar 1406)
+                "promo_tipo":             fit("historico_precios", "promo_tipo", None),
+                "precio_regular_promo":   fit("historico_precios", "promo_texto_regular", None),
+                "precio_descuento":       fit("historico_precios", "promo_texto_descuento", None),
+                "comentarios_promo":      fit("historico_precios", "promo_comentarios", None),
             }
 
             producto_id = find_or_create_producto(cur, p)
             pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
-            insert_historico(cur, tienda_id, pt_id, p, capturado_en)
+            insert_historico(cur, tienda_id, pt_id, p, capturado_en, fit=fit)
             inserted_hist += 1
 
         conn.commit()
@@ -277,7 +356,6 @@ def persist_carrefour_df_to_mysql(df: pd.DataFrame):
         except Exception:
             pass
 
-
 # ================== Ejemplo de uso (integra con tu scraper) ==================
 if __name__ == "__main__":
     import logging
@@ -290,7 +368,7 @@ if __name__ == "__main__":
     if df is None or df.empty:
         print("No se obtuvieron productos.")
     else:
-        # Inserta directo en MySQL
+        # Inserta directo en MySQL con protección de longitudes
         persist_carrefour_df_to_mysql(df)
 
     elapsed = time.time() - t0

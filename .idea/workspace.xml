@@ -5,19 +5,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="21/10/2025 correcciones jumbo">
-      <change afterPath="$PROJECT_DIR$/final/10_jumbo/pruebas/pruebaapi.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/prueba4.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/pruebamysql3.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlitJumbo.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlit_jumbo_db.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vps/borrar/app.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vps/correcciones/cron_manager.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/27_proxi_probar/probandoproxi.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/Vtex/archivovtex.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/base_de_datos.sql" beforeDir="false" afterPath="$PROJECT_DIR$/base_de_datos.sql" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/final/10_jumbo/jumboMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/10_jumbo/jumboMysql.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/jumboMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/10_jumbo/pruebas/jumboMysql.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/prueba dos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/10_jumbo/pruebas/prueba dos.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/darMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/darMysql.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/dar_mysql_2.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/dar_mysql_2.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/1_carrefour/carrefour_MySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/1_carrefour/carrefour_MySQL.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/PRUEBA.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/PRUEBA.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/correcciones/cron_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/correcciones/cron_manager.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -73,6 +68,7 @@
     &quot;Python.anonima.executor&quot;: &quot;Run&quot;,
     &quot;Python.apicaptcha.executor&quot;: &quot;Run&quot;,
     &quot;Python.app_regiones.executor&quot;: &quot;Run&quot;,
+    &quot;Python.archivovtex.executor&quot;: &quot;Run&quot;,
     &quot;Python.atomo.executor&quot;: &quot;Run&quot;,
     &quot;Python.atomomysql.executor&quot;: &quot;Run&quot;,
     &quot;Python.base_datos.executor&quot;: &quot;Run&quot;,
@@ -191,7 +187,7 @@
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\3_comodin" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.main">
+  <component name="RunManager">
     <configuration name="genovesamysql" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="scrapingTiendas" />
       <option name="ENV_FILES" value="" />
@@ -524,7 +520,15 @@
       <option name="project" value="LOCAL" />
       <updated>1761103996364</updated>
     </task>
-    <option name="localTasksCounter" value="33" />
+    <task id="LOCAL-00033" summary="21/10/2025 correcciones jumbo">
+      <option name="closed" value="true" />
+      <created>1761763784980</created>
+      <option name="number" value="00033" />
+      <option name="presentableId" value="LOCAL-00033" />
+      <option name="project" value="LOCAL" />
+      <updated>1761763784981</updated>
+    </task>
+    <option name="localTasksCounter" value="34" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

@@ -281,3 +281,7 @@ BEGIN
     END IF;
 END//
 DELIMITER ;
+
+ALTER TABLE historico_precios
+  ALGORITHM=INPLACE, LOCK=NONE,
+  ADD INDEX idx_capturado (capturado_en);

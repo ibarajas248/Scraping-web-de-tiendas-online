@@ -12,6 +12,7 @@ def cron_manager():
     from pathlib import PurePosixPath
     import hashlib
     from datetime import datetime
+    import time  # <- añadido para refrescar consola
 
     # =========================
     # CONFIG POR DEFECTO (EDITABLE EN LA UI)
@@ -43,14 +44,18 @@ def cron_manager():
         return out, err, rc
 
     def run_ssh_stdin(host: str, port: int, user: str, password: str, command: str, input_data: str) -> Tuple[str, str, int]:
+        """
+        Ejecuta un comando enviando datos por stdin y captura stdout/stderr.
+        """
         client = _ssh_client(host, port, user, password)
-        chan = client.get_transport().open_session()
-        chan.exec_command(command)
-        chan.send(input_data.encode())
-        chan.shutdown_write()
-        out = chan.recv(65535).decode(errors="ignore")
-        err = ""
-        rc = chan.recv_exit_status()
+        stdin, stdout, stderr = client.exec_command(command)
+        stdin.write(input_data)
+        stdin.flush()
+        # Señala EOF para que el proceso (crontab) termine de leer
+        stdin.channel.shutdown_write()
+        out = stdout.read().decode(errors="ignore")
+        err = stderr.read().decode(errors="ignore")
+        rc = stdout.channel.recv_exit_status()
         client.close()
         return out, err, rc
 
@@ -73,12 +78,6 @@ def cron_manager():
         if ("no crontab for" in (out + err).lower()) or (not out.strip() and not err.strip()):
             return []
         return out.splitlines()
-
-    def set_crontab_lines(host: str, port: int, user: str, password: str, lines: List[str]) -> None:
-        content = "\n".join(lines).rstrip() + "\n"
-        _, err, rc = run_ssh_stdin(host, port, user, password, "crontab -", content)
-        if rc != 0:
-            raise RuntimeError(f"Error actualizando crontab: {err or 'desconocido'}")
 
     def is_env_or_comment(line: str) -> bool:
         ls = line.strip()
@@ -108,6 +107,29 @@ def cron_manager():
 
     def format_spec_line(spec: str, cmd: str) -> str:
         return f"{spec} {cmd}".strip()
+
+    def set_crontab_lines(host: str, port: int, user: str, password: str, lines: List[str]) -> None:
+        """
+        Valida y escribe líneas de crontab. Muestra errores reales de `crontab -`.
+        """
+        cleaned = []
+        for i, ln in enumerate(lines):
+            if ln is None:
+                continue
+            ln = ln.replace("\r", "")
+            if not ln.strip():
+                cleaned.append("")
+                continue
+            if is_env_or_comment(ln) or is_spec_line(ln) or _CRON_RE.match(ln):
+                cleaned.append(ln)
+            else:
+                raise RuntimeError(f"Línea inválida en crontab (idx {i}): {ln}")
+
+        content = "\n".join(cleaned).rstrip("\n") + "\n"
+        cmd = "env LANG=C LC_ALL=C crontab -"
+        out, err, rc = run_ssh_stdin(host, port, user, password, cmd, content)
+        if rc != 0:
+            raise RuntimeError(f"Error actualizando crontab: {err.strip() or out.strip() or 'desconocido'}")
 
     # =========================
     # LOCK + TIMEOUT HELPERS
@@ -180,6 +202,67 @@ def cron_manager():
         out, _, _ = run_ssh_command(host, port, user, password, f"ls -1 {path}/*.py 2>/dev/null || true")
         lines = [l.strip() for l in out.splitlines() if l.strip()]
         return lines
+
+    # =========================
+    # ** NUEVOS HELPERS: EJECUCIÓN EN BACKGROUND + LOG **
+    # =========================
+    def start_remote_background(host: str, port: int, user: str, password: str, command: str) -> Tuple[str, int, str]:
+        """
+        Lanza `command` en background en el VPS con setsid+nohup y devuelve (run_id, pid, log_path).
+        No aplica flock/timeout aquí para evitar problemas de quoting.
+        El proceso sigue corriendo aunque se cierre la sesión/Streamlit.
+        """
+        import base64, json
+        base = command.strip()
+
+        # Para evitar romper comillas del comando original, lo enviamos en base64
+        cmd_b64 = base64.b64encode(base.encode("utf-8")).decode("ascii")
+
+        bash = (
+            "bash -lc '"
+            "LOG_DIR=/tmp/cron_panel_logs; "
+            "mkdir -p \"$LOG_DIR\"; "
+            "RUN_ID=$(date +%Y%m%d_%H%M%S)_$RANDOM; "
+            "LOG=\"$LOG_DIR/${RUN_ID}.log\"; "
+            # decodifica el comando y lo ejecuta desacoplado
+            "CMD=$(echo " + cmd_b64 + " | base64 -d); "
+            "echo \"[START] $(date -Is) CMD: $CMD\" > \"$LOG\"; "
+            "setsid nohup bash -lc \"$CMD\" >> \"$LOG\" 2>&1 & "
+            "PID=$!; "
+            "echo \"[PID] $PID\" >> \"$LOG\"; "
+            "echo \"${RUN_ID}:$PID:$LOG\"; "
+            "'"
+        )
+
+        out, err, rc = run_ssh_command(host, port, user, password, bash)
+        if rc != 0 or not out.strip():
+            raise RuntimeError(f"No se pudo lanzar el proceso: {err or out or 'error desconocido'}")
+
+        parts = out.strip().split(":")
+        if len(parts) < 3:
+            raise RuntimeError(f"Respuesta inesperada al lanzar: {out}")
+        run_id, pid_str, log_path = parts[0], parts[1], ":".join(parts[2:])
+        try:
+            pid = int(pid_str)
+        except Exception:
+            pid = -1
+        return run_id, pid, log_path
+
+    def tail_remote_log(host: str, port: int, user: str, password: str, log_path: str, n: int = 200) -> str:
+        """
+        Devuelve las últimas n líneas del log de forma segura.
+        """
+        cmd = f"bash -lc 'tail -n {int(n)} {shlex.quote(log_path)} 2>/dev/null || true'"
+        out, _, _ = run_ssh_command(host, port, user, password, cmd)
+        return out or ""
+
+    def is_pid_alive(host: str, port: int, user: str, password: str, pid: int) -> bool:
+        """
+        True si el PID está vivo en el VPS.
+        """
+        cmd = f"bash -lc 'ps -p {int(pid)} >/dev/null 2>&1; echo $?'"  # 0 => vivo
+        out, _, _ = run_ssh_command(host, port, user, password, cmd)
+        return out.strip() == "0"
 
     # =========================
     # UI HELPERS
@@ -330,10 +413,13 @@ def cron_manager():
             to_del_label = st.selectbox("Selecciona el job a eliminar", ["(ninguno)"] + labels)
             if to_del_label != "(ninguno)" and st.button("Eliminar seleccionado"):
                 del_idx = opt_map[to_del_label]
-                new_lines = [ln for i, ln in enumerate(lines) if i != del_idx]
+                # Relee crontab para no usar snapshot viejo
+                current = get_crontab_lines(host, port, user, password)
+                new_lines = [ln for i, ln in enumerate(current) if i != del_idx]
                 try:
                     set_crontab_lines(host, port, user, password, new_lines)
-                    st.success("Job eliminado ✅. Recarga la página para ver cambios.")
+                    st.success("Job eliminado ✅.")
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Error al eliminar job: {e}")
         else:
@@ -370,6 +456,59 @@ def cron_manager():
                 st.warning("No hay .py en esta carpeta.")
     if py_file:
         st.success(f"Script seleccionado: `{os.path.basename(py_file)}`")
+
+    # ======== ▶️ EJECUTAR SCRIPT AHORA (BACKGROUND) ========
+    st.subheader("▶️ Ejecutar script ahora (background)")
+    st.caption("Lanza el script en el VPS con nohup+setsid. Verás el log en vivo; si cierras la página, el proceso sigue ejecutándose en el servidor.")
+
+    # Valor por defecto para ejecutar
+    exec_default_cmd = ""
+    if py_file:
+        exec_default_cmd = f"{DEFAULT_PYTHON_BIN} {py_file}"
+    manual_cmd = st.text_input("Comando a ejecutar ahora", value=exec_default_cmd)
+
+    c_exec1, c_exec2, c_exec3 = st.columns([1,1,2])
+    run_btn = c_exec1.button("🚀 Ejecutar ahora")
+    refresh_btn = c_exec2.button("🔄 Actualizar salida")
+
+    # Mantener estado de la ejecución actual en la sesión
+    if "run_info" not in st.session_state:
+        st.session_state.run_info = None  # dict: {run_id, pid, log_path}
+
+    if run_btn:
+        if not manual_cmd.strip():
+            st.error("Debes escribir un comando para ejecutar.")
+        else:
+            try:
+                run_id, pid, log_path = start_remote_background(host, port, user, password, manual_cmd.strip())
+                st.session_state.run_info = {"run_id": run_id, "pid": pid, "log": log_path}
+                st.success(f"Ejecutando script… RUN_ID **{run_id}** (PID {pid}). Log: `{log_path}`")
+            except Exception as e:
+                st.error(f"No se pudo lanzar el proceso: {e}")
+
+    # Panel de consola
+    if st.session_state.run_info:
+        run_id = st.session_state.run_info["run_id"]
+        pid = st.session_state.run_info["pid"]
+        log_path = st.session_state.run_info["log"]
+
+        alive = is_pid_alive(host, port, user, password, pid) if pid > 0 else False
+        status_txt = "🟢 en ejecución" if alive else "⚪ finalizado (o no se encuentra PID)"
+        st.markdown(f"**RUN_ID:** `{run_id}`  |  **PID:** `{pid}`  |  **Estado:** {status_txt}")
+        st.caption(f"Log: `{log_path}`  (mostrando las últimas 200 líneas)")
+
+        # Contenedor de consola
+        console = st.empty()
+        # Cargamos salida
+        log_tail = tail_remote_log(host, port, user, password, log_path, n=200)
+        console.code(log_tail or "[sin salida aún]")
+
+        # Auto-refresh suave si el proceso sigue vivo o el usuario presiona refrescar
+        if alive or refresh_btn:
+            # Pequeño retardo para que no sea agresivo
+            time.sleep(0.5)
+            # fuerza una recarga suave de la sección
+            st.experimental_rerun()
 
     # ======== AGREGAR / EDITAR ========
     st.subheader("✍️ Agregar / Editar job")
@@ -431,9 +570,10 @@ def cron_manager():
         st.caption("El panel envuelve con `flock -n` + `timeout 10h` y redirige a `/dev/null 2>&1` automáticamente.")
 
         def apply_redirect(command: str) -> str:
-            # Envolver con flock + timeout 10h
-            wrapped = ensure_locked_timeout(command.strip(), timeout_hours=10)
-            # Redirigir salida (sin logs)
+            # Envolver con flock + timeout 10h, evitando duplicar redirecciones
+            base = command.strip()
+            wrapped = ensure_locked_timeout(base, timeout_hours=10)
+            wrapped = re.sub(r"\s+>\s*/dev/null.*$", "", wrapped)
             return f"{wrapped} > /dev/null 2>&1"
 
         cA, cB = st.columns(2)
@@ -449,10 +589,12 @@ def cron_manager():
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             comment = f"# añadido por panel {timestamp}"
             new_line = format_cron_line(minute, hour, day, month, weekday_val, new_cmd)
-            new_lines = lines[:] + [comment, new_line]
             try:
-                set_crontab_lines(host, port, user, password, new_lines)
+                # Relee crontab real y agrega (evita snapshot viejo)
+                current = get_crontab_lines(host, port, user, password)
+                set_crontab_lines(host, port, user, password, current + [comment, new_line])
                 st.success(f"Agregado ✅: {new_line}")
+                st.rerun()
             except Exception as e:
                 st.error(f"Error agregando job: {e}")
 
@@ -462,16 +604,33 @@ def cron_manager():
         elif not cmd.strip():
             st.error("Debes especificar un comando.")
         else:
+            # Construye la línea ORIGINAL (tal como está en el crontab)
+            original_line = format_cron_line(
+                selected_row["Spec/Min"], selected_row["Hora"], selected_row["Día"],
+                selected_row["Mes"], selected_row["DíaSem"], selected_row["Comando"]
+            )
+            # Nueva línea con cambios del formulario
             new_cmd = apply_redirect(cmd.strip())
-            updated = format_cron_line(minute, hour, day, month, weekday_val, new_cmd)
-            new_lines = lines[:]
+            updated_line = format_cron_line(minute, hour, day, month, weekday_val, new_cmd)
+
             try:
-                new_lines[selected_row["line_idx"]] = updated
-                set_crontab_lines(host, port, user, password, new_lines)
-                st.success(f"Actualizado ✅: {updated}")
+                # Relee crontab real y reemplaza la línea original por la nueva
+                current = get_crontab_lines(host, port, user, password)
+                try:
+                    pos = current.index(original_line)
+                except ValueError:
+                    # Si no se encuentra por exactitud (p. ej. fue modificado afuera), caemos al índice visible como fallback
+                    pos = selected_row["line_idx"] if 0 <= selected_row["line_idx"] < len(current) else None
+
+                if pos is None:
+                    raise RuntimeError("No se pudo localizar la línea original a editar en el crontab actual.")
+
+                current[pos] = updated_line
+                set_crontab_lines(host, port, user, password, current)
+                st.success(f"Actualizado ✅: {updated_line}")
+                st.rerun()
             except Exception as e:
                 st.error(f"Error actualizando job: {e}")
-
 
 # Para ejecutarlo como app de Streamlit:
 if __name__ == "__main__":
