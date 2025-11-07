@@ -5,14 +5,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="21/10/2025 correcciones jumbo">
-      <change afterPath="$PROJECT_DIR$/final/27_proxi_probar/probandoproxi.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/Vtex/archivovtex.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/10_jumbo/jumbo_excel.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/correcciones/bebes-y-ninos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/vps/ftp.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/base_de_datos.sql" beforeDir="false" afterPath="$PROJECT_DIR$/base_de_datos.sql" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/10_jumbo/jumboMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/10_jumbo/jumboMysql.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/1_carrefour/carrefour_MySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/1_carrefour/carrefour_MySQL.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/PRUEBA.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/PRUEBA.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/vps/correcciones/cron_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/correcciones/cron_manager.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/jumboMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/10_jumbo/pruebas/jumboMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/prueba dos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/10_jumbo/pruebas/prueba dos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/11_anonima/proxy/prueba.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/proxy/prueba.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/Vtex/archivovtex.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/Vtex/archivovtex.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/reporte.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/reporte.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -106,6 +108,7 @@
     &quot;Python.dkowdjp.executor&quot;: &quot;Run&quot;,
     &quot;Python.ean.executor&quot;: &quot;Run&quot;,
     &quot;Python.elPuente.executor&quot;: &quot;Run&quot;,
+    &quot;Python.electrodomesticos.executor&quot;: &quot;Run&quot;,
     &quot;Python.estructura_coto.executor&quot;: &quot;Run&quot;,
     &quot;Python.frescos.executor&quot;: &quot;Run&quot;,
     &quot;Python.gallega1.executor&quot;: &quot;Run&quot;,
@@ -116,6 +119,7 @@
     &quot;Python.jumbo.executor&quot;: &quot;Run&quot;,
     &quot;Python.jumboMysql.executor&quot;: &quot;Run&quot;,
     &quot;Python.jumbo_correcion.executor&quot;: &quot;Run&quot;,
+    &quot;Python.jumbo_excel.executor&quot;: &quot;Run&quot;,
     &quot;Python.kilbel.executor&quot;: &quot;Run&quot;,
     &quot;Python.kilbeldb.executor&quot;: &quot;Run&quot;,
     &quot;Python.laAnonima.executor&quot;: &quot;Run&quot;,
@@ -162,7 +166,7 @@
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
     &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/David/PycharmProjects/scrapingTiendas/vps/correcciones&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/David/PycharmProjects/scrapingTiendas/final/8_disco/sucursales/disco_cordoba/correcciones&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -173,11 +177,11 @@
 }</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\8_disco\sucursales\disco_cordoba\correcciones" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps\correcciones" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\12_lacoopeEnCasa\pruebacope\categorias" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\11_anonima\proxy\proxy_categorias" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\8_disco\sucursales\disco_cordoba" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\request\disco_falta\disco_sucursales\prubeas" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps" />
@@ -187,7 +191,7 @@
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\3_comodin" />
     </key>
   </component>
-  <component name="RunManager">
+  <component name="RunManager" selected="Python.main">
     <configuration name="genovesamysql" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="scrapingTiendas" />
       <option name="ENV_FILES" value="" />
@@ -528,7 +532,15 @@
       <option name="project" value="LOCAL" />
       <updated>1761763784981</updated>
     </task>
-    <option name="localTasksCounter" value="34" />
+    <task id="LOCAL-00034" summary="21/10/2025 correcciones jumbo">
+      <option name="closed" value="true" />
+      <created>1761865751643</created>
+      <option name="number" value="00034" />
+      <option name="presentableId" value="LOCAL-00034" />
+      <option name="project" value="LOCAL" />
+      <updated>1761865751643</updated>
+    </task>
+    <option name="localTasksCounter" value="35" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

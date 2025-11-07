@@ -2,6 +2,9 @@
 # Retail Analytics – Streamlit (conexión directa)
 # Ejecutar en el VPS (conexión directa, sin túnel):
 #   streamlit run app.py --server.address 127.0.0.1 --server.port 8090 --server.headless true
+
+
+
 def iniciaReporte():
     import io
     import os
@@ -478,7 +481,7 @@ def iniciaReporte():
 
 
     # ---------- Navegación "tabs" con sidebars distintos ----------
-    VISTAS = ["Reporte", "jobs", "ean", "reporte rapido aux","tiendas"]
+    VISTAS = ["Reporte", "jobs", "ean", "reporte rapido aux","tiendas","cargar maestro"]
     vista = st.radio("Secciones", VISTAS, horizontal=True, key="vista_actual")
 
     # ---- Sidebars por vista ----
@@ -821,6 +824,13 @@ def iniciaReporte():
     elif vista == "reporte rapido aux":
         import prueba
         prueba.prueba(engine)
+    elif vista == "cargar maestro":
+        import ftp
+        ftp.ftpcarga()
+
+
+
+
 
     elif vista == "tiendas":
         import tiendas

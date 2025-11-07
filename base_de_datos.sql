@@ -285,3 +285,6 @@ DELIMITER ;
 ALTER TABLE historico_precios
   ALGORITHM=INPLACE, LOCK=NONE,
   ADD INDEX idx_capturado (capturado_en);
+
+
+CREATE INDEX idx_hist_tienda ON historico_precios (tienda_id);

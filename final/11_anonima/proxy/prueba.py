@@ -1,343 +1,365 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-La Anónima (categoría -> detalle) → MySQL + PROXY (DataImpulse)
-
-- Reutiliza scraper Selenium+BS4 para recolectar detalles (sin EAN).
-- Inserta/actualiza:
-  * tiendas (codigo='laanonima', nombre='La Anónima Online')
-  * productos (ean=NULL; match por (nombre, marca) o por nombre)
-  * producto_tienda (sku_tienda=sku, record_id_tienda=id_item, url_tienda=url, nombre_tienda=nombre)
-  * historico_precios (precio_lista, precio_oferta=precio_plus si existe, tipo_oferta='PLUS')
-
-Índices/UNIQUE sugeridos:
-  tiendas(codigo) UNIQUE
-  producto_tienda(tienda_id, sku_tienda) UNIQUE
-  -- opcional: producto_tienda(tienda_id, record_id_tienda) UNIQUE
-  -- opcional: producto_tienda(tienda_id, url_tienda) UNIQUE
-  historico_precios(tienda_id, producto_tienda_id, capturado_en) UNIQUE  [idempotencia temporal]
-
-PROXY:
-- Preconfigurado para DataImpulse (HTTP con credenciales via Selenium Wire).
-- Puedes cambiar a variables de entorno si lo prefieres.
-"""
-
-import re
-import time
-import html
-import os
-import sys
-import seleniumwire
-from typing import List, Dict, Optional, Any, Tuple
+from time import sleep, perf_counter
+import re, json, os, sys, threading, time
+import pandas as pd
 from urllib.parse import urljoin
 from datetime import datetime
+from typing import Dict, Any, List, Optional, Tuple
 
+# ===== MySQL / conexión
 import numpy as np
-import pandas as pd
-from bs4 import BeautifulSoup
-
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-
 from mysql.connector import Error as MySQLError
 
-# ===== Selenium Wire (requerido para proxy con auth) =====
-try:
-    from seleniumwire import webdriver as wire_webdriver  # type: ignore
-    SELENIUM_WIRE_AVAILABLE = True
-except Exception:
-    SELENIUM_WIRE_AVAILABLE = False
+# ===== Memoria (psutil)
+import psutil
 
-# ===== Import base_datos.get_conn (ajusta si hace falta) =====
+# añade la carpeta raíz (2 niveles más arriba) al sys.path
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )
-from base_datos import get_conn  # noqa: E402
+from base_datos import get_conn  # <- tu conexión MySQL
 
+# ===== Selenium (SIN selenium-wire)
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 
-# ================= Config scraping =================
-BASE = "https://supermercado.laanonimaonline.com"
-START = f"{BASE}/almacen/n1_1/pag/1/"
+# =================== Config scraping ===================
+URL = "https://www.laanonima.com.ar/almacen/n1_512/"
+POSTAL_CODE = "1001"
+OUT_XLSX = "laanonima_hogar_jardin_automotor_optimizado.xlsx"
 
+# En VPS: headless recomendado
 HEADLESS = True
-PAGE_LOAD_TIMEOUT = 30
-IMPLICIT_WAIT = 2
-SCROLL_PAUSES = [300, 600, 900]
-SLEEP_BETWEEN_PAGES = 1.2
-SLEEP_BETWEEN_PRODUCTS = 0.8
-MAX_PAGES: Optional[int] = None  # None = todas
 
+# Dominios/recursos a bloquear (agresivo)
+BLOCK_URL_PATTERNS = [
+    # Imágenes (con querystrings)
+    "*://*/*.png*", "*://*/*.jpg*", "*://*/*.jpeg*", "*://*/*.gif*",
+    "*://*/*.webp*", "*://*/*.svg*",
+    # Fuentes
+    "*://*/*.woff*", "*://*/*.woff2*", "*://*/*.ttf*", "*://*/*.otf*", "*://*/*.eot*",
+    # Favicons / manifest
+    "*://*/favicon.ico*", "*://*/site.webmanifest*",
+    # Maps de sourcemaps pesados
+    "*://*/*.css.map*", "*://*/*.js.map*",
+    # Trackers
+    "*doubleclick.net*", "*googletagmanager.com*", "*google-analytics.com*",
+    "*facebook.net*", "*hotjar.com*", "*newrelic.com*", "*optimizely.com*"
+]
+
+# =================== Config MySQL (tienda) ===================
 TIENDA_CODIGO = "laanonima"
-TIENDA_NOMBRE = "La Anónima Online"
+TIENDA_NOMBRE = "La Anónima"
 
-# ================= CONFIGURACIÓN DE PROXY (DataImpulse) =================
-"""
-Modos:
-- PROXY_MODE = "none"       -> sin proxy (usa IP pública del VPS/PC)
-- PROXY_MODE = "basic"      -> proxy sin credenciales (HTTP/HTTPS/SOCKS5) usando --proxy-server
-- PROXY_MODE = "auth"       -> proxy con credenciales usando Selenium Wire (HTTP/HTTPS/SOCKS5)
+# =================== Utils memoria ===================
+def _bytes_to_mb(b: int) -> float:
+    return round(b / (1024 * 1024), 2)
 
-DataImpulse (credenciales provistas por el cliente):
-  Usuario:      2cf8063dbace06f69df4
-  Contraseña:   61425d26fb3c7287
-  Host:         gw.dataimpulse.com
-  Puerto:       823
-  Protocolo:    HTTP
+class MemorySampler:
+    def __init__(self, interval: float = 1.0):
+        self.interval = interval
+        self._stop = threading.Event()
+        self.samples: List[int] = []
+        self.last_breakdown: List[Tuple[str, int]] = []
+        self._thread = threading.Thread(target=self._run, daemon=True)
 
-Si quieres override con variables de entorno, configúralas antes de ejecutar.
-"""
-
-# Defaults fijos a DataImpulse; permiten override por ENV si lo deseas
-PROXY_MODE = os.getenv("PROXY_MODE", "auth").lower()         # "none" | "basic" | "auth"
-PROXY_TYPE = os.getenv("PROXY_TYPE", "http").lower()         # "http" | "https" | "socks5"
-
-PROXY_HOST = os.getenv("PROXY_HOST", "gw.dataimpulse.com")
-PROXY_PORT = int(os.getenv("PROXY_PORT", "823"))
-PROXY_USER = os.getenv("PROXY_USER", "2cf8063dbace06f69df4")
-PROXY_PASS = os.getenv("PROXY_PASS", "61425d26fb3c7287")
-
-# (Opcional) Sesiones rotativas por username si el proveedor lo permite:
-# PROXY_USER = f"{PROXY_USER}-session-12345"
-
-
-# ================= Utilidades =================
-def wait_dom(driver, css: str, timeout: int = 15):
-    return WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.CSS_SELECTOR, css)))
-
-
-def try_click_cookies(driver):
-    for sel in [
-        "button#onetrust-accept-btn-handler",
-        "button[aria-label='Aceptar']",
-        "button.cookie-accept",
-        "div.cookie a.btn, div.cookie button",
-    ]:
+    def _collect_total(self) -> int:
         try:
-            el = driver.find_element(By.CSS_SELECTOR, sel)
-            if el.is_displayed():
-                el.click()
-                time.sleep(0.2)
-                return
+            proc = psutil.Process(os.getpid())
         except Exception:
-            pass
+            return 0
+        rss_total = 0
+        breakdown = []
+        try:
+            procs = [proc] + proc.children(recursive=True)
+        except Exception:
+            procs = [proc]
+        for p in procs:
+            try:
+                mem = p.memory_info().rss
+                rss_total += mem
+                breakdown.append((p.name(), mem))
+            except Exception:
+                continue
+        breakdown.sort(key=lambda x: x[1], reverse=True)
+        self.last_breakdown = breakdown[:10]
+        return rss_total
 
+    def _run(self):
+        while not self._stop.is_set():
+            total_rss = self._collect_total()
+            self.samples.append(total_rss)
+            self._stop.wait(self.interval)
 
-def smooth_scroll(driver):
-    for y in SCROLL_PAUSES:
-        driver.execute_script(f"window.scrollTo(0, {y});")
-        time.sleep(0.3)
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(0.4)
+    def start(self): self._thread.start()
+    def stop(self):
+        self._stop.set()
+        self._thread.join(timeout=2.0)
 
+    @property
+    def peak_mb(self) -> float:
+        return _bytes_to_mb(max(self.samples) if self.samples else 0)
 
-def parse_price_text(txt: str) -> Optional[float]:
+    @property
+    def avg_mb(self) -> float:
+        if not self.samples:
+            return 0.0
+        return _bytes_to_mb(int(sum(self.samples) / len(self.samples)))
+
+    def print_report(self, elapsed_s: float):
+        print("🧠 Uso de memoria (proceso + subprocesos):")
+        print(f"   • Pico:     {self.peak_mb} MB")
+        print(f"   • Promedio: {self.avg_mb} MB")
+        print(f"   • Tiempo:   {round(elapsed_s, 2)} s")
+        if self.last_breakdown:
+            print("   • Top consumidores (última muestra):")
+            for name, rss in self.last_breakdown:
+                print(f"      - {name:<18} { _bytes_to_mb(rss) } MB")
+
+# =================== Utils scraping ===================
+_slug_spaces = re.compile(r"\s+")
+
+def parse_money_to_number(txt: str):
     if not txt:
         return None
-    t = txt.strip().replace("$", "").replace(" ", "").replace(".", "").replace(",", ".")
+    t = re.sub(r"[^\d.,-]", "", txt)
+    if not t:
+        return None
+    if "," in t and t.rfind(",") > t.rfind("."):
+        t = t.replace(".", "").replace(",", ".")
+    else:
+        t = t.replace(",", "")
     try:
         return float(t)
-    except ValueError:
+    except Exception:
         return None
 
-
-def text_or_none(node) -> Optional[str]:
-    if not node:
-        return None
-    return re.sub(r"\s+", " ", node.get_text(strip=True)) or None
-
-
-def get_list_links_from_page(driver) -> List[str]:
-    soup = BeautifulSoup(driver.page_source, "lxml")
-    links = []
-    for card in soup.select("div.producto.item a[href*='/almacen/'][href*='/art_']"):
-        href = card.get("href") or ""
-        if not href:
-            continue
-        full = urljoin(BASE, href)
-        if "/art_" in full and full not in links:
-            links.append(full)
-    return links
-
-
-def get_next_page_url(current_url: str, soup: BeautifulSoup) -> Optional[str]:
-    m = re.search(r"/pag/(\d+)/", current_url)
-    if not m:
-        return None
-    cur = int(m.group(1))
-    guess = re.sub(r"/pag/\d+/", f"/pag/{cur + 1}/", current_url)
-    a = soup.select_one(f"a[href*='/pag/{cur + 1}/']")
-    return urljoin(BASE, a["href"]) if a and a.has_attr("href") else guess
-
-
-def parse_detail(html_source: str, url: str) -> Dict[str, Any]:
-    soup = BeautifulSoup(html_source, "lxml")
-
-    # -------- metadatos básicos --------
-    nombre = text_or_none(soup.select_one("h1.titulo_producto.principal"))
-
-    cod_txt = text_or_none(soup.select_one("div.codigo"))  # "Cod. 3115185"
-    sku: Optional[str] = None
-    if cod_txt:
-        m = re.search(r"(\d+)", cod_txt)
-        if m:
-            sku = m.group(1)
-
-    # ocultos
-    sku_hidden = soup.select_one("input[id^='sku_item_imetrics_'][value]")
-    if sku_hidden and not sku:
-        sku = sku_hidden.get("value")
-
-    id_item = None
-    id_item_hidden = soup.select_one("input#id_item[value], input[id^='id_item_'][value]")
-    if id_item_hidden:
-        id_item = id_item_hidden.get("value")
-
-    marca_hidden = soup.select_one("input[id^='brand_item_imetrics_'][value]")
-    marca = marca_hidden.get("value") if marca_hidden else None
-
-    cat_hidden = soup.select_one("input[id^='categorias_item_imetrics_'][value]")
-    categorias = None
-    if cat_hidden:
-        categorias = html.unescape(cat_hidden.get("value") or "").strip()
-
-    descripcion = text_or_none(soup.select_one("div.descripcion div.texto"))
-
-    # -------- precios --------
-    precio_lista = None
-    caja_lista = soup.select_one("div.precio.anterior")
-    if caja_lista:
-        precio_lista = parse_price_text(caja_lista.get_text(" ", strip=True))
-    else:
-        alt = soup.select_one(".precio_complemento .precio.destacado, .precio.destacado")
-        if alt:
-            precio_lista = parse_price_text(alt.get_text(" ", strip=True))
-
-    # precio_plus (oferta PLUS) si existe
-    precio_plus = None
-    plus_node = soup.select_one(".precio-plus .precio b, .precio-plus .precio")
-    if plus_node:
-        precio_plus = parse_price_text(plus_node.get_text(" ", strip=True))
-
-    # -------- imágenes --------
-    imagenes = []
-    for im in soup.select("#img_producto img[src], #galeria_img img[src]"):
-        src = im.get("src")
-        if src and src not in imagenes:
-            imagenes.append(src)
-
-    return {
-        "url": url,
-        "nombre": nombre,
-        "sku": sku,
-        "id_item": id_item,
-        "marca": marca,
-        "categorias": categorias,  # string "Almacén > Galletitas > ..."
-        "precio_lista": precio_lista,
-        "precio_plus": precio_plus,
-        "descripcion": descripcion,
-        "imagenes": " | ".join(imagenes) if imagenes else None,
-    }
-
-
-def grab_category(driver, start_url: str) -> List[Dict[str, Any]]:
-    all_rows: List[Dict[str, Any]] = []
-    visited = set()
-    page_url = start_url
-    page_idx = 0
-
-    while True:
-        page_idx += 1
-        if MAX_PAGES is not None and page_idx > MAX_PAGES:
-            break
-
-        try:
-            driver.get(page_url)
-        except (TimeoutException, WebDriverException):
-            try:
-                driver.get(page_url)
-            except Exception:
-                print(f"⚠️ No se pudo cargar: {page_url}")
-                break
-
-        try_click_cookies(driver)
-        try:
-            wait_dom(driver, "div.producto.item")
-        except TimeoutException:
-            print(f"⚠️ Sin productos visibles en: {page_url}")
-            break
-
-        smooth_scroll(driver)
-        time.sleep(0.3)
-        links = get_list_links_from_page(driver)
-        print(f"🔗 P{page_idx} {len(links)} productos - {page_url}")
-        if not links:
-            break
-
-        for href in links:
-            if href in visited:
-                continue
-            visited.add(href)
-            try:
-                driver.get(href)
-                wait_dom(driver, "h1.titulo_producto.principal")
-                time.sleep(0.25)
-                row = parse_detail(driver.page_source, href)
-                all_rows.append(row)
-                print(f"  ✔ {row.get('nombre') or ''} [{row.get('sku') or ''}]")
-                time.sleep(SLEEP_BETWEEN_PRODUCTS)
-            except TimeoutException:
-                print(f"  ⚠️ Timeout detalle: {href}")
-            except Exception as e:
-                print(f"  ⚠️ Error detalle: {href} -> {e}")
-
-        soup = BeautifulSoup(driver.page_source, "lxml")
-        next_url = get_next_page_url(page_url, soup)
-        if not next_url or next_url == page_url:
-            break
-        page_url = next_url
-        time.sleep(SLEEP_BETWEEN_PAGES)
-
-    return all_rows
-
-
-# ================= MySQL helpers =================
-def clean_txt(x: Any) -> Optional[str]:
-    if x is None:
-        return None
-    s = str(x).strip()
-    return s if s else None
-
-
-def price_to_varchar(x: Any) -> Optional[str]:
-    if x is None:
+def to_txt_price_or_none(v) -> Optional[str]:
+    if v is None:
         return None
     try:
-        v = float(x)
-        if np.isnan(v):
+        f = float(v)
+        if np.isnan(f):
             return None
-        return f"{round(v, 2)}"
+        return f"{round(f, 2)}"
     except Exception:
-        s = str(x).strip()
-        return s if s else None
+        return None
 
+def clean_text(s: Optional[str]) -> Optional[str]:
+    if s is None:
+        return None
+    s = s.strip()
+    s = _slug_spaces.sub(" ", s)
+    return s or None
 
-def split_categoria(categorias: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-    """Parte la cadena 'A > B > C' en (A, B)."""
-    if not categorias:
+def split_categoria(ruta: str) -> Tuple[Optional[str], Optional[str]]:
+    if not ruta:
         return None, None
-    parts = [p.strip() for p in re.split(r">|›", categorias) if p.strip()]
-    cat = parts[0] if len(parts) > 0 else None
-    sub = parts[1] if len(parts) > 1 else None
-    return cat, sub
+    parts = [p.strip() for p in re.split(r">\s*", ruta.replace("&gt;", ">")) if p.strip()]
+    if not parts:
+        return None, None
+    if len(parts) == 1:
+        return parts[0], None
+    return parts[0], parts[-1]
 
+def looks_like_blocked(html: str) -> bool:
+    if not html:
+        return False
+    needles = [
+        "cf-challenge", "captcha", "hcaptcha", "cloudflare", "verifica que eres humano",
+        "Access Denied", "Request unsuccessful", "Temporarily unavailable"
+    ]
+    html_low = html.lower()
+    return any(n in html_low for n in needles)
 
+def setup_driver() -> webdriver.Chrome:
+    opts = Options()
+    if HEADLESS:
+        opts.add_argument("--headless=new")
+        opts.add_argument("--window-size=1366,900")
+    else:
+        opts.add_argument("--start-maximized")
+
+    # Ahorro de recursos / huella baja
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-background-timer-throttling")
+    opts.add_argument("--disable-backgrounding-occluded-windows")
+    opts.add_argument("--disable-renderer-backgrounding")
+    # Desactivar render de imágenes (bloquea la carga en la mayoría de casos)
+    opts.add_argument("--blink-settings=imagesEnabled=false")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+
+    # User Agent realista
+    UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/127.0.0.0 Safari/537.36"
+    )
+
+    # Suavizar huellas y BLOQUEAR imágenes en prefs
+    prefs = {
+        "profile.managed_default_content_settings.images": 2,  # 2 = bloqueado
+        "profile.default_content_setting_values.images": 2,
+        # Por si hay videos/plugins que intenten precargar
+        "profile.managed_default_content_settings.plugins": 2,
+        "profile.managed_default_content_settings.multiple-automatic-downloads": 2,
+    }
+    opts.add_experimental_option("prefs", prefs)
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option("useAutomationExtension", False)
+
+    # No esperar a recursos tardíos
+    opts.set_capability("pageLoadStrategy", "eager")
+
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=opts
+    )
+
+    # Parcheo de webdriver + UA + bloqueo por URL con CDP
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+        })
+        driver.execute_cdp_cmd(
+            "Network.setUserAgentOverride",
+            {"userAgent": UA, "acceptLanguage": "es-AR,es;q=0.9,en;q=0.8", "platform": "Win32"}
+        )
+        driver.execute_cdp_cmd("Emulation.setLocaleOverride", {"locale": "es-AR"})
+        driver.execute_cdp_cmd("Emulation.setTimezoneOverride", {"timezoneId": "America/Argentina/Buenos_Aires"})
+        driver.execute_cdp_cmd("Network.enable", {})
+        driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": BLOCK_URL_PATTERNS})
+    except Exception:
+        pass
+
+    return driver
+
+def apply_postal_code(driver, wait: WebDriverWait, postal_code: str):
+    try:
+        cp_input = wait.until(EC.presence_of_element_located((By.ID, "idCodigoPostalUnificado")))
+    except Exception:
+        try:
+            cp_input = wait.until(EC.presence_of_element_located((
+                By.CSS_SELECTOR, "input[name*='CodigoPostal'], input[placeholder*='Postal']"
+            )))
+        except Exception as e:
+            print(f"[AVISO] No se pudo interactuar con el modal de CP (no encontrado): {e}")
+            return
+
+    try:
+        cp_input.clear()
+        cp_input.send_keys(postal_code)
+        cp_input.send_keys(Keys.ENTER)
+        driver.execute_script("""
+            const inp = arguments[0];
+            if (inp) { inp.dispatchEvent(new Event('input', { bubbles: true })); }
+        """, cp_input)
+        try:
+            close_btn = WebDriverWait(driver, 4).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "#btnCerrarCodigoPostal, .btn-cerrar, .modal-close, button.close"))
+            )
+            close_btn.click()
+        except Exception:
+            pass
+        sleep(1.0)
+    except Exception as e:
+        print(f"[AVISO] No se pudo interactuar con el modal de CP: {e}")
+
+def wait_for_cards_or_diagnose(driver, css_card_anchor: str, timeout: int = 30) -> bool:
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, css_card_anchor))
+        )
+        return True
+    except Exception:
+        try:
+            html = driver.page_source
+            with open("debug_laaanonima.html", "w", encoding="utf-8") as f:
+                f.write(html)
+            driver.save_screenshot("debug_laaanonima.png")
+            print("🧪 Guardado debug_laaanonima.html y debug_laaanonima.png")
+            print(f"URL actual: {driver.current_url}")
+            print(f"Título: {driver.title}")
+            if looks_like_blocked(html):
+                print("⚠️ Señal de captcha/bloqueo detectada en el HTML.")
+        except Exception:
+            pass
+        return False
+
+def smart_infinite_scroll(driver, wait_css: str, pause=0.9, max_plateaus=5):
+    ok = wait_for_cards_or_diagnose(driver, wait_css, timeout=30)
+    if not ok:
+        for _ in range(6):
+            driver.execute_script("window.scrollBy(0, document.body.scrollHeight/2);")
+            sleep(pause)
+        ok = wait_for_cards_or_diagnose(driver, wait_css, timeout=20)
+        if not ok:
+            print("⚠️ No se detectaron tarjetas; se continúa para diagnóstico.")
+            return
+
+    last_count = 0
+    plateaus = 0
+
+    while plateaus < max_plateaus:
+        for _ in range(3):
+            driver.execute_script("window.scrollBy(0, document.body.scrollHeight/3);")
+            sleep(pause)
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        sleep(pause)
+        count = len(driver.find_elements(By.CSS_SELECTOR, wait_css))
+        if count <= last_count:
+            plateaus += 1
+        else:
+            plateaus = 0
+            last_count = count
+
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    sleep(0.6)
+
+JS_EXTRACT = """
+return Array.from(document.querySelectorAll('div.card a[data-codigo]')).map(a => {
+  const card = a.closest('.card');
+  const q = sel => {
+    const el = card ? card.querySelector(sel) : null;
+    return el ? el.textContent.trim() : '';
+  };
+  const img = card ? card.querySelector('.imagen img') : null;
+  return {
+    codigo: a.dataset.codigo || '',
+    nombre_data: a.dataset.nombre || '',
+    marca: a.dataset.marca || '',
+    modelo: a.dataset.modelo || '',
+    ruta_categorias: a.dataset.rutacategorias || '',
+    data_precio: a.dataset.precio || '',
+    data_precio_anterior: a.dataset.precioAnterior || '',
+    data_precio_oferta: a.dataset.precioOferta || '',
+    data_precio_desde: a.dataset.precioDesde || '',
+    data_precio_hasta: a.dataset.precioHasta || '',
+    data_precio_minimo: a.dataset.precioMinimo || '',
+    data_precio_maximo: a.dataset.precioMaximo || '',
+    data_es_padre_matriz: a.dataset.esPadreMatriz || '',
+    data_primer_hijo_stock: a.dataset.primerHijoStock || '',
+    titulo_card: q('.titulo'),
+    precio_tachado_txt: q('.precio-anterior .tachado'),
+    precio_visible_txt: q('.precio span'),
+    impuestos_nacionales_txt: q('.impuestos-nacionales'),
+    detalle_url: a.href || '',
+    img_url: img ? (img.getAttribute('src') || img.getAttribute('data-src') || '') : ''
+  };
+});
+"""
+
+# =================== MySQL helpers (idénticos) ===================
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute(
         "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
@@ -347,107 +369,84 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
     return cur.fetchone()[0]
 
-
-def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
-    """
-    No hay EAN → ean=NULL.
-    Match preferente por (nombre, marca). Fallback por nombre.
-    Guarda categoría/subcategoría derivadas de 'categorias'.
-    """
-    nombre = clean_txt(r.get("nombre"))
-    marca = clean_txt(r.get("marca"))
-    cat, sub = split_categoria(clean_txt(r.get("categorias")))
-
-    if nombre and marca:
-        cur.execute("SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1", (nombre, marca))
+def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
+    ean = (p.get("ean") or "").strip() or None
+    if ean:
+        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
         row = cur.fetchone()
         if row:
             pid = row[0]
             cur.execute("""
                 UPDATE productos SET
+                  nombre = COALESCE(NULLIF(%s,''), nombre),
+                  marca = COALESCE(NULLIF(%s,''), marca),
+                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
                   categoria = COALESCE(NULLIF(%s,''), categoria),
                   subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
                 WHERE id=%s
-            """, (cat or "", sub or "", pid))
+            """, (
+                p.get("nombre") or "", p.get("marca") or "", p.get("fabricante") or "",
+                p.get("categoria") or "", p.get("subcategoria") or "", pid
+            ))
             return pid
 
-    if nombre:
-        cur.execute("SELECT id FROM productos WHERE nombre=%s LIMIT 1", (nombre,))
+    nombre = (p.get("nombre") or "").strip()
+    marca  = (p.get("marca") or "").strip()
+
+    if nombre and marca:
+        cur.execute("""SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1""",
+                    (nombre, marca))
         row = cur.fetchone()
         if row:
             pid = row[0]
             cur.execute("""
                 UPDATE productos SET
-                  marca = COALESCE(NULLIF(%s,''), marca),
+                  ean = COALESCE(NULLIF(%s,''), ean),
+                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
                   categoria = COALESCE(NULLIF(%s,''), categoria),
                   subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
                 WHERE id=%s
-            """, (marca or "", cat or "", sub or "", pid))
+            """, (
+                p.get("ean") or "", p.get("fabricante") or "",
+                p.get("categoria") or "", p.get("subcategoria") or "", pid
+            ))
             return pid
 
     cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
-        VALUES (NULL, NULLIF(%s,''), NULLIF(%s,''), NULL, NULLIF(%s,''), NULLIF(%s,''))
-    """, (nombre or "", marca or "", cat or "", sub or ""))
+        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
+    """, (
+        p.get("ean") or "", nombre, marca,
+        p.get("fabricante") or "", p.get("categoria") or "", p.get("subcategoria") or ""
+    ))
     return cur.lastrowid
 
-
-def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
-    """
-    Clave natural preferida: (tienda_id, sku_tienda=sku).
-    Respaldo: (tienda_id, record_id_tienda=id_item) o (tienda_id, url_tienda).
-    """
-    sku = clean_txt(r.get("sku"))
-    record_id = clean_txt(r.get("id_item"))
-    url = clean_txt(r.get("url"))
-    nombre_tienda = clean_txt(r.get("nombre"))
+def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
+    sku = (p.get("sku") or "").strip() or None
+    rec = None
+    url = p.get("url") or ""
+    nombre_tienda = p.get("nombre") or ""
 
     if sku:
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
               producto_id = VALUES(producto_id),
               record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
-        return cur.lastrowid
-
-    if record_id:
-        cur.execute("""
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, NULL, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-              id = LAST_INSERT_ID(id),
-              producto_id = VALUES(producto_id),
-              url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
-              nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, record_id, url, nombre_tienda))
+        """, (tienda_id, producto_id, sku, rec, url, nombre_tienda))
         return cur.lastrowid
 
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
-        VALUES (%s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-          id = LAST_INSERT_ID(id),
-          producto_id = VALUES(producto_id),
-          nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
+        VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
     """, (tienda_id, producto_id, url, nombre_tienda))
     return cur.lastrowid
 
-
-def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en: datetime):
-    """
-    Mapeo precios:
-      - precio_lista: el 'precio principal' del detalle
-      - precio_plus: si está presente, se guarda como 'precio_oferta' con tipo_oferta='PLUS'
-    """
-    precio_lista = price_to_varchar(r.get("precio_lista"))
-    precio_plus = price_to_varchar(r.get("precio_plus"))
-    tipo_oferta = "PLUS" if precio_plus is not None else None
-
+def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
     cur.execute("""
         INSERT INTO historico_precios
           (tienda_id, producto_tienda_id, capturado_en,
@@ -464,109 +463,140 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
           promo_comentarios = VALUES(promo_comentarios)
     """, (
         tienda_id, producto_tienda_id, capturado_en,
-        precio_lista, precio_plus, tipo_oferta,
-        None, None, None, None
+        p.get("precio_lista") or None,
+        p.get("precio_oferta") or None,
+        p.get("tipo_oferta") or None,
+        p.get("promo_tipo") or None,
+        p.get("precio_regular_promo") or None,
+        p.get("precio_descuento") or None,
+        p.get("comentarios_promo") or None
     ))
 
-
-# ================= Selenium (con soporte de proxy) =================
-def _build_chrome_options() -> Options:
-    opts = Options()
-    if HEADLESS:
-        opts.add_argument("--headless=new")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--window-size=1280,1800")
-    opts.add_argument("--lang=es-AR")
-    opts.add_argument("--disable-notifications")
-    opts.add_argument("--disable-blink-features=AutomationControlled")
-    opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/123.0.0.0 Safari/537.36")
-    return opts
-
-
-def setup_driver() -> webdriver.Chrome:
-    """
-    Devuelve un driver listo:
-    - PROXY_MODE="none": driver Chrome estándar.
-    - PROXY_MODE="basic": usa --proxy-server=SCHEME://HOST:PORT (sin auth).
-    - PROXY_MODE="auth": usa Selenium Wire (requiere paquete instalado).
-    """
-    opts = _build_chrome_options()
-
-    # === Modo sin proxy ===
-    if PROXY_MODE == "none":
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=opts)
-        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
-        driver.implicitly_wait(IMPLICIT_WAIT)
-        return driver
-
-    # Validación de host/puerto si hay proxy
-    if not PROXY_HOST or not PROXY_PORT:
-        raise RuntimeError("Configura PROXY_HOST y PROXY_PORT para usar proxy (basic/auth).")
-
-    # === Modo proxy básico (sin credenciales) ===
-    if PROXY_MODE == "basic":
-        proxy_url = f"{PROXY_TYPE}://{PROXY_HOST}:{PROXY_PORT}"
-        opts.add_argument(f"--proxy-server={proxy_url}")
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=opts)
-        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
-        driver.implicitly_wait(IMPLICIT_WAIT)
-        return driver
-
-    # === Modo proxy con credenciales (Selenium Wire) ===
-    if PROXY_MODE == "auth":
-        if not SELENIUM_WIRE_AVAILABLE:
-            raise RuntimeError(
-                "Selenium Wire no está instalado. Instálalo con: pip install selenium-wire"
-            )
-        if not PROXY_USER or not PROXY_PASS:
-            raise RuntimeError("Configura PROXY_USER y PROXY_PASS para PROXY_MODE='auth'.")
-
-        # Para HTTP/HTTPS con auth
-        proxy_string = f"{PROXY_TYPE}://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}"
-        seleniumwire_options = {
-            'proxy': {
-                'http': proxy_string,
-                'https': proxy_string,
-            },
-            # 'verify_ssl': False,            # descomenta si tu proxy rompe SSL
-            # 'connection_timeout': 30,
-        }
-
-        service = Service(ChromeDriverManager().install())
-        driver = wire_webdriver.Chrome(
-            service=service,
-            options=opts,
-            seleniumwire_options=seleniumwire_options
-        )
-        driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
-        driver.implicitly_wait(IMPLICIT_WAIT)
-        return driver
-
-    raise RuntimeError(f"PROXY_MODE desconocido: {PROXY_MODE}")
-
-
-# ================= Orquestación =================
+# =================== MAIN ===================
 def main():
-    driver = setup_driver()
-    try:
-        print("[INFO] Scrapeando La Anónima…")
-        rows = grab_category(driver, START)
-    finally:
-        try:
-            driver.quit()
-        except Exception:
-            pass
+    mem = MemorySampler(interval=1.0)
+    mem.start()
+    t0 = perf_counter()
 
-    if not rows:
-        print("[INFO] No se extrajeron registros.")
+    driver = setup_driver()
+    driver.get(URL)
+    wait = WebDriverWait(driver, 30)
+
+    # 1) CP (tolerante)
+    apply_postal_code(driver, wait, POSTAL_CODE)
+
+    # 2) Scroll eficiente
+    css_card_anchor = "div.card a[data-codigo]"
+    smart_infinite_scroll(driver, css_card_anchor, pause=0.9, max_plateaus=5)
+
+    # 3) Extracción masiva
+    rows = driver.execute_script(JS_EXTRACT) or []
+
+    # 4) Cerrar navegador
+    driver.quit()
+
+    # 5) Limpieza y enriquecimiento
+    dedup = []
+    seen = set()
+    for r in rows:
+        r["precio_visible_num"] = parse_money_to_number(r.get("precio_visible_txt", ""))
+        r["precio_tachado_num"] = parse_money_to_number(r.get("precio_tachado_txt", ""))
+        r["impuestos_sin_nacionales_num"] = parse_money_to_number(r.get("impuestos_nacionales_txt", ""))
+        r["data_precio_num"] = parse_money_to_number(r.get("data_precio", ""))
+        r["data_precio_anterior_num"] = parse_money_to_number(r.get("data_precio_anterior", ""))
+        r["data_precio_oferta_num"] = parse_money_to_number(r.get("data_precio_oferta", ""))
+        r["data_precio_minimo_num"] = parse_money_to_number(r.get("data_precio_minimo", ""))
+        r["data_precio_maximo_num"] = parse_money_to_number(r.get("data_precio_maximo", ""))
+
+        codigo = (r.get("codigo") or "").strip()
+        if codigo and codigo in seen:
+            continue
+        seen.add(codigo)
+        dedup.append(r)
+
+    df = pd.DataFrame(dedup)
+    prefer = [
+        "codigo", "titulo_card", "nombre_data", "marca", "modelo", "ruta_categorias",
+        "detalle_url", "img_url",
+        "precio_visible_txt", "precio_tachado_txt", "impuestos_nacionales_txt",
+        "precio_visible_num", "precio_tachado_num", "impuestos_sin_nacionales_num",
+        "data_precio", "data_precio_anterior", "data_precio_oferta",
+        "data_precio_desde", "data_precio_hasta", "data_precio_minimo", "data_precio_maximo",
+        "data_precio_num", "data_precio_anterior_num", "data_precio_oferta_num",
+        "data_precio_minimo_num", "data_precio_maximo_num",
+        "data_es_padre_matriz", "data_primer_hijo_stock",
+    ]
+    cols = [c for c in prefer if c in df.columns] + [c for c in df.columns if c not in prefer]
+    if not df.empty:
+        df = df[cols]
+        # df.to_excel(OUT_XLSX, index=False)
+    print(f"✅ Capturados: {len(df)} productos")
+    print(f"📄 XLSX: {OUT_XLSX}")
+
+    if df.empty:
+        elapsed = perf_counter() - t0
+        mem.stop()
+        mem.print_report(elapsed)
+        print("⚠️ No hay datos para insertar en MySQL.")
         return
 
+    # 6) Map a modelo MySQL
+    mapped: List[Dict[str, Any]] = []
+    for _, r in df.iterrows():
+        ruta = r.get("ruta_categorias") or ""
+        cat, subcat = split_categoria(ruta)
+
+        nombre = clean_text(r.get("titulo_card")) or clean_text(r.get("nombre_data")) or None
+        marca  = clean_text(r.get("marca")) or None
+
+        pt_txt_present = bool((r.get("precio_tachado_txt") or "").strip())
+        pt_num = r.get("precio_tachado_num")
+        if pt_num is None:
+            pt_num = parse_money_to_number(r.get("data_precio_anterior") or "")
+        hay_oferta = pt_txt_present or (pt_num is not None and pt_num > 0)
+
+        pv = r.get("precio_visible_num")
+        if pv is None:
+            if hay_oferta:
+                pv = parse_money_to_number(r.get("data_precio_oferta") or "") \
+                     or parse_money_to_number(r.get("data_precio") or "")
+            else:
+                pv = parse_money_to_number(r.get("data_precio") or "")
+
+        if hay_oferta and pv is not None:
+            precio_lista = to_txt_price_or_none(pt_num if (pt_num is not None and pt_num > 0) else None)
+            if precio_lista is None:
+                precio_lista = to_txt_price_or_none(parse_money_to_number(r.get("data_precio_anterior") or ""))
+            if precio_lista is None:
+                precio_lista = to_txt_price_or_none(pv)
+            precio_oferta = to_txt_price_or_none(pv)
+        else:
+            base_lista = pv if pv is not None else parse_money_to_number(r.get("data_precio") or "")
+            precio_lista  = to_txt_price_or_none(base_lista)
+            precio_oferta = None
+
+        p: Dict[str, Any] = {
+            "ean": None,
+            "nombre": nombre,
+            "marca": marca,
+            "fabricante": None,
+            "categoria": clean_text(cat),
+            "subcategoria": clean_text(subcat),
+            "sku": clean_text(str(r.get("codigo") or "")),
+            "record_id": None,
+            "url": clean_text(r.get("detalle_url") or ""),
+            "nombre_tienda": nombre,
+            "precio_lista": precio_lista,
+            "precio_oferta": precio_oferta,
+            "tipo_oferta": None,
+            "promo_tipo": None,
+            "precio_regular_promo": None,
+            "precio_descuento": None,
+            "comentarios_promo": None,
+        }
+        mapped.append(p)
+
+    # 7) INSERTAR EN MySQL
     capturado_en = datetime.now()
     conn = None
     try:
@@ -577,44 +607,27 @@ def main():
         tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
 
         insertados = 0
-        for r in rows:
-            producto_id = find_or_create_producto(cur, r)
-            pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, r)
-            insert_historico(cur, tienda_id, pt_id, r, capturado_en)
+        for p in mapped:
+            producto_id = find_or_create_producto(cur, p)
+            pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
+            insert_historico(cur, tienda_id, pt_id, p, capturado_en)
             insertados += 1
 
         conn.commit()
         print(f"💾 Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOMBRE} ({capturado_en})")
 
     except MySQLError as e:
-        if conn:
-            conn.rollback()
+        if conn: conn.rollback()
         print(f"❌ Error MySQL: {e}")
     finally:
         try:
-            if conn:
-                conn.close()
+            if conn: conn.close()
         except Exception:
             pass
 
+    elapsed = perf_counter() - t0
+    mem.stop()
+    mem.print_report(elapsed)
 
 if __name__ == "__main__":
-    """
-    Ejemplos de ejecución:
-
-    # 0) Instalar dependencias:
-    pip install selenium selenium-wire webdriver-manager beautifulsoup4 lxml pandas mysql-connector-python numpy
-
-    # 1) Usando DataImpulse (predefinido en el script):
-    python laanonima_mysql_dataimpulse.py
-
-    # 2) Override por ENV (por ejemplo, para otra cuenta/sesión):
-    PROXY_MODE=auth PROXY_TYPE=http \
-    PROXY_HOST=gw.dataimpulse.com PROXY_PORT=823 \
-    PROXY_USER=2cf8063dbace06f69df4 PROXY_PASS=61425d26fb3c7287 \
-    python laanonima_mysql_dataimpulse.py
-
-    # 3) Sin proxy (si tu IP no está bloqueada):
-    PROXY_MODE=none python laanonima_mysql_dataimpulse.py
-    """
     main()

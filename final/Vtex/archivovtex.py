@@ -7,18 +7,18 @@ Reporte multi-supermercado (VTEX) por EAN — Script standalone (sin Streamlit)
 - Lee maestro.xlsx desde la MISMA carpeta donde está este archivo.
 - Recorre EANs y consulta tiendas VTEX (secuencial dentro de cada tienda, varias tiendas en paralelo).
 - Genera un Excel consolidado en la misma carpeta.
-- Ingesta opcional en MySQL (mismas tablas/campos que la versión UI).
+- Ingesta a MySQL (forzada en este script).
 
-Parámetros opcionales (todos tienen defaults equivalentes a la app):
-  --ean-column NOMBRE          Nombre de la columna EAN si quieres forzarlo.
-  --extra-domains "url1 url2"  Dominios extra separados por espacios o nueva línea.
-  --sc-overrides JSON          Overrides de Sales Channel: {"https://dominio":"1", ...}
-  --stores-in-parallel INT     Tiendas en paralelo (default: 3).
-  --per-store-delay FLOAT      Pausa por solicitud dentro de cada tienda (default: 0.15s).
-  --retries-req INT            Reintentos HTTP leves (default: 2).
-  --force-all                  Consultar TODOS los candidatos, aún si no detecta VTEX (default: True).
-  --save-to-db                 Guardar en MySQL al finalizar (default: False).  <-- se fuerza a True abajo
-  --batch-size INT             Tamaño de mini-lote para commits (default: 100).
+Parámetros opcionales (siguen existiendo pero save_to_db se fuerza a True):
+  --ean-column NOMBRE
+  --extra-domains "url1 url2"
+  --sc-overrides JSON
+  --stores-in-parallel INT
+  --per-store-delay FLOAT
+  --retries-req INT
+  --force-all / --no-force-all
+  --save-to-db
+  --batch-size INT
 """
 
 import io
@@ -45,20 +45,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 from base_datos import get_conn  # <- tu conexión MySQL
 
 # =========================================
-#  CANDIDATOS (mismos que en la app)
+#  CANDIDATOS (mismos que en la app) — default_sc ajustado a "1"
 # =========================================
 VTEX_CANDIDATES_AR = [
-    # Cencosud (descomentables si quieres)
-    # {"name": "jumbo_ar", "base": "https://www.jumbo.com.ar", "default_sc": ""},
-    # {"name": "vea", "base": "https://www.vea.com.ar", "default_sc": ""},
-    # {"name": "disco", "base": "https://www.disco.com.ar", "default_sc": ""},
-    # DIA (varía el host; ambos serán probados)
-    # {"name": "dia", "base": "https://diaonline.supermercadosdia.com.ar", "default_sc": ""},
-    # Carrefour
-    {"name": "Carrefour Argentina", "base": "https://www.carrefour.com.ar", "default_sc": ""},
-    {"name": "Jumbo Argentina", "base": "https://www.jumbo.com.ar", "default_sc": ""},
-    # Más candidatos:
-    # {"name": "Mi Super VTEX", "base": "https://www.misuper.com.ar", "default_sc": "1"},
+    {"name": "Carrefour Argentina", "base": "https://www.carrefour.com.ar", "default_sc": "1"},
+    {"name": "Jumbo Argentina",     "base": "https://www.jumbo.com.ar",     "default_sc": "1"},
 ]
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
@@ -106,13 +97,9 @@ def is_vtex_store(session: requests.Session, base_url: str) -> bool:
         return False
 
 
-def vtex_buscar_por_ean_session(session: requests.Session, base_url: str, ean: str, sc: Optional[str]) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
-    """
-    Retorna (estado_llamada, data):
-      - "OK" si devolvió JSON lista.
-      - "NO_JSON" si respondió algo distinto a lista JSON.
-      - "ERROR" si hubo excepción de red.
-    """
+def vtex_buscar_por_ean_session(
+    session: requests.Session, base_url: str, ean: str, sc: Optional[str]
+) -> Tuple[str, Optional[List[Dict[str, Any]]]]:
     try:
         url = base_url.rstrip("/") + SEARCH_PATH
         params = [("fq", f"alternateIds_Ean:{ean}")]
@@ -127,13 +114,39 @@ def vtex_buscar_por_ean_session(session: requests.Session, base_url: str, ean: s
         return "ERROR", None
 
 
-def extraer_eans_de_producto(prod: Dict[str, Any]) -> set:
-    eans = set()
-    for it in prod.get("items", []) or []:
-        e = it.get("ean") or it.get("Ean")
-        if isinstance(e, str) and e.isdigit():
-            eans.add(e)
-    return eans
+def _derive_prices(co: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+    """Devuelve (precio_lista, precio_oferta, etiqueta_promo_tipo) con política robusta."""
+    def _f(x):
+        try:
+            if x is None or (isinstance(x, str) and not x.strip()):
+                return None
+            return float(x)
+        except Exception:
+            return None
+
+    p   = _f(co.get("Price"))
+    l   = _f(co.get("ListPrice"))
+    pwd = _f(co.get("PriceWithoutDiscount"))
+
+    lista = oferta = None
+    promo_tipo = None
+
+    # 1) Preferimos PriceWithoutDiscount como "lista" si existe y es >= Price
+    if pwd is not None and p is not None and pwd >= p and p > 0:
+        lista, oferta, promo_tipo = pwd, p, "promo_pwd"
+    # 2) Si no, ListPrice si es >= Price
+    elif l is not None and p is not None and l >= p and p > 0:
+        lista, oferta, promo_tipo = l, p, "promo_listprice"
+    # 3) Si no hay descuento, lista = Price (y oferta None)
+    elif p is not None and p > 0:
+        lista, oferta, promo_tipo = p, None, None
+    # 4) Fallback raro (a veces ListPrice viene sola)
+    elif l is not None and l > 0:
+        lista, oferta, promo_tipo = l, None, None
+    else:
+        lista, oferta, promo_tipo = None, None, None
+
+    return lista, oferta, promo_tipo
 
 
 def parsear_producto_vtex(producto: Dict[str, Any], ean_consultado: str, base_url: str) -> List[Dict[str, Any]]:
@@ -172,7 +185,7 @@ def parsear_producto_vtex(producto: Dict[str, Any], ean_consultado: str, base_ur
             "product_id": product_id, "sku_id": None,
             "nombre": product_name, "marca": brand,
             "categoria": cat1, "subcategoria": cat2,
-            "url": (base_url + link) if link and link.startswith("/") else link,
+            "url": (base_url + link) if link and isinstance(link, str) and link.startswith("/") else link,
             "precio_lista": None, "precio_oferta": None, "disponible": None,
             "oferta_tags": promo_tags, "ean_reportado": None, "seller_id": None
         })
@@ -182,31 +195,13 @@ def parsear_producto_vtex(producto: Dict[str, Any], ean_consultado: str, base_ur
         sku_id = it.get("itemId") or it.get("id")
         ean_item = it.get("ean") or it.get("Ean")
         sellers = it.get("sellers") or []
+
         if not sellers:
             filas.append({
                 "product_id": product_id, "sku_id": sku_id,
                 "nombre": product_name, "marca": brand,
                 "categoria": cat1, "subcategoria": cat2,
-                "url": (base_url + link) if link and link.startswith("/") else link,
-                "precio_lista": None, "precio_oferta": None, "disponible": None,
-                "oferta_tags": promo_tags, "ean_reportado": ean_item, "seller_id": None
-            })
-            continue
-
-    # ... (continúa igual, omito para ahorrar espacio visual)
-    # NOTE: No modifiques nada aquí; dejo todo idéntico al bloque que ya compartiste.
-    # === COPIA EXACTA HASTA EL FINAL DEL ARCHIVO ===
-
-    for it in items:
-        sku_id = it.get("itemId") or it.get("id")
-        ean_item = it.get("ean") or it.get("Ean")
-        sellers = it.get("sellers") or []
-        if not sellers:
-            filas.append({
-                "product_id": product_id, "sku_id": sku_id,
-                "nombre": product_name, "marca": brand,
-                "categoria": cat1, "subcategoria": cat2,
-                "url": (base_url + link) if link and link.startswith("/") else link,
+                "url": (base_url + link) if link and isinstance(link, str) and link.startswith("/") else link,
                 "precio_lista": None, "precio_oferta": None, "disponible": None,
                 "oferta_tags": promo_tags, "ean_reportado": ean_item, "seller_id": None
             })
@@ -215,9 +210,9 @@ def parsear_producto_vtex(producto: Dict[str, Any], ean_consultado: str, base_ur
         for s in sellers:
             sid = s.get("sellerId") or s.get("id")
             co = s.get("commertialOffer") or {}
-            list_price = co.get("ListPrice")
-            price = co.get("Price")
+            lista, oferta, _promo_tipo = _derive_prices(co)
             available = co.get("AvailableQuantity")
+
             teasers = co.get("Teasers") or co.get("DiscountHighLight") or []
             if isinstance(teasers, list) and teasers:
                 teasers_txt = ", ".join(
@@ -232,8 +227,8 @@ def parsear_producto_vtex(producto: Dict[str, Any], ean_consultado: str, base_ur
                 "product_id": product_id, "sku_id": sku_id,
                 "nombre": product_name, "marca": brand,
                 "categoria": cat1, "subcategoria": cat2,
-                "url": (base_url + link) if link and link.startswith("/") else link,
-                "precio_lista": list_price, "precio_oferta": price, "disponible": available,
+                "url": (base_url + link) if link and isinstance(link, str) and link.startswith("/") else link,
+                "precio_lista": lista, "precio_oferta": oferta, "disponible": available,
                 "oferta_tags": teasers_txt or promo_tags, "ean_reportado": ean_item, "seller_id": sid
             })
     return filas
@@ -274,7 +269,7 @@ def detectar_tiendas_vtex(candidatos: List[Dict[str, str]], extras: List[str], r
     return list(uniq.values())
 
 
-# ============== Helpers DB (idénticos en lógica) ==============
+# ============== Helpers DB (con esquema en código tienda) ==============
 MAXLEN_TIPO_OFERTA = 64
 MAXLEN_COMENTARIOS = 255
 MAXLEN_NOMBRE = 255
@@ -283,6 +278,11 @@ MAXLEN_SUBCATEGORIA = 200
 MAXLEN_NOMBRE_TIENDA = 255
 
 LOCK_ERRNOS = {1205, 1213}
+RETRYABLE_ERRNOS = {1205, 1213}  # lock wait timeout, deadlock
+
+
+def should_retry(e) -> bool:
+    return getattr(e, "errno", None) in RETRYABLE_ERRNOS
 
 
 def _truncate(s: Optional[str], n: int) -> Optional[str]:
@@ -293,6 +293,7 @@ def _truncate(s: Optional[str], n: int) -> Optional[str]:
 
 
 def _price_str(val) -> Optional[str]:
+    """Normaliza a string con 2 decimales o None"""
     if val is None:
         return None
     try:
@@ -306,9 +307,15 @@ def _price_str(val) -> Optional[str]:
         return None
 
 
-def _domain_host(url: str) -> str:
+def _domain_with_scheme(url: str) -> str:
+    """Normaliza a 'scheme://host' conservando el esquema (http/https) y SIN path. Si no trae esquema, asume https."""
     try:
-        return urlparse(url).netloc or url
+        if not (url.startswith("http://") or url.startswith("https://")):
+            url = "https://" + url
+        p = urlparse(url)
+        host = p.netloc or p.path
+        scheme = p.scheme or "https"
+        return f"{scheme}://{host}"
     except Exception:
         return url
 
@@ -409,23 +416,22 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
         """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
         return cur.lastrowid
 
-    # Sin SKU, aún guardamos vínculo
     exec_with_retry(cur, """
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
+        ON DUPLICITE KEY UPDATE
           id = LAST_INSERT_ID(id),
           producto_id = VALUES(producto_id),
           url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
           nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-    """, (tienda_id, producto_id, url, nombre_tienda))
+    """.replace("DUPLICITE", "DUPLICATE"), (tienda_id, producto_id, url, nombre_tienda))
     return cur.lastrowid
 
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en):
-    # VTEX expone list y oferta; si falta alguno, usamos el disponible
     pl = _price_str(r.get("precio_lista"))
-    po = _price_str(r.get("precio_oferta") if r.get("precio_oferta") not in (None, 0) else r.get("precio_lista"))
+    # oferta: si no hay descuento, usamos lista como oferta para no perder precio vigente
+    po = _price_str(r.get("precio_oferta") or r.get("precio_lista"))
     tipo = None
     promo_tipo = None
     promo_texto = _truncate(r.get("oferta_tags"), MAXLEN_COMENTARIOS)
@@ -458,14 +464,15 @@ def ingest_to_mysql(df: pd.DataFrame, batch_size: int = 100):
         conn = get_conn()
         try:
             with conn.cursor() as cset:
-                cset.execute("SET SESSION innodb_lock_wait_timeout = 8")
+                cset.execute("SET SESSION innodb_lock_wait_timeout = 5")
+                cset.execute("SET SESSION net_read_timeout  = 60")
+                cset.execute("SET SESSION net_write_timeout = 60")
                 cset.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
         except Exception:
             pass
 
         conn.autocommit = False
         cur = conn.cursor(buffered=True)
-
         capturado_en = dt.now()
 
         grp_cols = ["supermercado", "dominio"]
@@ -474,52 +481,83 @@ def ingest_to_mysql(df: pd.DataFrame, batch_size: int = 100):
             return
 
         for (supername, base), df_g in df.groupby(grp_cols):
-            tienda_codigo = _domain_host(base) or base
+            tienda_codigo = _domain_with_scheme(base) or base
             tienda_nombre = supername or tienda_codigo
-            tienda_id = upsert_tienda(cur, tienda_codigo, tienda_nombre)
-            conn.commit()
+
+            # upsert tienda con reintento
+            for attempt in range(6):
+                try:
+                    tienda_id = upsert_tienda(cur, tienda_codigo, tienda_nombre)
+                    conn.commit()
+                    break
+                except mysql.connector.Error as e:
+                    if should_retry(e) and attempt < 5:
+                        conn.rollback()
+                        time.sleep(0.25 * (2 ** attempt))
+                        continue
+                    raise
+                except Exception:
+                    conn.rollback()
+                    raise
 
             batch = 0
             for _, r in df_g.iterrows():
                 rec = r.to_dict()
                 rec["nombre"] = rec.get("nombre") or ""
-                try:
-                    pid = find_or_create_producto(cur, rec)
-                    ptid = upsert_producto_tienda(cur, tienda_id, pid, rec)
-                    insert_historico(cur, tienda_id, ptid, rec, capturado_en)
-                    total += 1
-                    batch += 1
-                    if batch >= batch_size:
-                        conn.commit()
-                        batch = 0
-                except myerr.DatabaseError as e:
-                    errno = getattr(e, "errno", None)
-                    if errno in LOCK_ERRNOS:
-                        conn.rollback()
-                        continue
-                    elif errno == 1264:
-                        try:
+
+                for attempt in range(6):
+                    try:
+                        pid  = find_or_create_producto(cur, rec)
+                        ptid = upsert_producto_tienda(cur, tienda_id, pid, rec)
+                        insert_historico(cur, tienda_id, ptid, rec, capturado_en)
+
+                        total += 1
+                        batch += 1
+                        if batch >= min(20, batch_size):
+                            conn.commit()
+                            batch = 0
+                        break
+
+                    except myerr.DatabaseError as e:
+                        errno = getattr(e, "errno", None)
+
+                        if errno == 1264:
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
+                            rec2 = dict(rec)
+                            rec2["precio_lista"] = None
+                            rec2["precio_oferta"] = None
+                            try:
+                                pid  = find_or_create_producto(cur, rec2)
+                                ptid = upsert_producto_tienda(cur, tienda_id, pid, rec2)
+                                insert_historico(cur, tienda_id, ptid, rec2, capturado_en)
+                                total += 1
+                                batch += 1
+                                if batch >= min(20, batch_size):
+                                    conn.commit()
+                                    batch = 0
+                                break
+                            except Exception as e2:
+                                if should_retry(e2) and attempt < 5:
+                                    conn.rollback()
+                                    time.sleep(0.25 * (2 ** attempt))
+                                    continue
+                                conn.rollback()
+                                break
+
+                        if should_retry(e) and attempt < 5:
                             conn.rollback()
-                        except Exception:
-                            pass
-                        rec2 = dict(rec)
-                        rec2["precio_lista"] = None
-                        rec2["precio_oferta"] = None
-                        try:
-                            pid = find_or_create_producto(cur, rec2)
-                            ptid = upsert_producto_tienda(cur, tienda_id, pid, rec2)
-                            insert_historico(cur, tienda_id, ptid, rec2, capturado_en)
-                            total += 1
-                            batch += 1
-                            if batch >= batch_size:
-                                conn.commit()
-                                batch = 0
-                        except Exception:
-                            conn.rollback()
+                            time.sleep(0.25 * (2 ** attempt))
                             continue
-                    else:
+
                         conn.rollback()
-                        continue
+                        break
+
+                    except Exception:
+                        conn.rollback()
+                        break
 
             if batch:
                 conn.commit()
@@ -528,17 +566,13 @@ def ingest_to_mysql(df: pd.DataFrame, batch_size: int = 100):
 
     except mysql.connector.Error as e:
         if conn:
-            try:
-                conn.rollback()
-            except:
-                pass
+            try: conn.rollback()
+            except: pass
         print(f"[DB] ❌ MySQL error {getattr(e, 'errno', None)}: {e}")
     except Exception as e:
         if conn:
-            try:
-                conn.rollback()
-            except:
-                pass
+            try: conn.rollback()
+            except: pass
         print(f"[DB] ❌ Error de ingesta: {e}")
     finally:
         try:
@@ -562,7 +596,7 @@ def main():
     parser.add_argument("--batch-size", type=int, default=100, help="Tamaño de mini-lote (commit) para DB.")
     args = parser.parse_args()
 
-    # 🔴 Forzar ingesta en DB SIEMPRE (mínimo cambio, todo lo demás igual)
+    # 🔴 Forzar ingesta en DB SIEMPRE
     args.save_to_db = True
     print("[DB] Ingesta a MySQL: FORZADA (save_to_db=True)")
 
@@ -573,14 +607,12 @@ def main():
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"No encontré {input_path}. Coloca 'maestro.xlsx' en la misma carpeta del script.")
 
-    # Leer Excel
     print(f"[IO] Leyendo: {input_path}")
     try:
         df_in = pd.read_excel(input_path)
     except Exception as e:
         raise RuntimeError(f"No pude leer el Excel maestro.xlsx: {e}")
 
-    # Detectar columna EAN (o usar la indicada)
     candidatos_cols = {
         "ean", "codigo", "codigo_barras", "codigo_barra", "barcode",
         "codigo de barras", "cod_barras", "cod_barra"
@@ -594,7 +626,6 @@ def main():
         col_ean = posibles[0] if posibles else df_in.columns[0]
         print(f"[INFO] Columna EAN seleccionada: '{col_ean}'")
 
-    # Extras y overrides
     extra_domains = []
     if args.extra_domains.strip():
         extra_domains = [x.strip() for x in args.extra_domains.replace("\r", "\n").split() if x.strip()]
@@ -610,7 +641,6 @@ def main():
             print(f"[WARN] No pude parsear overrides: {e}")
             sc_map = {}
 
-    # Detección de tiendas
     print("[INFO] Detectando qué dominios responden como VTEX…")
     detected = detectar_tiendas_vtex(VTEX_CANDIDATES_AR, extra_domains, retries=args.retries_req)
 
@@ -626,7 +656,6 @@ def main():
         print("[WARN] Pocas tiendas detectadas. Fallback: se consultarán todos los candidatos.")
         vtex_stores = candidates_all
 
-    # Unicas por base
     vtex_stores = list({e["base"]: e for e in vtex_stores}.values())
 
     if not vtex_stores:
@@ -636,12 +665,10 @@ def main():
     for s in vtex_stores:
         print(f"  - {s.get('name','')} :: {s['base']} (sc={s.get('default_sc','')})")
 
-    # EANs
     eans_all = normalizar_columna_ean(df_in, col_ean).dropna().unique().tolist()
     if not eans_all:
         raise RuntimeError("No encontré EANs válidos en esa columna.")
 
-    # Sesiones por dominio
     SESSIONS: Dict[str, requests.Session] = {s["base"]: make_session(retries=args.retries_req) for s in vtex_stores}
 
     total_estimado = len(eans_all) * len(vtex_stores)
@@ -690,13 +717,12 @@ def main():
             "product_id": None, "sku_id": None, "seller_id": None, "url": None
         })
 
-    # —— Worker por tienda (SECUENCIAL dentro de la tienda) ——
     def worker_store(store):
+        nonlocal done
         base = store["base"]
         sc = sc_map.get(base, store.get("default_sc") or None)
         session = SESSIONS[base]
 
-        processed = 0
         for e in eans_all:
             estado, prods = vtex_buscar_por_ean_session(session, base, e, sc=sc)
             try:
@@ -711,15 +737,12 @@ def main():
                 errores.append((base, e, str(ex)))
                 add_empty_row(store, base, e, estado="ERROR")
 
-            nonlocal done
             done += 1
             progreso()
 
             if args.per_store_delay > 0:
                 time.sleep(args.per_store_delay)
-        return processed
 
-    # —— Ejecutar varias tiendas en paralelo (cada una secuencial) ——
     print(f"[RUN] Tiendas en paralelo: {args.stores_in_parallel} | Delay por tienda: {args.per_store_delay}s | Retries: {args.retries_req}")
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.stores_in_parallel) as executor:
@@ -732,9 +755,6 @@ def main():
 
     print("\n[OK] Recolección finalizada.")
 
-    # ======================
-    #  Output Excel
-    # ======================
     df_out = pd.DataFrame(rows)
     order_cols = [
         "supermercado", "dominio", "estado_llamada",
@@ -779,7 +799,6 @@ def main():
     if errores:
         print(f"[INFO] Errores capturados: {len(errores)} (continuó con filas vacías).")
 
-    # ===== Ingesta a MySQL (FORZADA) =====
     if not df_out.empty:
         print("[DB] Guardando en MySQL…")
         ingest_to_mysql(df_out, batch_size=args.batch_size)
