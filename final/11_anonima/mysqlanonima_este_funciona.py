@@ -2,23 +2,15 @@
 # -*- coding: utf-8 -*-
 
 from time import sleep
-import re, json, os, sys
-import pandas as pd
-from urllib.parse import urljoin
+import re
+import sys, os
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 
-# ===== MySQL / conexión
+import pandas as pd
 import numpy as np
-from mysql.connector import Error as MySQLError
+from urllib.parse import urljoin
 
-# añade la carpeta raíz (2 niveles más arriba) al sys.path
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-)
-from base_datos import get_conn  # <- tu conexión MySQL
-
-# ===== Selenium
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -28,9 +20,16 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
+from mysql.connector import Error as MySQLError
 
-# =================== Config scraping ===================
-URL = "https://www.laanonima.com.ar/bebidas/n1_513/"
+# === para importar base_datos.get_conn ===
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+)
+from base_datos import get_conn  # <- tu conexión MySQL
+
+# =================== Config scraper ===================
+URL = "https://www.laanonima.com.ar/hogar-jardin-y-automotor/n1_1/"
 POSTAL_CODE = "1001"
 OUT_XLSX = "laanonima_hogar_jardin_automotor_optimizado.xlsx"
 
@@ -46,66 +45,92 @@ BLOCK_URL_PATTERNS = [
     "*facebook.net*", "*hotjar.com*", "*newrelic.com*", "*optimizely.com*"
 ]
 
-# =================== Config MySQL (tienda) ===================
+# =================== Config MySQL / tienda ===================
 TIENDA_CODIGO = "laanonima"
-TIENDA_NOMBRE = "La Anónima"
-# Política de precios:
-# - precio_lista: tomamos "precio_tachado" si existe; si no, "precio_visible".
-# - precio_oferta: tomamos "precio_visible" si hay precio tachado; si no, NULL.
+TIENDA_NOMBRE = "La Anónima (Hogar/Jardín/Automotor)"
 
-# =================== Utils ===================
+# =================== Utils comunes ===================
 _price_clean_re = re.compile(r"[^\d,.\-]")
-_slug_spaces = re.compile(r"\s+")
+_NULLLIKE = {"", "null", "none", "nan", "na"}
+
+
+def clean(val):
+    """Normaliza texto: trim, colapsa espacios, filtra null-likes."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    s = re.sub(r"\s+", " ", s)
+    return None if s.lower() in _NULLLIKE else s
+
+
+def parse_price(val) -> float:
+    """Parsea números con separadores locales; devuelve float o np.nan."""
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return np.nan
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip()
+    if not s:
+        return np.nan
+    s = _price_clean_re.sub("", s)
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s and "." not in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except Exception:
+        return np.nan
+
 
 def parse_money_to_number(txt: str):
+    """Convierte textos tipo '$ 1.234,56' / '1.234' / '1,234.56' a float."""
+    if txt is None:
+        return None
+    txt = str(txt).strip()
     if not txt:
         return None
+
     t = re.sub(r"[^\d.,-]", "", txt)
     if not t:
         return None
-    # Formato AR: coma decimal
-    if "," in t and t.rfind(",") > t.rfind("."):
-        t = t.replace(".", "").replace(",", ".")
-    else:
-        t = t.replace(",", "")
+
+    # Caso con punto y coma
+    if "." in t and "," in t:
+        # Formato AR típico: 1.234,56
+        if t.rfind(",") > t.rfind("."):
+            t = t.replace(".", "").replace(",", ".")
+        else:
+            # Formato US típico: 1,234.56
+            t = t.replace(",", "")
+
+    # Solo coma
+    elif "," in t:
+        frac = t.split(",")[-1]
+        # Si la parte decimal tiene 1 o 2 dígitos: coma decimal
+        if len(frac) in (1, 2):
+            t = t.replace(".", "").replace(",", ".")
+        else:
+            # Probablemente separador de miles
+            t = t.replace(",", "")
+
+    # Solo punto
+    elif "." in t:
+        parts = t.split(".")
+        frac = parts[-1]
+        # Si hay grupos de 3 (p.ej. '1.234'), trátalo como separador de miles
+        if len(frac) == 3 and len("".join(parts)) > 3:
+            t = "".join(parts)
+        # Si no, lo dejamos como decimal (12.34, 0.99, etc.)
+
     try:
         return float(t)
     except Exception:
         return None
 
-def to_txt_price_or_none(v) -> Optional[str]:
-    """Convierte a texto numérico (dos decimales) o None para guardar como VARCHAR."""
-    if v is None:
-        return None
-    try:
-        f = float(v)
-        if np.isnan(f):
-            return None
-        return f"{round(f, 2)}"
-    except Exception:
-        return None
 
-def clean_text(s: Optional[str]) -> Optional[str]:
-    if s is None:
-        return None
-    s = s.strip()
-    s = _slug_spaces.sub(" ", s)
-    return s or None
 
-def split_categoria(ruta: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Ej: 'Hogar, jardín y automotor  > Colchones y Sommiers  > Colchones'
-    -> cat='Hogar, jardín y automotor', subcat='Colchones'
-    """
-    if not ruta:
-        return None, None
-    parts = [p.strip() for p in re.split(r">\s*", ruta.replace("&gt;", ">")) if p.strip()]
-    if not parts:
-        return None, None
-    if len(parts) == 1:
-        return parts[0], None
-    return parts[0], parts[-1]
-
+# =================== Selenium helpers ===================
 def setup_driver() -> webdriver.Chrome:
     opts = Options()
     if HEADLESS:
@@ -150,6 +175,7 @@ def setup_driver() -> webdriver.Chrome:
 
     return driver
 
+
 def apply_postal_code(driver: webdriver.Chrome, wait: WebDriverWait, postal_code: str):
     try:
         cp_input = wait.until(EC.presence_of_element_located((By.ID, "idCodigoPostalUnificado")))
@@ -170,6 +196,7 @@ def apply_postal_code(driver: webdriver.Chrome, wait: WebDriverWait, postal_code
         sleep(1.0)
     except Exception as e:
         print(f"[AVISO] No se pudo interactuar con el modal de CP: {e}")
+
 
 def smart_infinite_scroll(driver: webdriver.Chrome, wait_css: str, pause=0.9, max_plateaus=5):
     """
@@ -237,7 +264,7 @@ return Array.from(document.querySelectorAll('div.card a[data-codigo]')).map(a =>
 });
 """
 
-# =================== MySQL helpers (idéntico a tu patrón) ===================
+# =================== MySQL helpers (mismo formato que Coto) ===================
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute(
         "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
@@ -247,9 +274,9 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
     return cur.fetchone()[0]
 
+
 def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
-    # La Anónima no expone EAN aquí → dejamos ean NULL y “pegamos” por (nombre, marca) cuando sea confiable
-    ean = (p.get("ean") or "").strip() or None
+    ean = clean(p.get("ean"))
     if ean:
         cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
         row = cur.fetchone()
@@ -269,9 +296,8 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
             ))
             return pid
 
-    nombre = (p.get("nombre") or "").strip()
-    marca  = (p.get("marca") or "").strip()
-
+    nombre = clean(p.get("nombre")) or ""
+    marca = clean(p.get("marca")) or ""
     if nombre and marca:
         cur.execute("""SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1""",
                     (nombre, marca))
@@ -300,9 +326,11 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
     ))
     return cur.lastrowid
 
+
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
-    sku = (p.get("sku") or "").strip() or None  # aquí usamos "codigo" como SKU de tienda
-    rec = None  # La Anónima no tiene record_id
+    """Upsert que devuelve ID con LAST_INSERT_ID para evitar SELECT extra."""
+    sku = clean(p.get("sku"))
+    rec = clean(p.get("record_id"))
     url = p.get("url") or ""
     nombre_tienda = p.get("nombre") or ""
 
@@ -319,14 +347,34 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
         """, (tienda_id, producto_id, sku, rec, url, nombre_tienda))
         return cur.lastrowid
 
-    # último recurso
+    if rec:
+        cur.execute("""
+            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
+            VALUES (%s, %s, NULL, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
+            ON DUPLICATE KEY UPDATE
+              id = LAST_INSERT_ID(id),
+              producto_id = VALUES(producto_id),
+              url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
+              nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
+        """, (tienda_id, producto_id, rec, url, nombre_tienda))
+        return cur.lastrowid
+
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
     """, (tienda_id, producto_id, url, nombre_tienda))
     return cur.lastrowid
 
+
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
+    def to_txt_or_none(x):
+        if x is None:
+            return None
+        v = parse_price(x)
+        if isinstance(v, float) and np.isnan(v):
+            return None
+        return f"{round(float(v), 2)}"  # guardamos como VARCHAR
+
     cur.execute("""
         INSERT INTO historico_precios
           (tienda_id, producto_tienda_id, capturado_en,
@@ -343,18 +391,15 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
           promo_comentarios = VALUES(promo_comentarios)
     """, (
         tienda_id, producto_tienda_id, capturado_en,
-        p.get("precio_lista") or None,
-        p.get("precio_oferta") or None,
-        p.get("tipo_oferta") or None,
-        p.get("promo_tipo") or None,
-        p.get("precio_regular_promo") or None,
-        p.get("precio_descuento") or None,
+        to_txt_or_none(p.get("precio_lista")), to_txt_or_none(p.get("precio_oferta")),
+        p.get("tipo_oferta") or None, p.get("promo_tipo") or None,
+        p.get("precio_regular_promo") or None, p.get("precio_descuento") or None,
         p.get("comentarios_promo") or None
     ))
 
-# =================== MAIN ===================
+
+# =================== Main ===================
 def main():
-    # ========== SCRAPING ==========
     driver = setup_driver()
     driver.get(URL)
     wait = WebDriverWait(driver, 25)
@@ -362,36 +407,70 @@ def main():
     # 1) CP si aparece
     apply_postal_code(driver, wait, POSTAL_CODE)
 
-    # 2) Scroll eficiente
+    # 2) Scroll eficiente controlando conteo de tarjetas
     css_card_anchor = "div.card a[data-codigo]"
     smart_infinite_scroll(driver, css_card_anchor, pause=0.8, max_plateaus=5)
 
-    # 3) Extracción masiva con JS
+    # 3) Extracción masiva en **una sola llamada JS**
     rows = driver.execute_script(JS_EXTRACT) or []
 
     # 4) Cerrar navegador
     driver.quit()
 
-    # 5) Limpieza numérica y enriquecimiento
-    dedup = []
-    seen = set()
+    # 5) Limpieza numérica y regla de precios
     for r in rows:
         r["precio_visible_num"] = parse_money_to_number(r.get("precio_visible_txt", ""))
         r["precio_tachado_num"] = parse_money_to_number(r.get("precio_tachado_txt", ""))
         r["impuestos_sin_nacionales_num"] = parse_money_to_number(r.get("impuestos_nacionales_txt", ""))
+        # por si quieres números "data_*"
         r["data_precio_num"] = parse_money_to_number(r.get("data_precio", ""))
         r["data_precio_anterior_num"] = parse_money_to_number(r.get("data_precio_anterior", ""))
         r["data_precio_oferta_num"] = parse_money_to_number(r.get("data_precio_oferta", ""))
         r["data_precio_minimo_num"] = parse_money_to_number(r.get("data_precio_minimo", ""))
         r["data_precio_maximo_num"] = parse_money_to_number(r.get("data_precio_maximo", ""))
 
-        codigo = (r.get("codigo") or "").strip()
-        if codigo and codigo in seen:
+        # =======================
+        # REGLA DE PRECIOS
+        # =======================
+        pt_txt_present = bool((r.get("precio_tachado_txt") or "").strip())
+        pt = r.get("precio_tachado_num")
+        if pt is None:
+            pt = parse_money_to_number(r.get("data_precio_anterior") or "")
+        hay_tachado = pt_txt_present or (pt is not None and pt > 0)
+
+        pv = r.get("precio_visible_num")
+        if pv is None:
+            if hay_tachado:
+                pv = parse_money_to_number(r.get("data_precio_oferta") or "") \
+                     or parse_money_to_number(r.get("data_precio") or "")
+            else:
+                pv = parse_money_to_number(r.get("data_precio") or "")
+
+        if hay_tachado and pv is not None:
+            precio_lista_num = pt if (pt is not None and pt > 0) else None
+            if precio_lista_num is None:
+                precio_lista_num = parse_money_to_number(r.get("data_precio_anterior") or "")
+            if precio_lista_num is None:
+                precio_lista_num = pv
+            r["precio_lista"] = precio_lista_num
+            r["precio_oferta"] = pv
+        else:
+            base_lista = pv if pv is not None else parse_money_to_number(r.get("data_precio") or "")
+            r["precio_lista"] = base_lista
+            r["precio_oferta"] = None
+        # ====== FIN REGLA DE PRECIOS ======
+
+    # De-dup por "codigo"
+    seen = set()
+    dedup: List[Dict[str, Any]] = []
+    for r in rows:
+        c = r.get("codigo", "")
+        if c and c in seen:
             continue
-        seen.add(codigo)
+        seen.add(c)
         dedup.append(r)
 
-    # 6) DataFrame (export XLSX como antes)
+    # ====== DataFrame (por si quieres seguir usando el XLSX) ======
     df = pd.DataFrame(dedup)
     prefer = [
         "codigo", "titulo_card", "nombre_data", "marca", "modelo", "ruta_categorias",
@@ -403,91 +482,58 @@ def main():
         "data_precio_num", "data_precio_anterior_num", "data_precio_oferta_num",
         "data_precio_minimo_num", "data_precio_maximo_num",
         "data_es_padre_matriz", "data_primer_hijo_stock",
+        "precio_lista", "precio_oferta",
     ]
     cols = [c for c in prefer if c in df.columns] + [c for c in df.columns if c not in prefer]
-    if not df.empty:
-        df = df[cols]
-        df.to_excel(OUT_XLSX, index=False)
+    df = df[cols]
+
+    df.to_excel(OUT_XLSX, index=False)
     print(f"✅ Capturados: {len(df)} productos")
     print(f"📄 XLSX: {OUT_XLSX}")
 
-    if df.empty:
-        print("⚠️ No hay datos para insertar en MySQL.")
-        return
+    # ====== Mapear a formato estándar para MySQL ======
+    productos: List[Dict[str, Any]] = []
 
-    # ========== PREP: map a tu modelo para MySQL ==========
-    mapped: List[Dict[str, Any]] = []
-    for _, r in df.iterrows():
-        ruta = r.get("ruta_categorias") or ""
-        cat, subcat = split_categoria(ruta)
+    for r in dedup:
+        ruta = (r.get("ruta_categorias") or "").strip()
+        categoria = subcategoria = None
+        if ruta:
+            partes = [x.strip() for x in re.split(r">|/", ruta) if x.strip()]
+            if partes:
+                categoria = partes[0]
+                if len(partes) > 1:
+                    subcategoria = partes[-1]
 
-        # nombre preferimos título visible; caemos a data-nombre si está vacío
-        nombre = clean_text(r.get("titulo_card")) or clean_text(r.get("nombre_data")) or None
-        marca  = clean_text(r.get("marca")) or None
+        nombre = (r.get("titulo_card") or r.get("nombre_data") or "").strip()
 
-        # =======================
-        # REGLA DE PRECIOS (corregida)
-        # - Hay oferta si existe tachado (DOM) o data_precio_anterior > 0
-        # - Oferta = visible (fallback data_precio_oferta o data_precio)
-        # - Lista  = tachado (fallback data_precio_anterior; fallback visible)
-        # - Sin oferta: lista=visible (o data_precio), oferta=NULL
-        # =======================
-        pt_txt_present = bool((r.get("precio_tachado_txt") or "").strip())
-        pt_num = r.get("precio_tachado_num")
-        if pt_num is None:
-            pt_num = parse_money_to_number(r.get("data_precio_anterior") or "")
-        hay_oferta = pt_txt_present or (pt_num is not None and pt_num > 0)
-
-        pv = r.get("precio_visible_num")
-        if pv is None:
-            if hay_oferta:
-                pv = parse_money_to_number(r.get("data_precio_oferta") or "") \
-                     or parse_money_to_number(r.get("data_precio") or "")
-            else:
-                pv = parse_money_to_number(r.get("data_precio") or "")
-
-        if hay_oferta and pv is not None:
-            precio_lista = to_txt_price_or_none(pt_num if (pt_num is not None and pt_num > 0) else None)
-            if precio_lista is None:
-                precio_lista = to_txt_price_or_none(parse_money_to_number(r.get("data_precio_anterior") or ""))
-            if precio_lista is None:
-                precio_lista = to_txt_price_or_none(pv)
-            precio_oferta = to_txt_price_or_none(pv)
-        else:
-            base_lista = pv if pv is not None else parse_money_to_number(r.get("data_precio") or "")
-            precio_lista  = to_txt_price_or_none(base_lista)
-            precio_oferta = None
-        # ====== FIN REGLA DE PRECIOS ======
-
-        p: Dict[str, Any] = {
-            # Producto
-            "ean": None,  # La Anónima (listado) no expone EAN → dejar NULL
-            "nombre": nombre,
-            "marca": marca,
-            "fabricante": None,  # no disponible en listado
-            "categoria": clean_text(cat),
-            "subcategoria": clean_text(subcat),
-
-            # Producto-Tienda
-            "sku": clean_text(str(r.get("codigo") or "")),  # ← usamos "codigo" como sku_tienda
+        p = {
+            "sku": (r.get("codigo") or "").strip(),
             "record_id": None,
-            "url": clean_text(r.get("detalle_url") or ""),
-            "nombre_tienda": nombre,  # opcional
-
-            # Historico Precios
-            "precio_lista": precio_lista,
-            "precio_oferta": precio_oferta,
-            "tipo_oferta": None,
+            "ean": None,  # no tenemos EAN aquí
+            "nombre": nombre,
+            "marca": (r.get("marca") or "").strip(),
+            "fabricante": None,
+            "precio_lista": r.get("precio_lista"),
+            "precio_oferta": r.get("precio_oferta"),
+            "tipo_oferta": "OFERTA" if r.get("precio_oferta") not in (None, 0) else None,
             "promo_tipo": None,
             "precio_regular_promo": None,
             "precio_descuento": None,
             "comentarios_promo": None,
+            "categoria": categoria,
+            "subcategoria": subcategoria,
+            "url": r.get("detalle_url") or "",
         }
-        mapped.append(p)
 
-    # ========== INSERTAR EN MySQL ==========
+        if p["sku"] or p["precio_lista"] or p["precio_oferta"]:
+            productos.append(p)
+
+    if not productos:
+        print("⚠️ No hay productos para insertar en MySQL.")
+        return
+
+    # ====== Inserción en MySQL ======
     capturado_en = datetime.now()
-
     conn = None
     try:
         conn = get_conn()
@@ -497,7 +543,7 @@ def main():
         tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
 
         insertados = 0
-        for p in mapped:
+        for p in productos:
             producto_id = find_or_create_producto(cur, p)
             pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
             insert_historico(cur, tienda_id, pt_id, p, capturado_en)
@@ -507,13 +553,15 @@ def main():
         print(f"💾 Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOMBRE} ({capturado_en})")
 
     except MySQLError as e:
-        if conn: conn.rollback()
+        if conn:
+            conn.rollback()
         print(f"❌ Error MySQL: {e}")
     finally:
-        try:
-            if conn: conn.close()
-        except Exception:
-            pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

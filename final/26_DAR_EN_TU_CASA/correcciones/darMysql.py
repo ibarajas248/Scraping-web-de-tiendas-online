@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-DAR (darentucasa.com.ar) — Scrape completo (N1/N2/N3) + Ingesta MySQL (frame-aware)
+DAR (darentucasa.com.ar) — Scrape completo (N1/N2/N3) + Ingesta MySQL (cron-friendly)
 
 - Recorre N1 → N2 (leaf/folder) → N3, pagina y junta todos los productos.
 - Columnas base: codigo, descripcion, precio, precio_texto, oferta, imagen,
@@ -13,9 +13,10 @@ NOTAS:
   - Por defecto corre en headless. Para ver UI: --no-headless
   - Evita “user data dir in use” creando un perfil temporal de Chrome.
   - Debe existir base_datos.py con get_conn() -> mysql.connector.connect(...)
+  - Sin lecturas de stdin / sin hilos: apto para cron.
 """
 
-import os, sys, time, re, argparse, random, threading, tempfile, shutil
+import os, sys, time, re, argparse, random, tempfile, shutil
 from copy import deepcopy
 from typing import Tuple, Dict, Any, List, Optional
 from datetime import datetime as dt
@@ -34,7 +35,13 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (
     TimeoutException, WebDriverException, JavascriptException
 )
-from webdriver_manager.chrome import ChromeDriverManager
+
+# Usa webdriver_manager si está disponible; si no, intenta con chromedriver del PATH
+try:
+    from webdriver_manager.chrome import ChromeDriverManager
+    _USE_WDM = True
+except Exception:
+    _USE_WDM = False
 
 # ---------- MySQL ----------
 import mysql.connector
@@ -68,13 +75,8 @@ MAXLEN_NOMBRE_TIENDA   = 255
 # =========================
 # Helpers genéricos
 # =========================
-
 def _page_signature(driver) -> str:
-    """
-    Firma determinística de la página: concatenación ordenada de códigos visibles.
-    Sirve para detectar que realmente cambió de página.
-    (Debe ejecutarse DENTRO del frame que contiene el listado)
-    """
+    """Firma determinística de la página (dentro del frame de listado)."""
     try:
         lis = driver.find_elements(By.CSS_SELECTOR, "ul.listaProds li.cuadProd")
         codes = []
@@ -87,11 +89,7 @@ def _page_signature(driver) -> str:
         return ""
 
 def _ensure_full_list_loaded(driver, min_loops: int = 2, max_loops: int = 8):
-    """
-    Scrollea y espera hasta que el número de <li.cuadProd> se estabilice.
-    Útil para headless en VPS (lazy-load).
-    (Debe ejecutarse DENTRO del frame que contiene el listado)
-    """
+    """Carga perezosa estable: scrollea hasta estabilizar la cantidad de tarjetas."""
     last_count = -1
     loops = 0
     while loops < max_loops:
@@ -132,10 +130,7 @@ def _price_str(val) -> Optional[str]:
 LOCK_ERRNOS = {1205, 1213}  # lock wait timeout, deadlock
 
 def exec_with_retry(cur, sql, params=None, max_retries=5, base_sleep=0.4):
-    """
-    Ejecuta una sentencia SQL con reintentos ante lock timeout/deadlock.
-    NO hace commit (se maneja fuera).
-    """
+    """Ejecuta una sentencia SQL con reintentos ante lock timeout/deadlock (sin commit)."""
     attempt = 0
     while True:
         try:
@@ -156,6 +151,18 @@ def exec_with_retry(cur, sql, params=None, max_retries=5, base_sleep=0.4):
 # =========================
 _TEMP_PROFILE_DIR: Optional[str] = None
 
+def _resolve_chromedriver_service() -> Service:
+    """Permite usar CHROMEDRIVER_PATH si existe; si no, webdriver_manager; y si falla, Service() vacío."""
+    path_env = os.environ.get("CHROMEDRIVER_PATH")
+    if path_env and os.path.isfile(path_env):
+        return Service(path_env)
+    if _USE_WDM:
+        try:
+            return Service(ChromeDriverManager().install())
+        except Exception as e:
+            print(f"[WARN] webdriver_manager falló ({e}). Intentando Service() por defecto (requiere chromedriver en PATH).")
+    return Service()  # requiere chromedriver en PATH
+
 def setup_driver(headless: bool = True) -> webdriver.Chrome:
     global _TEMP_PROFILE_DIR
     _TEMP_PROFILE_DIR = tempfile.mkdtemp(prefix="dar_chrome_profile_")
@@ -171,14 +178,13 @@ def setup_driver(headless: bool = True) -> webdriver.Chrome:
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     opts.add_experimental_option("useAutomationExtension", False)
     opts.add_argument("--disable-features=AutomationControlled,TranslateUI,CalculateNativeWinOcclusion")
-    opts.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    opts.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     opts.add_argument("--force-device-scale-factor=1")
     opts.add_argument("--disable-renderer-backgrounding")
     opts.add_argument(f"--user-data-dir={_TEMP_PROFILE_DIR}")
     opts.add_argument("--profile-directory=Default")
 
-    service = Service(ChromeDriverManager().install())
+    service = _resolve_chromedriver_service()
     driver = webdriver.Chrome(service=service, options=opts)
     try:
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
@@ -275,16 +281,15 @@ def _switch_to_last_window(driver):
 
 def _find_frame_with_css(driver, css_selector: str) -> Optional[int]:
     """
-    Busca un frame/iframe que contenga css_selector. Devuelve:
+    Busca un frame/iframe que contenga css_selector. Retorna:
       -1 = documento principal
-      idx>=0 = índice del frame en driver.find_elements
+      idx>=0 = índice del frame
       None = no encontrado
-    Profundidad 1 (suficiente para este sitio).
     """
     _switch_to_last_window(driver)
     _switch_to_default(driver)
 
-    # primero intentar en el documento principal
+    # documento principal
     try:
         WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.CSS_SELECTOR, css_selector)))
         return -1
@@ -303,15 +308,11 @@ def _find_frame_with_css(driver, css_selector: str) -> Optional[int]:
         except Exception:
             _switch_to_default(driver)
             continue
-
     return None
 
 @contextmanager
 def switch_into_frame_with(driver, css_selector: str):
-    """
-    Context manager: entra al frame que contiene css_selector y vuelve al default al salir.
-    Retorna True si se logró entrar (incluye -1 = doc principal).
-    """
+    """Context manager: entra al frame que contiene css_selector y vuelve al default al salir."""
     idx = _find_frame_with_css(driver, css_selector)
     entered = False
     try:
@@ -355,7 +356,6 @@ def open_products_menu(driver: webdriver.Chrome):
 
 def open_menu_to_n1(driver: webdriver.Chrome, n1: str):
     open_products_menu(driver)
-    # estamos en overlay dentro de un frame (para el click volvemos a main)
     _switch_to_default(driver)
     try:
         wait_js_click(driver, (By.CSS_SELECTOR, f"div#D{n1}.M2-N1, #D{n1}"), f"Abrir N1 {n1}")
@@ -566,10 +566,7 @@ def click_next(driver: webdriver.Chrome, prev_sig: Optional[str]) -> bool:
 # =========================
 def scrape_n1_block(driver: webdriver.Chrome, n1: str, nombre_n1: str,
                     all_rows: List[Dict[str, Any]], seen_keys: set):
-    """
-    Recorre un N1 completo: todas sus N2 (leaf o folders) y sus N3 si aplica.
-    Acumula en all_rows; dedupe con seen_keys (incluye categoría).
-    """
+    """Recorre un N1 completo: sus N2 (leaf/folder) y sus N3 si aplica."""
     rutas_n2 = discover_n2_routes(driver, n1=n1)
     if not rutas_n2:
         print(f"No se detectaron N2 bajo N1={n1}.")
@@ -603,8 +600,7 @@ def scrape_n1_block(driver: webdriver.Chrome, n1: str, nombre_n1: str,
                     rp["cat_n2"] = n2
                     rp["cat_n3"] = n3
                     rp["cat_nombre"] = f"{nombre_n1} > {nombre_n2}"
-                    with _ROWS_LOCK:
-                        all_rows.append(rp)
+                    all_rows.append(rp)
                     nuevos += 1
                 print(f"       → {len(rows)} encontrados, {nuevos} nuevos, total {len(all_rows)}")
                 sig = _page_signature(driver)
@@ -643,8 +639,7 @@ def scrape_n1_block(driver: webdriver.Chrome, n1: str, nombre_n1: str,
                         rp["cat_n2"] = n2
                         rp["cat_n3"] = n3
                         rp["cat_nombre"] = f"{nombre_n1} > {nombre_n2} > {nombre_n3}"
-                        with _ROWS_LOCK:
-                            all_rows.append(rp)
+                        all_rows.append(rp)
                         nuevos += 1
                     print(f"       → {len(rows)} encontrados, {nuevos} nuevos, total {len(all_rows)}")
                     sig = _page_signature(driver)
@@ -662,10 +657,6 @@ def scrape_all_n1(headless: bool, out_xlsx: str, out_csv: Optional[str]=None) ->
 
         all_rows: List[Dict[str, Any]] = []
         seen_keys = set()
-
-        # registrar el buffer compartido para ENTER ingest
-        with _ROWS_LOCK:
-            _SHARED_ROWS["ref"] = all_rows
 
         for k, r1 in enumerate(rutas_n1, 1):
             n1 = r1["n1"]; nombre_n1 = r1["nombre"]
@@ -710,10 +701,7 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     return cur.fetchone()[0]
 
 def split_categoria_sub(cat_nombre: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-    """
-    cat_nombre viene como 'N1 > N2' o 'N1 > N2 > N3'.
-    Devolvemos: (categoria=N1, subcategoria='N2' o 'N2 > N3')
-    """
+    """'N1 > N2' o 'N1 > N2 > N3' → (N1, 'N2' o 'N2 > N3')."""
     if not cat_nombre:
         return None, None
     parts = [p.strip() for p in str(cat_nombre).split(">") if p.strip()]
@@ -724,7 +712,7 @@ def split_categoria_sub(cat_nombre: Optional[str]) -> tuple[Optional[str], Optio
     return categoria, sub
 
 def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
-    ean = None  # no lo tenemos
+    ean = None  # no lo tenemos en esta tienda
     nombre = _truncate(r.get("descripcion") or "", MAXLEN_NOMBRE)
     marca = None
     fabricante = None
@@ -732,7 +720,6 @@ def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
     categoria = _truncate(categoria or "", MAXLEN_CATEGORIA)
     subcategoria = _truncate(subcategoria or "", MAXLEN_SUBCATEGORIA)
 
-    # (nombre, marca) como clave "suave"
     if nombre:
         exec_with_retry(cur,
             "SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1",
@@ -774,7 +761,6 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
         """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
         return cur.lastrowid
 
-    # si no hay SKU, igual intentamos registrar vínculo tienda-producto
     exec_with_retry(cur, """
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, %s, %s)
@@ -822,7 +808,7 @@ def ingest_to_mysql(df: pd.DataFrame):
     try:
         conn = get_conn()
 
-        # Sugerencias de sesión para reducir bloqueos
+        # Reducir bloqueos
         try:
             with conn.cursor() as cset:
                 cset.execute("SET SESSION innodb_lock_wait_timeout = 8")
@@ -904,67 +890,16 @@ def ingest_to_mysql(df: pd.DataFrame):
         except Exception:
             pass
 
-# === ENTER ingest support ===
-_ROWS_LOCK = threading.Lock()
-_SHARED_ROWS: Dict[str, Any] = {"ref": None}  # se setea a la lista `all_rows` en scrape_all_n1()
-
-def _snapshot_df_for_ingest() -> pd.DataFrame:
-    with _ROWS_LOCK:
-        ref = _SHARED_ROWS.get("ref") or []
-        rows = deepcopy(ref)
-    if not rows:
-        return pd.DataFrame(columns=["codigo","descripcion","precio","precio_texto","oferta","imagen",
-                                     "cat_n0","cat_n2","cat_n3","cat_nombre"])
-    df = pd.DataFrame(rows, columns=["codigo","descripcion","precio","precio_texto","oferta","imagen",
-                                     "cat_n0","cat_n2","cat_n3","cat_nombre"])
-    if not df.empty:
-        try:
-            df.sort_values(by=["cat_nombre","descripcion"], inplace=True, kind="stable")
-        except Exception:
-            pass
-    return df
-
-def _enter_listener_loop():
-    """
-    Hilo demonio: espera líneas en stdin. Cada ENTER dispara una ingesta inmediata
-    con un snapshot de lo scrapeado hasta el momento.
-    """
-    print("💡 Tip: presioná ENTER en cualquier momento para INGESTAR a MySQL lo acumulado hasta ahora.")
-    while True:
-        try:
-            line = sys.stdin.readline()
-            if line is None or line == "":
-                time.sleep(0.5)
-                continue
-            df = _snapshot_df_for_ingest()
-            if df.empty:
-                print("↩️  ENTER recibido, pero todavía no hay filas para ingestar.")
-                continue
-            print(f"↩️  ENTER recibido: ingestado inmediato de {len(df)} filas acumuladas…")
-            try:
-                ingest_to_mysql(df)
-                print("✔ Ingesta por ENTER completada.\n")
-            except Exception as e:
-                print(f"❌ Error en ingesta por ENTER: {e}\n")
-        except Exception:
-            time.sleep(0.5)
-
-def _start_enter_listener():
-    t = threading.Thread(target=_enter_listener_loop, daemon=True)
-    t.start()
-
 # =========================
 # CLI
 # =========================
 def main():
-    ap = argparse.ArgumentParser(description="DAR → Scrape completo + Ingesta MySQL")
+    ap = argparse.ArgumentParser(description="DAR → Scrape completo + Ingesta MySQL (cron-friendly)")
     ap.add_argument("--out", default="dar_catalogo_completo.xlsx", help="Ruta de salida XLSX (debug/auditoría)")
     ap.add_argument("--csv", default=None, help="(Opcional) Ruta CSV adicional")
     ap.add_argument("--no-headless", action="store_true", help="Desactivar headless (para debugar con UI)")
     ap.add_argument("--no-ingest", action="store_true", help="Solo scrape (no ingesta)")
     args = ap.parse_args()
-
-    _start_enter_listener()
 
     df = scrape_all_n1(headless=(not args.no_headless), out_xlsx=args.out, out_csv=args.csv)
     if not args.no_ingest and not df.empty:

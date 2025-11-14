@@ -3,8 +3,6 @@
 # Ejecutar en el VPS (conexión directa, sin túnel):
 #   streamlit run app.py --server.address 127.0.0.1 --server.port 8090 --server.headless true
 
-
-
 def iniciaReporte():
     import io
     import os
@@ -56,7 +54,6 @@ def iniciaReporte():
             raise
         return engine
 
-
     engine = get_engine()
 
     # Helper central para ejecutar SQL con parámetros nombrados (:param)
@@ -77,6 +74,15 @@ def iniciaReporte():
     END
     """
 
+    # 🔢 Normalizador SQL de EAN (solo dígitos)
+    EAN_SQL_NORM = "REGEXP_REPLACE(p.ean, '[^0-9]', '')"
+    # Si tu MariaDB no soporta REGEXP_REPLACE, usa la siguiente alternativa:
+    # EAN_SQL_NORM = (
+    #     "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("
+    #     "REPLACE(REPLACE(p.ean,'-',''),' ',''),'.',''),'/',''),'\\\\',''),'(',''),')',''),"
+    #     "'[',''),']',''), CHAR(9),''), CHAR(13),'')"
+    # )
+
     def _normalize_col(s: str) -> str:
         s = s.strip().lower()
         s = ''.join(c for c in unicodedata.normalize('NFKD', s) if not unicodedata.combining(c))
@@ -93,6 +99,9 @@ def iniciaReporte():
         if len(s) in {8, 12, 13, 14}:
             return s
         return s if s else None
+
+    def _digits_only(s: str) -> str:
+        return re.sub(r"\D+", "", str(s or ""))
 
     def to_list_str(s: str) -> List[str]:
         if not s:
@@ -275,7 +284,6 @@ def iniciaReporte():
         except Exception:
             return [], None
 
-
     def df_to_excel_bytes(df: pd.DataFrame, sheet_name="data") -> bytes:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -296,7 +304,6 @@ def iniciaReporte():
         ORDER BY nombre
         """
         return read_df(q)
-
 
     @st.cache_data(ttl=300, show_spinner=False)
     def get_categorias():
@@ -391,9 +398,14 @@ def iniciaReporte():
         if not eans:
             return pd.DataFrame()
         price_expr = EFFECTIVE_PRICE_EXPR if effective else "h.precio_lista"
-        placeholders = ",".join([f":be{i}" for i in range(len(eans))])
+
+        # normaliza a solo dígitos
+        eans_digits = [_digits_only(e) for e in eans if _digits_only(e)]
+        if not eans_digits:
+            return pd.DataFrame()
+        placeholders = ",".join([f":be{i}" for i in range(len(eans_digits))])
         p = params.copy()
-        p.update({f"be{i}": e for i, e in enumerate(eans)})
+        p.update({f"be{i}": v for i, v in enumerate(eans_digits)})
 
         q = f"""
         -- 1) Último snapshot por (tienda, producto_tienda)
@@ -402,7 +414,7 @@ def iniciaReporte():
           FROM historico_precios h
           JOIN producto_tienda pt ON pt.id = h.producto_tienda_id
           JOIN productos p ON p.id = pt.producto_id
-          WHERE {where_str} AND p.ean IN ({placeholders})
+          WHERE {where_str} AND {EAN_SQL_NORM} IN ({placeholders})
           GROUP BY h.tienda_id, h.producto_tienda_id
         ),
         -- 2) Tomamos precio/atributos de ese último snapshot
@@ -470,15 +482,17 @@ def iniciaReporte():
         JOIN productos p        ON p.id  = pt.producto_id
         JOIN tiendas t          ON t.id  = h.tienda_id
         WHERE {where_str}
-          AND h.precio_lista IS NOT NULL
-          AND h.precio_lista <> 0
+          AND (
+                (h.precio_lista IS NOT NULL AND h.precio_lista <> 0)
+             OR (h.precio_oferta IS NOT NULL AND h.precio_oferta <> 0
+                 AND (h.tipo_oferta IS NULL OR h.tipo_oferta NOT LIKE '%Precio%regular%'))
+              )
         ORDER BY t.nombre, p.ean, h.capturado_en
         LIMIT {int(limit)}
         """
         return read_df(q, params)
 
     # ======= FIN cambio =======
-
 
     # ---------- Navegación "tabs" con sidebars distintos ----------
     VISTAS = ["Reporte", "jobs", "ean", "reporte rapido aux","tiendas","cargar maestro"]
@@ -595,7 +609,6 @@ def iniciaReporte():
             "refs_sel": refs_sel,
         }
 
-
     def sidebar_analisis():
         st.sidebar.header("Filtros – Análisis")
         ventana = st.sidebar.slider("Ventana (días) para tendencia", 7, 90, 30, step=1)
@@ -642,9 +655,11 @@ def iniciaReporte():
             params.update({f"marca{i}": v for i, v in enumerate(marcas_sel)})
 
         if ean_list:
-            placeholders = ",".join([f":ean{i}" for i in range(len(ean_list))])
-            where_parts.append(f"p.ean IN ({placeholders})")
-            params.update({f"ean{i}": v for i, v in enumerate(ean_list)})
+            ean_list_digits = [_digits_only(v) for v in ean_list if _digits_only(v)]
+            placeholders = ",".join([f":ean{i}" for i in range(len(ean_list_digits))])
+            # comparación contra EAN normalizado en DB
+            where_parts.append(f"{EAN_SQL_NORM} IN ({placeholders})")
+            params.update({f"ean{i}": v for i, v in enumerate(ean_list_digits)})
 
         return " AND ".join(where_parts), params
 
@@ -831,14 +846,8 @@ def iniciaReporte():
     elif vista == "cargar maestro":
         import ftp
         ftp.ftpcarga()
-
-
-
-
-
     elif vista == "tiendas":
         import tiendas
         tiendas.tiendas(engine)
-
     else:
         vista_regiones()

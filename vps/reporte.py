@@ -752,6 +752,10 @@ def iniciaReporte():
         st.subheader("Tabla Reporte (todas las capturas en el rango)")
         detail = get_detail(where_str, where_params, use_effective, f["sample_limit"])
 
+        # --- Dedup: 1 EAN por tienda por día (mantener el último snapshot del día) ---
+        # La consulta SQL viene ordenada por h.capturado_en asc, así que 'keep="last"' conserva el más reciente de ese día.
+        detail = detail.drop_duplicates(subset=["EAN", "BANDERA", "FECHA"], keep="last").reset_index(drop=True)
+
         # === Si hay maestro subido por Excel, usar SUS valores y SU orden ===
         m = f.get("master_attrs_df")
         if m is not None and isinstance(m, pd.DataFrame) and not m.empty:

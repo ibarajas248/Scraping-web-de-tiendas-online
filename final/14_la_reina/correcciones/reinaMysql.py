@@ -20,14 +20,14 @@ Requisitos:
 
 Notas:
   - Usa un crawl respetuoso (SLEEP_BETWEEN) y reintentos HTTP (Retry).
-  - Ajusta MAX_NL_DISCOVER / MAX_PAGES_PER_NL si quieres aún más cobertura.
+  - Ajusta ACTIVE_P_VALUES para cubrir más sucursales (P=...).
 """
 
 import re
 import time
 import logging
 from threading import Lock
-from urllib.parse import urljoin, urlparse, parse_qs
+from urllib.parse import urljoin, urlparse, parse_qs, urlencode
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -66,6 +66,9 @@ TIENDA_NOMBRE = "La Reina Online"
 MAX_NL_DISCOVER = 2000        # máximo de nls a visitar
 MAX_PAGES_PER_NL = 200        # máximo de páginas por nl
 CRAWL_SEEDS = [HOME, f"{BASE}/rubros.asp", f"{BASE}/ofertas.asp"]
+
+# Recorrer múltiples plazas/sucursales (param P=)
+ACTIVE_P_VALUES = [1, 2]      # agrega más si hace falta
 
 # ================== Utilidades ==================
 MONEY_RX  = re.compile(r"\$\s*[\d\.]+(?:,\s*\d{2})?")
@@ -130,8 +133,20 @@ def get_qp(url: str, key: str) -> Optional[str]:
     except Exception:
         return None
 
-def is_ean(s: Optional[str]) -> bool:
-    return bool(s) and s.isdigit() and len(s) in (8, 13)
+def set_qp(url: str, key: str, value: str) -> str:
+    """Devuelve url con query param key=value (reemplazando si ya existe)."""
+    u = urlparse(url)
+    q = parse_qs(u.query)
+    q[key] = [str(value)]
+    new_q = urlencode({k: v[0] for k, v in q.items()}, doseq=False)
+    return u._replace(query=new_q).geturl()
+
+def ensure_p(url: str, pval: int) -> str:
+    """Asegura que la URL lleve P=pval."""
+    cur = get_qp(url, "P")
+    if cur and str(cur) == str(pval):
+        return url
+    return set_qp(url, "P", str(pval))
 
 def mk_session() -> requests.Session:
     s = requests.Session()
@@ -181,18 +196,19 @@ def discover_nl_on_page(html: str) -> List[Tuple[str, str, str]]:
             found[nl] = (nl, url, label)
     return list(found.values())
 
-def collect_category_pages(session: requests.Session, nl_url: str, nl_code: str) -> List[str]:
+def collect_category_pages(session: requests.Session, nl_url: str, nl_code: str, pval: int) -> List[str]:
     """
-    Lee la primera página de la subcategoría y detecta URLs de paginación del mismo nl.
+    Lee la primera página de la subcategoría y detecta URLs de paginación del mismo nl y misma P.
     """
-    html = fetch(session, nl_url)
+    first = ensure_p(nl_url, pval)
+    html = fetch(session, first)
     soup = BeautifulSoup(html, "html.parser")
-    pages: Set[str] = set([nl_url])
+    pages: Set[str] = {first}
     # Paginación típica del sitio
     for a in soup.select('a[href*="productosnl.asp"]'):
         href = a.get("href") or ""
         if "nl=" in href and nl_code in href:
-            pages.add(urljoin(BASE, href))
+            pages.add(ensure_p(urljoin(BASE, href), pval))
     # Fallback: construir páginas por "pag=" si aparecen
     if len(pages) == 1:
         for a in soup.find_all("a"):
@@ -200,22 +216,22 @@ def collect_category_pages(session: requests.Session, nl_url: str, nl_code: str)
             if "productosnl.asp" in href and "nl=" in href:
                 url = urljoin(BASE, href)
                 if nl_code in url:
-                    pages.add(url)
+                    pages.add(ensure_p(url, pval))
     # Seguridad: ordenar y recortar
     pages = sorted(list(pages))
     if len(pages) > MAX_PAGES_PER_NL:
         pages = pages[:MAX_PAGES_PER_NL]
     return pages
 
-def discover_all_categories(session: requests.Session) -> List[Tuple[str, str, str]]:
+def discover_all_categories(session: requests.Session, pval: int) -> List[Tuple[str, str, str]]:
     """
-    BFS simple:
-      - parte de CRAWL_SEEDS
-      - en cada página descubre nls y las añade a la cola (por url asociada)
+    BFS simple por plaza P:
+      - parte de CRAWL_SEEDS (forzados con P)
+      - en cada página descubre nls y las añade al índice
       - límite por MAX_NL_DISCOVER
     """
-    logging.info("Iniciando descubrimiento ampliado de subcategorías (nl)…")
-    queue: List[str] = list(dict.fromkeys(CRAWL_SEEDS))
+    logging.info("Iniciando descubrimiento ampliado de subcategorías (nl) para P=%s…", pval)
+    queue: List[str] = [ensure_p(u, pval) for u in dict.fromkeys(CRAWL_SEEDS)]
     visited_pages: Set[str] = set()
     found_nl: Dict[str, Tuple[str, str, str]] = {}
 
@@ -233,9 +249,10 @@ def discover_all_categories(session: requests.Session) -> List[Tuple[str, str, s
         # Extraer y acumular nl de esta página
         for nl, nl_url, label in discover_nl_on_page(html):
             if nl not in found_nl:
+                # conservar URL como vino; P lo forzamos al entrar
                 found_nl[nl] = (nl, nl_url, label)
 
-        # También empujar nuevas páginas internas para seguir encontrando nl
+        # Empujar nuevas páginas internas con P forzado
         soup = BeautifulSoup(html, "html.parser")
         for a in soup.find_all("a", href=True):
             href = a["href"]
@@ -251,25 +268,26 @@ def discover_all_categories(session: requests.Session) -> List[Tuple[str, str, s
                 or "productos" in abs_url.lower()
                 or "busqueda" in abs_url.lower()
                 or "productosnl" in abs_url.lower()):
+                abs_url = ensure_p(abs_url, pval)
                 if abs_url not in visited_pages and abs_url not in queue:
                     queue.append(abs_url)
 
-        logging.info("  • Descubiertos hasta ahora: %d nls (pendientes de visitar: %d)",
-                     len(found_nl), len(queue))
+        logging.info("  • [P=%s] Descubiertos hasta ahora: %d nls (pendientes de visitar: %d)",
+                     pval, len(found_nl), len(queue))
 
         if len(visited_pages) > 5000:  # hard cap de páginas visitadas
             logging.warning("Se alcanzó el límite de páginas visitadas del crawler (5000).")
             break
 
     cats = list(found_nl.values())
-    logging.info("Descubrimiento finalizado. NL totales: %d", len(cats))
+    logging.info("Descubrimiento finalizado (P=%s). NL totales: %d", pval, len(cats))
     return cats
 
 # ================== Listado ==================
-def extract_list_cards(html: str) -> List[dict]:
+def extract_list_cards_for_p(html: str, pval: int) -> List[dict]:
     """
     Extrae cada <li class="cuadProd"> con:
-      - link detalle desde .FotoProd a[href*='productosdet.asp']
+      - link detalle desde .FotoProd a[href*='productosdet.asp'] (inyectando P)
       - nombre desde .InfoProd .desc  (fallback: alt de la imagen)
       - precio desde .InfoProd .precio (maneja coma + centavos en <b>)
     """
@@ -281,7 +299,7 @@ def extract_list_cards(html: str) -> List[dict]:
         a = li.select_one(".FotoProd a[href*='productosdet.asp']")
         if not a:
             continue
-        det_url = urljoin(BASE, a.get("href", ""))
+        det_url = ensure_p(urljoin(BASE, a.get("href", "")), pval)
         if not det_url or det_url in seen:
             continue
         seen.add(det_url)
@@ -299,7 +317,6 @@ def extract_list_cards(html: str) -> List[dict]:
         money_text = norm_text(p_block.get_text(" ", strip=True))
         money_text = re.sub(r",\s*(\d{2})", r",\1", money_text)
         price = money_to_decimal(money_text)
-
         is_offer = ("OFERTA" in money_text.upper())
 
         items.append({
@@ -313,7 +330,7 @@ def extract_list_cards(html: str) -> List[dict]:
     if not items:
         for a in soup.select('a[href*="productosdet.asp"]'):
             href = a.get("href") or ""
-            det_url = urljoin(BASE, href)
+            det_url = ensure_p(urljoin(BASE, href), pval)
             if det_url in seen:
                 continue
             seen.add(det_url)
@@ -357,7 +374,8 @@ def extract_list_cards(html: str) -> List[dict]:
     return items
 
 # ================== Detalle ==================
-def parse_detail(session: requests.Session, url: str) -> dict:
+def parse_detail(session: requests.Session, url: str, pval: int) -> dict:
+    url = ensure_p(url, pval)
     html = fetch(session, url)
     soup = BeautifulSoup(html, "html.parser")
 
@@ -419,7 +437,7 @@ def parse_detail(session: requests.Session, url: str) -> dict:
         m = re.search(r"FLaCompDet\('(\d+)'\)", agre.get("onclick", ""))
         if m:
             pr = m.group(1)
-            ean = pr if is_ean(pr) else None
+            ean = pr if (pr.isdigit() and len(pr) in (8, 13)) else None
             codigo_interno = pr if not ean else None
 
     if not ean and not codigo_interno:
@@ -427,7 +445,7 @@ def parse_detail(session: requests.Session, url: str) -> dict:
         if inp:
             pr = (inp.get("id") or "").lstrip("c")
             if pr:
-                ean = pr if is_ean(pr) else None
+                ean = pr if (pr.isdigit() and len(pr) in (8, 13)) else None
                 codigo_interno = pr if not ean else None
 
     if not ean and not codigo_interno:
@@ -435,14 +453,14 @@ def parse_detail(session: requests.Session, url: str) -> dict:
             m = re.search(r"ProductoEnTicket\.asp\?Prod=(\d+)", sc.text or "")
             if m:
                 pr = m.group(1)
-                ean = pr if is_ean(pr) else None
+                ean = pr if (pr.isdigit() and len(pr) in (8, 13)) else None
                 codigo_interno = pr if not ean else None
                 break
 
     if not ean and not codigo_interno:
         pr = get_qp(url, "Pr")
         if pr:
-            ean = pr if is_ean(pr) else None
+            ean = pr if (pr.isdigit() and len(pr) in (8, 13)) else None
             codigo_interno = pr if not ean else None
 
     return {
@@ -455,93 +473,90 @@ def parse_detail(session: requests.Session, url: str) -> dict:
         "Tipo de Oferta": "Oferta" if oferta_flag else None,
         "Categoría": categoria,
         "Subcategoría": subcategoria,
-        "URL": url
+        "URL": url  # normalizada con P
     }
 
 # ================== Pipeline (scraping) ==================
 def scrape_lareina() -> pd.DataFrame:
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
     session = mk_session()
+    all_rows = []
 
-    # 1) Descubrir todas las subcategorías posibles
-    cats = discover_all_categories(session)
-    logging.info("Subcategorías a procesar: %d", len(cats))
+    for pval in ACTIVE_P_VALUES:
+        cats = discover_all_categories(session, pval)
+        logging.info("P=%s → subcategorías a procesar: %d", pval, len(cats))
 
-    rows = []
-    visited_nl: Set[str] = set()
+        rows = []
+        visited_nl: Set[str] = set()
 
-    for nl, url_cat, label in cats:
-        if nl in visited_nl:
-            continue
-        visited_nl.add(nl)
+        for nl, url_cat, label in cats:
+            if nl in visited_nl:
+                continue
+            visited_nl.add(nl)
 
-        logging.info("📂 Subcategoría %s (%s)", label or "", nl)
-        try:
-            page_urls = collect_category_pages(session, url_cat, nl)
-        except Exception as e:
-            logging.warning("No pude leer páginas de %s: %s", url_cat, e)
-            continue
-
-        # Seguridad: limitar páginas por nl (evita loops)
-        if len(page_urls) > MAX_PAGES_PER_NL:
-            page_urls = page_urls[:MAX_PAGES_PER_NL]
-
-        for purl in page_urls:
+            logging.info("📂 [P=%s] Subcategoría %s (%s)", pval, label or "", nl)
             try:
-                html = fetch(session, purl)
+                page_urls = collect_category_pages(session, url_cat, nl, pval)
             except Exception as e:
-                logging.warning("Fallo leyendo %s: %s", purl, e)
+                logging.warning("No pude leer páginas de %s: %s", url_cat, e)
                 continue
 
-            # Mientras listamos, SIGUE descubriendo nls nuevos
-            for nln, nlu, labn in discover_nl_on_page(html):
-                if nln not in visited_nl:
-                    # No los re-enfilamos aquí para evitar crecer indefinidamente el ciclo;
-                    # pero ya entraron al conjunto global en discover_all_categories().
-                    pass
+            # Seguridad
+            if len(page_urls) > MAX_PAGES_PER_NL:
+                page_urls = page_urls[:MAX_PAGES_PER_NL]
 
-            cards = extract_list_cards(html)
-            logging.info("  • %s → %d productos (página)", purl, len(cards))
-            if not cards:
-                continue
+            for purl in page_urls:
+                try:
+                    html = fetch(session, purl)  # purl ya trae P
+                except Exception as e:
+                    logging.warning("Fallo leyendo %s: %s", purl, e)
+                    continue
 
-            # En paralelo, completar info con el detalle
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
-                futs = {ex.submit(parse_detail, session, c["url_detalle"]): c for c in cards}
-                for fut in as_completed(futs):
-                    base = futs[fut]
-                    try:
-                        det = fut.result()
-                    except Exception as e:
-                        logging.warning("    - Error detalle %s: %s", base["url_detalle"], e)
-                        continue
+                # Mientras listamos, también podríamos descubrir nls (no reenfilamos aquí)
+                cards = extract_list_cards_for_p(html, pval)
+                logging.info("  • [P=%s] %s → %d productos (página)", pval, purl, len(cards))
+                if not cards:
+                    continue
 
-                    nombre = base.get("nombre_listado") or det.get("Nombre Producto (detalle)")
-                    precio_lista = det.get("Precio de Lista") or base.get("precio_listado")
-                    precio_oferta = det.get("Precio de Oferta")
-                    tipo_oferta = det.get("Tipo de Oferta") or ("Oferta" if base.get("oferta_listado") else None)
+                # En paralelo, completar info con el detalle
+                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+                    futs = {ex.submit(parse_detail, session, c["url_detalle"], pval): c for c in cards}
+                    for fut in as_completed(futs):
+                        base = futs[fut]
+                        try:
+                            det = fut.result()
+                        except Exception as e:
+                            logging.warning("    - Error detalle %s: %s", base["url_detalle"], e)
+                            continue
 
-                    row = {
-                        "EAN": det["EAN"],
-                        "Código Interno": det["Código Interno"],
-                        "Nombre Producto": nombre,
-                        "Categoría": det["Categoría"],
-                        "Subcategoría": det["Subcategoría"],
-                        "Marca": det["Marca"],
-                        "Fabricante": None,
-                        "Precio de Lista": precio_lista,
-                        "Precio de Oferta": precio_oferta,
-                        "Tipo de Oferta": tipo_oferta,
-                        "URL": det["URL"],
-                    }
+                        nombre = base.get("nombre_listado") or det.get("Nombre Producto (detalle)")
+                        precio_lista = det.get("Precio de Lista") or base.get("precio_listado")
+                        precio_oferta = det.get("Precio de Oferta")
+                        tipo_oferta = det.get("Tipo de Oferta") or ("Oferta" if base.get("oferta_listado") else None)
 
-                    if PRINT_ROWS:
-                        log_row(row)
+                        row = {
+                            "EAN": det["EAN"],
+                            "Código Interno": det["Código Interno"],
+                            "Nombre Producto": nombre,
+                            "Categoría": det["Categoría"],
+                            "Subcategoría": det["Subcategoría"],
+                            "Marca": det["Marca"],
+                            "Fabricante": None,
+                            "Precio de Lista": precio_lista,
+                            "Precio de Oferta": precio_oferta,
+                            "Tipo de Oferta": tipo_oferta,
+                            "URL": det["URL"],
+                        }
 
-                    rows.append(row)
+                        if PRINT_ROWS:
+                            log_row(row)
+
+                        rows.append(row)
+
+        all_rows.extend(rows)
 
     # Dedupe: prioriza EAN -> Código Interno -> URL
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(all_rows)
     if df.empty:
         return df
     df["_k"] = df["EAN"].fillna("").astype(str).str.strip()

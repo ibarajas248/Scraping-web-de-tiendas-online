@@ -2,20 +2,18 @@
 # -*- coding: utf-8 -*-
 
 """
-17_Toledo Digital (VTEX) — Scraper catálogo completo + inserción MySQL
-
-Inserta en:
-
-- tiendas (toledo)
-- productos (catálogo)
-- producto_tienda (vínculo por SKU tienda y/o productId)
-- historico_precios (precios con timestamp)
+17_Toledo Digital (VTEX) — Scraper catálogo completo + inserción MySQL (robusto anti-1205, SIN EAN)
+---------------------------------------------------------------------------------------------------
+- Paridad con tu script original (mismas columnas y lógica), pero forzando ean=NULL.
+- Transacciones por lotes (BATCH commits).
+- capturado_en = NOW(6) dentro del INSERT (no se pasa desde Python).
+- Isolation level READ COMMITTED y lock_wait_timeout más alto.
+- Retries con backoff en DML (1205/1213).
+- Candado lógico por tienda (GET_LOCK/RELEASE_LOCK) para evitar concurrencia por tienda.
 
 Salida por fila (SKU):
-
 EAN | Código Interno | Nombre Producto | Categoría | Subcategoría | Marca | Fabricante |
 Precio de Lista | Precio de Oferta | Tipo de Oferta | URL
-
 """
 
 import time
@@ -46,13 +44,13 @@ BASE_WEB   = "https://www.toledodigital.com.ar"
 API_TREE   = f"{BASE_WEB}/api/catalog_system/pub/category/tree/{{depth}}"
 API_SEARCH = f"{BASE_WEB}/api/catalog_system/pub/products/search"
 
-DEPTH = 3              # niveles de árbol de categorías
-STEP = 50              # VTEX pagina por rango _from/_to
-SLEEP = 0.25           # pausa suave entre requests
+DEPTH = 3               # niveles de árbol de categorías
+STEP = 50               # VTEX pagina por rango _from/_to
+SLEEP = 0.25            # pausa suave entre requests
 TIMEOUT = 25
 RETRIES = 3
-SC_DEFAULT = 1         # sales channel; si la tienda no lo usa, no afecta
-MAX_VACIAS = 2         # corta categoría tras N páginas vacías seguidas
+SC_DEFAULT = 1          # sales channel; si la tienda no lo usa, no afecta
+MAX_VACIAS = 2          # corta categoría tras N páginas vacías seguidas
 
 OUT_CSV  = "toledo_catalogo.csv"
 OUT_XLSX = "toledo_catalogo.xlsx"
@@ -66,10 +64,10 @@ HEADERS = {
 TIENDA_CODIGO = "toledo"
 TIENDA_NOMBRE = "17_Toledo Digital"
 
-# Si alguna vez necesitás forzar EAN por SKU/producto:
-EAN_MAP: Dict[str, str] = {
-    # "itemId_o_productId": "ean_corregido",
-}
+# DB batching y retries
+BATCH = 300
+SQL_RETRIES = 4         # reintentos para 1205/1213
+BACKOFF_BASE = 0.5      # segundos
 
 # ------------------ Helpers comunes (DB/parse) ------------------
 _price_clean_re = re.compile(r"[^\d,.\-]")
@@ -124,7 +122,7 @@ def flatten_categories(tree: List[dict], prefix_path: Optional[str] = None) -> L
     for node in tree:
         slug = (node.get("url", "") or node.get("link", "")).strip("/").split("/")[-1]
         if not slug:
-            slug = node.get("name", "").strip().replace(" ", "-").lower()
+            slug = (node.get("name") or "").strip().replace(" ", "-").lower()
         current_path = slug if not prefix_path else f"{prefix_path}/{slug}"
         depth = current_path.count("/") + 1
         map_str = ",".join(["c"] * depth)
@@ -139,33 +137,9 @@ def safe_get(d: dict, key: str, default=""):
     v = d.get(key, default) if isinstance(d, dict) else default
     return "" if v is None else v
 
-def first_or_empty(seq, key=None):
-    if not seq:
-        return ""
-    return safe_get(seq[0], key, "") if key else seq[0]
-
-def extract_ean(item: dict, product: dict) -> str:
-    """
-    Estrategia usual VTEX:
-    - item['ean']
-    - item['referenceId'][0]['Value'] (o 'value' o 'Id'=='EAN')
-    - fallback por mapeo manual EAN_MAP con itemId/productId
-    """
-    ean = safe_get(item, "ean", "")
-    if not ean:
-        refs = item.get("referenceId") or item.get("ReferenceId") or []
-        ean = ""
-        for ref in refs:
-            key = (ref.get("Key") or ref.get("key") or "").upper()
-            val = ref.get("Value") or ref.get("value") or ""
-            if key in ("EAN", "GTIN", "BARRAS") and val:
-                ean = val
-                break
-        if not ean and refs:
-            ean = first_or_empty(refs, "Value") or first_or_empty(refs, "value")
-    if not ean:
-        ean = EAN_MAP.get(item.get("itemId") or product.get("productId"), "")
-    return str(ean).strip()
+def extract_ean(item: dict, product: dict):
+    """Forzado: NUNCA devolver EAN -> None para que DB guarde NULL."""
+    return None
 
 def extract_teaser(co: dict) -> str:
     teasers = co.get("Teasers") or []
@@ -205,7 +179,7 @@ def row_from_product(product: dict) -> List[dict]:
     items: List[dict] = product.get("items") or product.get("Items") or []
     for it in items:
         item_id = str(it.get("itemId", "")).strip() or product_id
-        ean = extract_ean(it, product)
+        ean = extract_ean(it, product)  # -> None (DB: NULL)
 
         sellers = it.get("sellers") or it.get("Sellers") or []
         seller = sellers[0] if sellers else {}
@@ -221,8 +195,8 @@ def row_from_product(product: dict) -> List[dict]:
             tipo_oferta = "Oferta"
 
         row = {
-            "EAN": ean,
-            "Código Interno": item_id,                 # SKU (fallback: productId)
+            "EAN": ean,                                 # None -> luego NULL en DB
+            "Código Interno": item_id,                  # SKU (fallback: productId)
             "Nombre Producto": product_name,
             "Categoría": categoria,
             "Subcategoría": subcategoria,
@@ -232,7 +206,7 @@ def row_from_product(product: dict) -> List[dict]:
             "Precio de Oferta": price or "",
             "Tipo de Oferta": tipo_oferta,
             "URL": url,
-            "productId": product_id,                   # <-- guardamos para DB (record_id_tienda)
+            "productId": product_id,                    # record_id_tienda
         }
         rows.append(row)
     return rows
@@ -272,8 +246,6 @@ def fetch_category(session: requests.Session, path: str, map_str: str, sc: Optio
 
         for p in data:
             filas = row_from_product(p)
-            for fila in filas:
-                print(f"[{path}] EAN: {fila['EAN']} | SKU: {fila['Código Interno']} | {fila['Nombre Producto']}")
             all_rows.extend(filas)
 
         if n < STEP:
@@ -316,8 +288,7 @@ def scrape_toledo() -> pd.DataFrame:
     df = pd.DataFrame(rows)
 
     # Normalizaciones ligeras
-    df["EAN"] = df["EAN"].fillna("").astype(str).str.strip()
-
+    df["EAN"] = None  # <-- forzar None (no "", no "nan"), y NUNCA usar para DB
     df["Código Interno"] = df["Código Interno"].astype(str)
     df["Precio de Lista"]  = pd.to_numeric(df["Precio de Lista"], errors="coerce")
     df["Precio de Oferta"] = pd.to_numeric(df["Precio de Oferta"], errors="coerce")
@@ -335,65 +306,75 @@ def scrape_toledo() -> pd.DataFrame:
     logging.info(f"Listo. Filas: {len(df)} | CSV: {OUT_CSV} | XLSX: {OUT_XLSX}")
     return df
 
-# ------------------ MySQL helpers (upserts estilo Coto) ------------------
+# ------------------ MySQL helpers ------------------
+def exec_retry(cur, sql, params=None, retries=SQL_RETRIES, label=""):
+    """
+    Ejecuta cur.execute con reintentos ante 1205 (Lock wait timeout) o 1213 (Deadlock).
+    """
+    for i in range(retries):
+        try:
+            cur.execute(sql, params or ())
+            return
+        except MySQLError as e:
+            err = getattr(e, "errno", None)
+            if err in (1205, 1213):  # lock wait timeout / deadlock
+                time.sleep(BACKOFF_BASE * (2 ** i))
+                continue
+            raise
+
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
-    cur.execute(
+    exec_retry(cur,
         "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
         "ON DUPLICATE KEY UPDATE nombre=VALUES(nombre)",
-        (codigo, nombre)
+        (codigo, nombre),
+        label="upsert_tienda"
     )
-    cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
+    exec_retry(cur, "SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,), label="select_tienda")
     return cur.fetchone()[0]
 
 def find_or_create_producto(cur, p: Dict[str, any]) -> int:
-    ean = clean(p.get("ean"))
-    if ean:
-        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
-        row = cur.fetchone()
-        if row:
-            pid = row[0]
-            cur.execute("""
-                UPDATE productos SET
-                  nombre = COALESCE(NULLIF(%s,''), nombre),
-                  marca = COALESCE(NULLIF(%s,''), marca),
-                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
-                  categoria = COALESCE(NULLIF(%s,''), categoria),
-                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
-                WHERE id=%s
-            """, (
-                p.get("nombre") or "", p.get("marca") or "", p.get("fabricante") or "",
-                p.get("categoria") or "", p.get("subcategoria") or "", pid
-            ))
-            return pid
-
+    """
+    Versión SIN EAN:
+      - Nunca busca por EAN.
+      - Criterio: (nombre, marca) si ambos existen; si no, inserta nuevo.
+      - Mantiene fabricante/categoría/subcategoría por COALESCE.
+    """
     nombre = clean(p.get("nombre")) or ""
     marca  = clean(p.get("marca")) or ""
+
     if nombre and marca:
-        cur.execute("""SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1""",
-                    (nombre, marca))
+        exec_retry(cur,
+            "SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1",
+            (nombre, marca),
+            label="sel_producto_nm"
+        )
         row = cur.fetchone()
         if row:
             pid = row[0]
-            cur.execute("""
+            exec_retry(cur, """
                 UPDATE productos SET
-                  ean = COALESCE(NULLIF(%s,''), ean),
                   fabricante = COALESCE(NULLIF(%s,''), fabricante),
                   categoria = COALESCE(NULLIF(%s,''), categoria),
                   subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
                 WHERE id=%s
             """, (
-                p.get("ean") or "", p.get("fabricante") or "",
-                p.get("categoria") or "", p.get("subcategoria") or "", pid
-            ))
+                p.get("fabricante") or "",
+                p.get("categoria") or "",
+                p.get("subcategoria") or "",
+                pid
+            ), label="upd_producto_meta")
             return pid
 
-    cur.execute("""
+    # ean va SIEMPRE NULL
+    exec_retry(cur, """
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
-        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
+        VALUES (NULL, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
     """, (
-        p.get("ean") or "", nombre, marca,
-        p.get("fabricante") or "", p.get("categoria") or "", p.get("subcategoria") or ""
-    ))
+        nombre, marca,
+        p.get("fabricante") or "",
+        p.get("categoria") or "",
+        p.get("subcategoria") or ""
+    ), label="ins_producto")
     return cur.lastrowid
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, any]) -> int:
@@ -403,13 +384,13 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, a
       - record_id_tienda = productId (fallback universal)
     Requiere UNIQUE(tienda_id, sku_tienda) y/o UNIQUE(tienda_id, record_id_tienda).
     """
-    sku = clean(p.get("sku"))
-    rec = clean(p.get("record_id"))
+    sku = clean(p.get("sku")) or ""
+    rec = clean(p.get("record_id")) or ""
     url = p.get("url") or ""
     nombre_tienda = p.get("nombre") or ""
 
     if sku:
-        cur.execute("""
+        exec_retry(cur, """
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
             ON DUPLICATE KEY UPDATE
@@ -418,11 +399,11 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, a
               record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, sku, rec, url, nombre_tienda))
+        """, (tienda_id, producto_id, sku, rec, url, nombre_tienda), label="upsert_pt_sku")
         return cur.lastrowid
 
     if rec:
-        cur.execute("""
+        exec_retry(cur, """
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, NULL, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
             ON DUPLICATE KEY UPDATE
@@ -430,28 +411,32 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, a
               producto_id = VALUES(producto_id),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, rec, url, nombre_tienda))
+        """, (tienda_id, producto_id, rec, url, nombre_tienda), label="upsert_pt_rec")
         return cur.lastrowid
 
-    cur.execute("""
+    exec_retry(cur, """
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
-    """, (tienda_id, producto_id, url, nombre_tienda))
+    """, (tienda_id, producto_id, url, nombre_tienda), label="ins_pt_simple")
     return cur.lastrowid
 
-def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, any], capturado_en: datetime):
+def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, any]):
+    """
+    Inserta/actualiza histórico con capturado_en=NOW(6) (microsegundos).
+    Columna capturado_en debe ser DATETIME(6).
+    """
     def to_txt_or_none(x):
         v = parse_price(x)
         if x is None: return None
         if isinstance(v, float) and np.isnan(v): return None
         return f"{round(float(v), 2)}"  # guardamos como VARCHAR
 
-    cur.execute("""
+    exec_retry(cur, """
         INSERT INTO historico_precios
           (tienda_id, producto_tienda_id, capturado_en,
            precio_lista, precio_oferta, tipo_oferta,
            promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, NOW(6), %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
           precio_lista = VALUES(precio_lista),
           precio_oferta = VALUES(precio_oferta),
@@ -461,12 +446,12 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
           promo_texto_descuento = COALESCE(VALUES(promo_texto_descuento), promo_texto_descuento),
           promo_comentarios = COALESCE(VALUES(promo_comentarios), promo_comentarios)
     """, (
-        tienda_id, producto_tienda_id, capturado_en,
+        tienda_id, producto_tienda_id,
         to_txt_or_none(p.get("precio_lista")), to_txt_or_none(p.get("precio_oferta")),
         p.get("tipo_oferta") or None, p.get("promo_tipo") or None,
         p.get("precio_regular_promo") or None, p.get("precio_descuento") or None,
         p.get("comentarios_promo") or None
-    ))
+    ), label="upsert_hist")
 
 # ------------------ Main (scrape + inserción) ------------------
 def main():
@@ -477,16 +462,31 @@ def main():
         return
 
     # ===== Inserción en MySQL =====
-    capturado_en = datetime.now()
     conn = None
+    lock_obtained = False
     try:
         conn = get_conn()
-        conn.autocommit = False
         cur = conn.cursor()
 
+        # Sesión menos contenciosa
+        cur.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        cur.execute("SET SESSION innodb_lock_wait_timeout = 60")
+
+        # Candado lógico por tienda (evita 2 procesos concurrentes sobre la misma tienda)
+        cur.execute("SELECT GET_LOCK(CONCAT('scrap_', %s), 30)", (TIENDA_CODIGO,))
+        got = cur.fetchone()[0]
+        lock_obtained = bool(got)
+        if not lock_obtained:
+            print("⚠️ No se pudo adquirir candado lógico de tienda; abortando para evitar carreras.")
+            return
+
+        conn.autocommit = False
         tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
+        conn.commit()
 
         insertados = 0
+        batch_count = 0
+
         for _, r in df.iterrows():
             # Derivar tipo oferta / promo
             tipo_oferta = r.get("Tipo de Oferta") or ""
@@ -497,7 +497,6 @@ def main():
             p = {
                 "sku": clean(r.get("Código Interno")),      # SKU (itemId)
                 "record_id": clean(r.get("productId")),     # productId VTEX
-                "ean": clean(r.get("EAN")),
                 "nombre": clean(r.get("Nombre Producto")),
                 "marca": clean(r.get("Marca")),
                 "fabricante": clean(r.get("Fabricante")),
@@ -511,28 +510,42 @@ def main():
                 "precio_descuento": None,
                 "comentarios_promo": None,
                 "url": clean(r.get("URL")),
-                "nombre": clean(r.get("Nombre Producto")),
             }
 
-            producto_id = find_or_create_producto(cur, p)
+            producto_id = find_or_create_producto(cur, p)     # ean siempre NULL
             pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
-            insert_historico(cur, tienda_id, pt_id, p, capturado_en)
+            insert_historico(cur, tienda_id, pt_id, p)
+
             insertados += 1
+            batch_count += 1
 
-        conn.commit()
-        print(f"💾 Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOMBRE} ({capturado_en})")
+            if batch_count >= BATCH:
+                conn.commit()
+                batch_count = 0
 
+        if batch_count > 0:
+            conn.commit()
+
+        print(f"💾 Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOMBRE} (EAN NULL)")
     except MySQLError as e:
-        if conn: conn.rollback()
+        if conn:
+            conn.rollback()
         print(f"❌ Error MySQL: {e}")
     finally:
         try:
-            if conn: conn.close()
+            if lock_obtained and conn:
+                cur = conn.cursor()
+                cur.execute("SELECT RELEASE_LOCK(CONCAT('scrap_', %s))", (TIENDA_CODIGO,))
+        except Exception:
+            pass
+        try:
+            if conn:
+                conn.close()
         except Exception:
             pass
 
     print(f"⏱️ Tiempo total: {time.time() - t0:.2f} s")
 
 if __name__ == "__main__":
-    import re  # (asegura 're' importado para helpers arriba)
+    import re  # asegura 're' importado para helpers arriba
     main()
