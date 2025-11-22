@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 
 # Jumbo (VTEX) → MySQL (patrón "Coto" endurecido) + XLSX
-# - Igual mapeo de datos y política de precios que tu “reporte multi-super por EAN”
+# - Igual mapeo de datos, pero AHORA precios así:
+#     - PriceWithoutDiscount  → precio_lista (siempre)
+#     - FullSellingPrice      → precio_oferta (siempre)
 # - Ajusta nombres de tablas/columnas en MAPEO si tu esquema difiere.
 
 import os, sys, re, json, time, threading
@@ -139,8 +141,10 @@ def _truncate(s, n):
 
 def _price_txt_or_none(x):
     v = parse_price(x)
-    if x is None: return None
-    if isinstance(v, float) and np.isnan(v): return None
+    if x is None:
+        return None
+    if isinstance(v, float) and np.isnan(v):
+        return None
     return f"{round(float(v), 2)}"
 
 # ========= HTTP JSON con reintentos =========
@@ -158,7 +162,7 @@ def req_json(url, session, params=None):
             time.sleep(0.3)
     return None
 
-# ========= EAN y precios (idénticos criterios a tu app VTEX) =========
+# ========= EAN y precios (con la política que pediste) =========
 def _is_ean_candidate(s: str) -> bool:
     if not s: return False
     s = re.sub(r"\D", "", str(s))
@@ -181,31 +185,52 @@ def extract_ean_from_item(it: Dict[str, Any]) -> Optional[str]:
 
 def _fnum(x):
     try:
-        if x is None or (isinstance(x, str) and not x.strip()): return None
+        if x is None or (isinstance(x, str) and not x.strip()):
+            return None
         f = float(x)
         return f if f > 0 else None
     except Exception:
         return None
 
 def _derive_prices(co: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[str]]:
-    p   = _fnum(co.get("Price"))
-    l   = _fnum(co.get("ListPrice"))
-    pwd = _fnum(co.get("PriceWithoutDiscount"))
-    lista = oferta = None
+    """
+    Política solicitada para Jumbo VTEX:
+
+      - PriceWithoutDiscount  → precio_lista
+      - FullSellingPrice      → precio_oferta
+
+    Siempre intentamos devolver AMBOS:
+      * si uno viene vacío, hacemos fallback a Price
+      * si no existe nada, devolvemos None/None
+    """
+    lista = _fnum(co.get("PriceWithoutDiscount"))
+    oferta = _fnum(co.get("FullSellingPrice"))
     promo_tipo = None
-    if pwd is not None and p is not None and pwd >= p and p > 0:
-        lista, oferta, promo_tipo = pwd, p, "promo_pwd"
-    elif l is not None and p is not None and l >= p and p > 0:
-        lista, oferta, promo_tipo = l, p, "promo_listprice"
-    elif p is not None and p > 0:
-        lista, oferta, promo_tipo = p, None, None
-    elif l is not None and l > 0:
-        lista, oferta, promo_tipo = l, None, None
+
+    # Si ambos vienen, perfecto
+    if lista is not None and oferta is not None:
+        promo_tipo = "vtex_pwd_full"
+
+    # Si hay lista pero no oferta → usamos Price como oferta, o repetimos lista
+    elif lista is not None and oferta is None:
+        p = _fnum(co.get("Price"))
+        oferta = p if p is not None else lista
+        promo_tipo = "vtex_pwd_price" if p is not None and p != lista else "vtex_pwd_sin_full"
+
+    # Si hay oferta pero no lista → construimos lista a partir de PriceWithoutDiscount o Price o la propia oferta
+    elif lista is None and oferta is not None:
+        p = _fnum(co.get("Price"))
+        lista = _fnum(co.get("PriceWithoutDiscount")) or p or oferta
+        promo_tipo = "vtex_full_only"
+
+    # Último recurso: intentar con Price
     else:
-        lista, oferta, promo_tipo = None, None, None
-    sp = _fnum(co.get("spotPrice"))
-    if sp is not None and (oferta is None or sp < oferta):
-        oferta = sp
+        p = _fnum(co.get("Price"))
+        if p is not None:
+            lista = p
+            oferta = p
+        promo_tipo = None
+
     return lista, oferta, promo_tipo
 
 # ========= Árbol de categorías =========
@@ -354,16 +379,24 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
     return cur.lastrowid
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
+    # Aquí asumimos que p["precio_lista"] y p["precio_oferta"] SIEMPRE vienen cargados
     precio_lista_txt  = _price_txt_or_none(p.get("precio_lista"))
     oferta_val = p.get("precio_oferta")
+    # Mantenemos el fallback por si en algún caso aislado oferta llega a None
     precio_oferta_txt = _price_txt_or_none(oferta_val if oferta_val not in (None, "") else p.get("precio_lista"))
+
+    # tipo_oferta: marca si hay diferencia entre lista y oferta
     tipo_oferta = None
+    if precio_lista_txt is not None and precio_oferta_txt is not None and precio_lista_txt != precio_oferta_txt:
+        tipo_oferta = "con_descuento"
+
     promo_tipo  = _truncate(clean(p.get("promo_tipo")), MAXLEN_PROMO_TXT)
     promo_regular = None
     promo_desc    = None
+
     comentarios = []
-    if p.get("categoria"):   comentarios.append(f"cat={p['categoria']}")
-    if p.get("subcategoria"):comentarios.append(f"sub={p['subcategoria']}")
+    if p.get("categoria"):    comentarios.append(f"cat={p['categoria']}")
+    if p.get("subcategoria"): comentarios.append(f"sub={p['subcategoria']}")
     oferta_tags = clean(p.get("oferta_tags"))
     if oferta_tags: comentarios.append(f"tags={oferta_tags}")
     promo_comentarios = _truncate(" | ".join(comentarios), MAXLEN_PROMO_COMENT) if comentarios else None
@@ -464,8 +497,11 @@ def parse_rows_from_product_and_ps(p, base):
         for s in sellers:
             s_id = s.get("sellerId")
             offer = s.get("commertialOffer") or {}
+
+            # === AQUÍ USAMOS LA NUEVA POLÍTICA DE PRECIOS ===
             lista, oferta, promo_tipo_rule = _derive_prices(offer)
             available = offer.get("AvailableQuantity")
+
             teasers = offer.get("Teasers") or offer.get("DiscountHighLight") or []
             if isinstance(teasers, list) and teasers:
                 teaser_txt = ", ".join([t.get("name") or t.get("title") or json.dumps(t, ensure_ascii=False)

@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Jumbo (VTEX) → MySQL con el patrón de inserción "Coto" mejorado
-# - Usa base_datos.get_conn()
-# - Inserta en: tiendas, productos, producto_tienda, historico_precios
-# - Mapea VTEX → dict p (sku, record_id, ean, nombre, marca, categoria, subcategoria, url, precio_lista, precio_oferta, promo_tipo, etc.)
-# - Parada por ENTER para guardar parcial.
-# - Manejo de locks, truncado seguro de columnas de texto, commits incrementales
-#   y tolerancia a 1264 (out-of-range) en columnas numéricas de precio.
+"""
+Jumbo (VTEX) → MySQL (crawler por categorías) — PRECIOS corregidos como en el script EAN
+
+- Usa base_datos.get_conn()
+- Inserta en: tiendas, productos, producto_tienda, historico_precios
+- Mapea VTEX → dict p (sku, record_id, ean, nombre, marca, categoria, subcategoria, url, precio_lista, precio_oferta, promo_tipo, etc.)
+- Parada por ENTER para guardar parcial.
+- Manejo de locks, truncado seguro de columnas de texto, commits incrementales
+  y tolerancia a 1264 (out-of-range) en columnas numéricas de precio.
+- **Precios**: usa la misma política que el script EAN:
+    lista = PriceWithoutDiscount (si ≥ Price)  sino ListPrice (si ≥ Price)  sino Price
+    oferta = Price si hay descuento, sino None  (en la inserción a histórico se usa oferta o lista)
+- **SC**: agrega `sc=1` en todas las consultas de VTEX (por defecto de Jumbo).
+
+"""
 
 import requests, time, re, json, sys, os, threading
 import pandas as pd
@@ -15,7 +23,7 @@ from html import unescape
 from bs4 import BeautifulSoup
 from urllib.parse import quote
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from mysql.connector import Error as MySQLError, errors as myerr
 
@@ -31,6 +39,7 @@ TIMEOUT = 25
 MAX_EMPTY = 8                # corta tras N páginas vacías seguidas
 TREE_DEPTH = 5               # profundidad para descubrir categorías
 RETRIES = 3                  # reintentos por request
+SC_DEFAULT = "1"             # Sales Channel Jumbo
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
@@ -114,10 +123,26 @@ def parse_price(val) -> float:
 def first(lst, default=None):
     return lst[0] if isinstance(lst, list) and lst else default
 
+def make_session():
+    s = requests.Session()
+    s.headers.update(HEADERS)
+    return s
+
 def req_json(url, session, params=None):
+    # Siempre incluye sc
+    if params is None:
+        params = {}
+    params = dict(params)
+    params.setdefault("sc", SC_DEFAULT)
+
     for i in range(RETRIES):
-        r = session.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
-        if r.status_code == 200:
+        try:
+            r = session.get(url, params=params, timeout=TIMEOUT)
+        except Exception:
+            time.sleep(0.6 + 0.4 * i)
+            continue
+
+        if r.status_code in (200, 206):
             try:
                 return r.json()
             except Exception:
@@ -127,6 +152,37 @@ def req_json(url, session, params=None):
         else:
             time.sleep(0.3)
     return None
+
+# ========= Política de precios (idéntica al script por EAN) =========
+def _derive_prices(commertial_offer: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+    """Devuelve (precio_lista, precio_oferta, etiqueta_promo_tipo) con política robusta."""
+    def _f(x):
+        try:
+            if x is None or (isinstance(x, str) and not x.strip()):
+                return None
+            return float(x)
+        except Exception:
+            return None
+
+    p   = _f(commertial_offer.get("Price"))
+    l   = _f(commertial_offer.get("ListPrice"))
+    pwd = _f(commertial_offer.get("PriceWithoutDiscount"))
+
+    lista = oferta = None
+    promo_tipo = None
+
+    if pwd is not None and p is not None and pwd >= p and p > 0:
+        lista, oferta, promo_tipo = pwd, p, "promo_pwd"
+    elif l is not None and p is not None and l >= p and p > 0:
+        lista, oferta, promo_tipo = l, p, "promo_listprice"
+    elif p is not None and p > 0:
+        lista, oferta, promo_tipo = p, None, None
+    elif l is not None and l > 0:
+        lista, oferta, promo_tipo = l, None, None
+    else:
+        lista, oferta, promo_tipo = None, None, None
+
+    return lista, oferta, promo_tipo
 
 # ========= Categorías =========
 def get_category_tree(session, depth=TREE_DEPTH):
@@ -175,7 +231,7 @@ def _price_txt_or_none(x):
         return None
     if isinstance(v, float) and np.isnan(v):
         return None
-    return f"{round(float(v), 2)}"
+    return f"{round(float(v), 2):.2f}"
 
 def exec_retry(cur, sql, params=(), max_retries=5, base_sleep=0.5):
     att = 0
@@ -193,7 +249,7 @@ def exec_retry(cur, sql, params=(), max_retries=5, base_sleep=0.5):
                 continue
             raise
 
-# ========= MySQL helpers (patrón Coto endurecido) =========
+# ========= MySQL helpers =========
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     exec_retry(cur,
         "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
@@ -221,10 +277,10 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
                   nombre = COALESCE(NULLIF(%s,''), nombre),
                   marca = COALESCE(NULLIF(%s,''), marca),
                   fabricante = COALESCE(NULLIF(%s,''), fabricante),
-                  categoria = COALESCE(NULLIF(%s,''), categoria),
-                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
+                  categoria = COALESCE(%s, categoria),
+                  subcategoria = COALESCE(%s, subcategoria)
                 WHERE id=%s
-            """, (nombre, marca or "", fabricante or "", categoria or "", subcategoria or "", pid))
+            """, (nombre, marca or "", fabricante or "", categoria, subcategoria, pid))
             return pid
 
     if nombre and marca:
@@ -237,16 +293,16 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
                 UPDATE productos SET
                   ean = COALESCE(NULLIF(%s,''), ean),
                   fabricante = COALESCE(NULLIF(%s,''), fabricante),
-                  categoria = COALESCE(NULLIF(%s,''), categoria),
-                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
+                  categoria = COALESCE(%s, categoria),
+                  subcategoria = COALESCE(%s, subcategoria)
                 WHERE id=%s
-            """, (ean or "", fabricante or "", categoria or "", subcategoria or "", pid))
+            """, (ean or "", fabricante or "", categoria, subcategoria, pid))
             return pid
 
     exec_retry(cur, """
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
-        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
-    """, (ean or "", nombre, marca or "", fabricante or "", categoria or "", subcategoria or ""))
+        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), %s, %s, %s)
+    """, (ean or "", nombre, marca or "", fabricante, categoria, subcategoria))
     return cur.lastrowid
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
@@ -283,31 +339,32 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
     exec_retry(cur, """
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
+        ON DUPLICATE KEY UPDATE
+          id = LAST_INSERT_ID(id),
+          producto_id = VALUES(producto_id),
+          url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
+          nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
     """, (tienda_id, producto_id, url, nombre_tienda))
     return cur.lastrowid
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
     """
-    Inserta histórico. Si el esquema tiene DECIMAL ajustado (p.ej. DECIMAL(5,2))
-    y el precio excede el rango → MySQL arroja 1264.
-    Ante 1264, reintenta **una vez** con precios = NULL; si vuelve a fallar, omite.
+    Inserta histórico. Si DECIMAL excede rango → 1264.
+    Reintenta una vez con precios NULL.
     """
-    # Precios como string o None (si no convertibles)
+    # oferta: si no hay descuento, luego guardamos oferta = lista para no perder vigente
     precio_lista_txt  = _price_txt_or_none(p.get("precio_lista"))
-    precio_oferta_txt = _price_txt_or_none(p.get("precio_oferta"))
+    precio_oferta_txt = _price_txt_or_none(p.get("precio_oferta") or p.get("precio_lista"))
 
-    # tipo_oferta/promo recortados
     tipo_oferta = _truncate(clean(p.get("tipo_oferta")), MAXLEN_TIPO_OFERTA)
     promo_tipo  = _truncate(clean(p.get("promo_tipo")),  MAXLEN_PROMO_TXT)
 
-    # textos de promo (si los usás)
-    promo_texto_regular   = _truncate(clean(p.get("precio_regular_promo")), MAXLEN_PROMO_TXT)
-    promo_texto_descuento = _truncate(clean(p.get("precio_descuento")),     MAXLEN_PROMO_TXT)
+    promo_texto_regular   = None
+    promo_texto_descuento = None
 
-    # comentarios (útiles para debug)
     comentarios = []
-    if p.get("categoria"):   comentarios.append(f"cat={p['categoria']}")
-    if p.get("subcategoria"):comentarios.append(f"sub={p['subcategoria']}")
+    if p.get("categoria"):    comentarios.append(f"cat={p['categoria']}")
+    if p.get("subcategoria"): comentarios.append(f"sub={p['subcategoria']}")
     promo_comentarios = _truncate(" | ".join(comentarios), MAXLEN_PROMO_COMENT) if comentarios else None
 
     sql = """
@@ -325,7 +382,6 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
           promo_texto_descuento = VALUES(promo_texto_descuento),
           promo_comentarios = VALUES(promo_comentarios)
     """
-
     params = (
         tienda_id, producto_tienda_id, capturado_en,
         precio_lista_txt, precio_oferta_txt, tipo_oferta,
@@ -336,7 +392,6 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
         exec_retry(cur, sql, params)
         return
     except myerr.DatabaseError as e:
-        # Si es out-of-range en DECIMAL → reintento con precios NULL y sigo
         if getattr(e, "errno", None) == OUT_OF_RANGE_ERRNO:
             print(f"[WARN] 1264 out-of-range en precios (pid_tienda={producto_tienda_id}). Reintentando con NULL…")
             params_null = (
@@ -350,61 +405,99 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
             except Exception as e2:
                 print(f"[WARN] No se pudo insertar ni con precios NULL (pid_tienda={producto_tienda_id}). Omito. Detalle: {e2}")
                 return
-        # Otros errores: propagar (serán manejados por el caller con rollback/commit)
         raise
 
 # ========= Parsing de producto (mapea a dict p) =========
-def parse_rows_from_product_and_ps(p, base):
+def parse_rows_from_product_and_ps(prod: Dict[str, Any], base: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Devuelve:
       - rows: filas detalladas (por SKU/seller) — útil para debug/export
       - ps:   lista de dict 'p' (forma patrón Coto) para DB
     """
-    rows = []
-    ps: List[Dict[str, Any]] = []
+    rows: List[Dict[str, Any]] = []
+    ps:   List[Dict[str, Any]] = []
 
-    product_id = p.get("productId")
-    name = clean_text(p.get("productName"))
-    brand = p.get("brand")
-    brand_id = p.get("brandId")
-    link_text = p.get("linkText")
-    link = f"{base}/{link_text}/p" if link_text else ""
-    categories = [c.strip("/") for c in (p.get("categories") or [])]
-    category_path = " > ".join(categories[:1]) if categories else ""
+    product_id = prod.get("productId")
+    name = clean_text(prod.get("productName"))
+    brand = prod.get("brand")
+    brand_id = prod.get("brandId")
+    link_text = prod.get("linkText")
+    # Intentar link directo si ya viene armado
+    link = prod.get("link")
+    if not link:
+        link = f"{base}/{link_text}/p" if link_text else ""
+
+    # Categorías VTEX vienen como "/A/B/C/"
+    categories = [c.strip("/") for c in (prod.get("categories") or []) if c]
     full_category_path = " > ".join(categories)
-
-    # Derivar Categoria/Subcategoria
-    parts = [x.strip() for x in full_category_path.split(">")] if full_category_path else []
-    parts = [x for x in parts if x]
-    categoria = parts[0] if parts else None
-    subcategoria = parts[-1] if len(parts) >= 2 else None
+    categoria = categories[0] if categories else None
+    subcategoria = categories[1] if len(categories) > 1 else None
 
     # Atributos/Specs
     specs = {}
-    for grp in (p.get("specificationGroups") or []):
+    for grp in (prod.get("specificationGroups") or []):
         for it in (grp.get("specifications") or []):
             k = it.get("name")
             v = it.get("value")
             if k and v:
                 specs[k] = v
 
-    cluster = p.get("clusterHighlights") or {}
-    props = p.get("properties") or {}
+    cluster = prod.get("clusterHighlights") or {}
+    props = prod.get("properties") or {}
+    desc = clean_text(prod.get("description") or prod.get("descriptionShort") or prod.get("metaTagDescription") or "")
 
-    desc = clean_text(p.get("description") or p.get("descriptionShort") or p.get("metaTagDescription") or "")
+    items = prod.get("items") or []
+    if not items:
+        # Producto sin SKUs (raro), agregamos una fila vacía
+        rows.append({
+            "productId": product_id,
+            "skuId": None,
+            "sellerId": None,
+            "sellerName": None,
+            "availableQty": None,
+            "price": None,
+            "listPrice": None,
+            "priceWithoutDiscount": None,
+            "teasers_json": "",
+            "name": name,
+            "brand": brand,
+            "ean": None,
+            "categoryFull": full_category_path,
+            "link": link,
+            "linkText": link_text,
+            "description": desc,
+            "specs_json": json.dumps(specs, ensure_ascii=False),
+            "cluster_json": json.dumps(cluster, ensure_ascii=False),
+            "properties_json": json.dumps(props, ensure_ascii=False),
+        })
+        ps.append({
+            "sku": None,
+            "record_id": clean(product_id),
+            "ean": None,
+            "nombre": _truncate(clean(name), MAXLEN_NOMBRE),
+            "marca": clean(brand),
+            "fabricante": None,
+            "precio_lista": None,
+            "precio_oferta": None,
+            "tipo_oferta": None,
+            "promo_tipo": None,
+            "categoria": clean(categoria),
+            "subcategoria": clean(subcategoria),
+            "url": _truncate(clean(link), MAXLEN_URL),
+        })
+        return rows, ps
 
-    items = p.get("items") or []
     for it in items:
-        sku_id = it.get("itemId")
+        sku_id = it.get("itemId") or it.get("id")
         sku_name = clean_text(it.get("name"))
-        ean = ""
-        for ref in (it.get("referenceId") or []):
-            if ref.get("Value"):
-                ean = ref["Value"]; break
-
-        measurement_unit = it.get("measurementUnit")
-        unit_multiplier = it.get("unitMultiplier")
-        images = ", ".join(img.get("imageUrl", "") for img in (it.get("images") or []))
+        # EAN: preferir campo directo; si no, referenceId
+        ean = it.get("ean") or it.get("Ean")
+        if not ean:
+            for ref in (it.get("referenceId") or []):
+                val = ref.get("Value")
+                if val:
+                    ean = val
+                    break
 
         sellers = it.get("sellers") or []
         if not sellers:
@@ -417,23 +510,14 @@ def parse_rows_from_product_and_ps(p, base):
                 "price": None,
                 "listPrice": None,
                 "priceWithoutDiscount": None,
-                "installments_json": "",
                 "teasers_json": "",
-                "tax": None,
-                "rewardValue": None,
-                "spotPrice": None,
                 "name": name,
                 "skuName": sku_name,
                 "brand": brand,
-                "brandId": brand_id,
                 "ean": ean,
-                "categoryTop": category_path,
                 "categoryFull": full_category_path,
                 "link": link,
                 "linkText": link_text,
-                "measurementUnit": measurement_unit,
-                "unitMultiplier": unit_multiplier,
-                "images": images,
                 "description": desc,
                 "specs_json": json.dumps(specs, ensure_ascii=False),
                 "cluster_json": json.dumps(cluster, ensure_ascii=False),
@@ -450,9 +534,6 @@ def parse_rows_from_product_and_ps(p, base):
                 "precio_oferta": None,
                 "tipo_oferta": None,
                 "promo_tipo": None,
-                "precio_regular_promo": None,
-                "precio_descuento": None,
-                "comentarios_promo": None,
                 "categoria": clean(categoria),
                 "subcategoria": clean(subcategoria),
                 "url": _truncate(clean(link), MAXLEN_URL),
@@ -460,18 +541,24 @@ def parse_rows_from_product_and_ps(p, base):
             continue
 
         for s in sellers:
-            s_id = s.get("sellerId")
-            s_name = s.get("sellerName")
+            s_id = s.get("sellerId") or s.get("id")
+            s_name = s.get("sellerName") or s.get("name")
             offer = s.get("commertialOffer") or {}
-            price = offer.get("Price")
-            list_price = offer.get("ListPrice")
-            pwd = offer.get("PriceWithoutDiscount")
+
+            # === PRECIOS CORREGIDOS ===
+            lista, oferta, promo_tipo_flag = _derive_prices(offer)
             avail = offer.get("AvailableQuantity")
-            tax = offer.get("Tax")
-            reward = offer.get("RewardValue")
-            installments = offer.get("Installments") or []
-            teasers = offer.get("Teasers") or []
-            spot = offer.get("spotPrice", None)
+
+            # Promos (teasers)
+            teasers = offer.get("Teasers") or offer.get("DiscountHighLight") or []
+            teaser_names = []
+            if isinstance(teasers, list):
+                for t in teasers:
+                    if isinstance(t, dict):
+                        nm = t.get("name") or t.get("title")
+                        if nm:
+                            teaser_names.append(str(nm))
+            promo_tipo = "; ".join(teaser_names) if teaser_names else promo_tipo_flag
 
             rows.append({
                 "productId": product_id,
@@ -479,39 +566,22 @@ def parse_rows_from_product_and_ps(p, base):
                 "sellerId": s_id,
                 "sellerName": s_name,
                 "availableQty": avail,
-                "price": price,
-                "listPrice": list_price,
-                "priceWithoutDiscount": pwd,
-                "installments_json": json.dumps(installments, ensure_ascii=False),
-                "teasers_json": json.dumps(teasers, ensure_ascii=False),
-                "tax": tax,
-                "rewardValue": reward,
-                "spotPrice": spot,
+                "price": offer.get("Price"),
+                "listPrice": offer.get("ListPrice"),
+                "priceWithoutDiscount": offer.get("PriceWithoutDiscount"),
+                "teasers_json": json.dumps(teasers, ensure_ascii=False) if isinstance(teasers, list) else "",
                 "name": name,
                 "skuName": sku_name,
                 "brand": brand,
-                "brandId": brand_id,
                 "ean": ean,
-                "categoryTop": category_path,
                 "categoryFull": full_category_path,
                 "link": link,
                 "linkText": link_text,
-                "measurementUnit": measurement_unit,
-                "unitMultiplier": unit_multiplier,
-                "images": images,
                 "description": desc,
                 "specs_json": json.dumps(specs, ensure_ascii=False),
                 "cluster_json": json.dumps(cluster, ensure_ascii=False),
                 "properties_json": json.dumps(props, ensure_ascii=False),
             })
-
-            # promociones
-            promo_txts = []
-            for t in teasers:
-                nm = t.get("name") or t.get("title") or ""
-                if nm:
-                    promo_txts.append(str(nm))
-            promo_tipo = "; ".join(promo_txts) if promo_txts else None
 
             ps.append({
                 "sku": clean(sku_id),
@@ -520,13 +590,10 @@ def parse_rows_from_product_and_ps(p, base):
                 "nombre": _truncate(clean(name), MAXLEN_NOMBRE),
                 "marca": clean(brand),
                 "fabricante": None,
-                "precio_lista": list_price,
-                "precio_oferta": (spot if spot not in (None, "") else price),
+                "precio_lista": lista,
+                "precio_oferta": oferta,   # None si no hay descuento
                 "tipo_oferta": None,
                 "promo_tipo": promo_tipo,
-                "precio_regular_promo": None,
-                "precio_descuento": None,
-                "comentarios_promo": None,
                 "categoria": clean(categoria),
                 "subcategoria": clean(subcategoria),
                 "url": _truncate(clean(link), MAXLEN_URL),
@@ -546,8 +613,9 @@ def fetch_category(session, cat_path, stopper: StopController):
         if stopper.tripped():
             break
 
-        url = f"{BASE}/api/catalog_system/pub/products/search/{encoded_path}?map={map_str}&_from={offset}&_to={offset+STEP-1}"
-        data = req_json(url, session)
+        url = f"{BASE}/api/catalog_system/pub/products/search/{encoded_path}"
+        params = {"map": map_str, "_from": offset, "_to": offset + STEP - 1}
+        data = req_json(url, session, params=params)
 
         if data is None:
             empty_streak += 1
@@ -573,7 +641,9 @@ def fetch_category(session, cat_path, stopper: StopController):
             ps_all.extend(ps)
 
             if r:
-                print(f"  -> {p.get('productName')} ({len(r)} filas, ej. precio: {r[0].get('price')}) [Cat: {cat_path}]")
+                # ejemplo de precio directo devuelto por endpoint (solo para debug)
+                ej = r[0].get("price")
+                print(f"  -> {p.get('productName')} ({len(r)} filas, ej. Price(raw): {ej}) [Cat: {cat_path}]")
             if stopper.tripped():
                 break
 
@@ -598,19 +668,17 @@ def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: d
         try:
             return conn.cursor()
         except Exception:
-            # reconectar si hizo falta
             conn.ping(reconnect=True, attempts=3, delay=1)
             return conn.cursor()
 
     cur = _new_cursor()
 
     for p in ps:
-        key = (p.get("sku"), p.get("record_id"), p.get("url"), p.get("precio_oferta"))
+        key = (p.get("sku"), p.get("record_id"), p.get("url"), p.get("precio_lista"), p.get("precio_oferta"))
         if key in seen:
             continue
         seen.add(key)
 
-        # mini-reintento por fila
         for attempt in range(2):  # 0 y 1
             try:
                 producto_id = find_or_create_producto(cur, p)
@@ -622,26 +690,21 @@ def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: d
             except MySQLError as e:
                 errno = getattr(e, "errno", None)
                 if errno == 1205:  # lock wait
-                    # revertimos lo de esta subtransacción
                     try:
                         conn.rollback()
                     except Exception:
                         pass
-                    # esperar un poco exponencial y reintentar 1 vez
                     wait = 0.7 * (2 ** attempt)
                     print(f"[WARN] 1205 en fila (sku={p.get('sku')}, rec={p.get('record_id')}). Retry en {wait:.2f}s…")
                     time.sleep(wait)
-                    # renovar cursor (evitar cursor roto)
                     cur.close()
                     cur = _new_cursor()
                     if attempt == 1:
                         print(f"[SKIP] Fila omitida por lock persistente (sku={p.get('sku')}, rec={p.get('record_id')}).")
                     continue
                 else:
-                    # otros errores: tiramos hacia arriba para que main haga rollback y log
                     raise
 
-        # commit por lotes para soltar locks temprano
         if done_in_batch >= COMMIT_EVERY:
             try:
                 conn.commit()
@@ -654,7 +717,6 @@ def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: d
                     pass
             done_in_batch = 0
 
-    # commit final
     if done_in_batch:
         try:
             conn.commit()
@@ -677,7 +739,7 @@ def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: d
 def main():
     stopper = StopController()
     stopper.start()
-    session = requests.Session()
+    session = make_session()
 
     print("Descubriendo categorías…")
     tree = get_category_tree(session, TREE_DEPTH)
@@ -693,7 +755,7 @@ def main():
         # Afinar sesión para menos bloqueos
         try:
             with conn.cursor() as cset:
-                cset.execute("SET SESSION innodb_lock_wait_timeout = 15")  # antes lo habíamos bajado a 5
+                cset.execute("SET SESSION innodb_lock_wait_timeout = 15")
                 cset.execute("SET SESSION transaction_isolation = 'READ-COMMITTED'")
         except Exception:
             pass

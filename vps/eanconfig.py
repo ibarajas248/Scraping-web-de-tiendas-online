@@ -168,10 +168,11 @@ def ean():
         sql = """
         SELECT
           pt.id            AS pt_id,
+          pt.nombre_tienda,
+          pt.url_tienda,
           pt.tienda_id,
           t.nombre         AS tienda,
           pt.sku_tienda,
-          pt.nombre_tienda,
           p.id             AS producto_id,
           p.nombre         AS producto,
           p.marca,
@@ -180,7 +181,7 @@ def ean():
         FROM producto_tienda pt
         JOIN productos p   ON p.id = pt.producto_id
         JOIN tiendas   t   ON t.id = pt.tienda_id
-        WHERE p.ean IS NULL 
+        WHERE p.ean IS NULL
         """
         params: list = []
         if tienda_id:
@@ -675,7 +676,7 @@ def ean():
     if pt_df.empty:
         st.info("No hay SKUs pendientes con producto sin EAN según los filtros/búsqueda.")
     else:
-        show_cols = ["pt_id", "tienda","tienda_id", "sku_tienda", "nombre_tienda", "marca", "categoria", "producto_id", "producto"]
+        show_cols = ["pt_id", "nombre_tienda","url_tienda","tienda","tienda_id", "sku_tienda", "marca", "categoria", "producto_id", "producto"]
         for c in show_cols:
             if c not in pt_df.columns:
                 pt_df[c] = None
