@@ -647,7 +647,13 @@ def scrape_n1_block(driver: webdriver.Chrome, n1: str, nombre_n1: str,
                         break
                     page_idx += 1
 
-def scrape_all_n1(headless: bool, out_xlsx: str, out_csv: Optional[str]=None) -> pd.DataFrame:
+def scrape_all_n1(headless: bool,
+                  out_xlsx: str,
+                  out_csv: Optional[str] = None,
+                  only_n1_names: Optional[List[str]] = None) -> pd.DataFrame:
+    """
+    Si only_n1_names se pasa (por ejemplo ["LÁCTEOS"]), solo recorre esos N1 por nombre.
+    """
     driver = setup_driver(headless=headless)
     try:
         rutas_n1 = discover_n1_routes(driver)
@@ -655,11 +661,25 @@ def scrape_all_n1(headless: bool, out_xlsx: str, out_csv: Optional[str]=None) ->
             print("No se detectaron categorías N1.")
             return pd.DataFrame()
 
+        # 🔍 Filtro para solo algunos N1 por nombre (ej: LÁCTEOS)
+        if only_n1_names:
+            target_upper = [n.strip().upper() for n in only_n1_names]
+            rutas_n1 = [
+                r for r in rutas_n1
+                if (r.get("nombre") or "").strip().upper() in target_upper
+            ]
+            print("🎯 N1 filtrados por nombre:", [r["nombre"] for r in rutas_n1])
+
+        if not rutas_n1:
+            print("⚠ No se encontraron N1 que coincidan con el filtro.")
+            return pd.DataFrame()
+
         all_rows: List[Dict[str, Any]] = []
         seen_keys = set()
 
         for k, r1 in enumerate(rutas_n1, 1):
-            n1 = r1["n1"]; nombre_n1 = r1["nombre"]
+            n1 = r1["n1"]
+            nombre_n1 = r1["nombre"]
             print(f"\n============================")
             print(f"=== N1 [{k}/{len(rutas_n1)}] {nombre_n1} (id {n1}) ===")
             print(f"============================")
@@ -668,11 +688,16 @@ def scrape_all_n1(headless: bool, out_xlsx: str, out_csv: Optional[str]=None) ->
             except Exception as e:
                 print(f"  ⚠ Error recorriendo N1 {n1}: {e}")
 
-        df = pd.DataFrame(all_rows,
-                          columns=["codigo","descripcion","precio","precio_texto","oferta","imagen",
-                                   "cat_n0","cat_n2","cat_n3","cat_nombre"])
+        df = pd.DataFrame(
+            all_rows,
+            columns=[
+                "codigo", "descripcion", "precio", "precio_texto", "oferta", "imagen",
+                "cat_n0", "cat_n2", "cat_n3", "cat_nombre"
+            ]
+        )
         if not df.empty:
-            df.sort_values(by=["cat_nombre","descripcion"], inplace=True, kind="stable")
+            df.sort_values(by=["cat_nombre", "descripcion"], inplace=True, kind="stable")
+
         # Guardado (auditoría)
         df.to_excel(out_xlsx, index=False)
         print(f"\n✅ XLSX guardado: {out_xlsx}")
@@ -687,6 +712,7 @@ def scrape_all_n1(headless: bool, out_xlsx: str, out_csv: Optional[str]=None) ->
         except Exception:
             pass
         _cleanup_profile_dir()
+
 
 # =========================
 # Mapeo → MySQL
@@ -742,6 +768,8 @@ def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
     """, (ean, nombre, marca, fabricante, categoria, subcategoria))
     return cur.lastrowid
 
+
+
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
     sku = r.get("codigo") or None
     record_id = sku
@@ -754,7 +782,6 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
-              producto_id = VALUES(producto_id),
               record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
@@ -895,15 +922,23 @@ def ingest_to_mysql(df: pd.DataFrame):
 # =========================
 def main():
     ap = argparse.ArgumentParser(description="DAR → Scrape completo + Ingesta MySQL (cron-friendly)")
-    ap.add_argument("--out", default="dar_catalogo_completo.xlsx", help="Ruta de salida XLSX (debug/auditoría)")
+    ap.add_argument("--out", default="dar_lacteos.xlsx", help="Ruta de salida XLSX (debug/auditoría)")
     ap.add_argument("--csv", default=None, help="(Opcional) Ruta CSV adicional")
     ap.add_argument("--no-headless", action="store_true", help="Desactivar headless (para debugar con UI)")
     ap.add_argument("--no-ingest", action="store_true", help="Solo scrape (no ingesta)")
     args = ap.parse_args()
 
-    df = scrape_all_n1(headless=(not args.no_headless), out_xlsx=args.out, out_csv=args.csv)
+    # 🔥 Solo N1 = "LÁCTEOS"
+    df = scrape_all_n1(
+        headless=(not args.no_headless),
+        out_xlsx=args.out,
+        out_csv=args.csv,
+        only_n1_names=["LÁCTEOS"]
+    )
+
     if not args.no_ingest and not df.empty:
         ingest_to_mysql(df)
+
 
 if __name__ == "__main__":
     try:
