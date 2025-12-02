@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import argparse
 from urllib.parse import urlparse, parse_qs, urljoin
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 
 import requests
 from bs4 import BeautifulSoup
@@ -23,8 +23,9 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
-import re
+
 # ======= MySQL helper =======
+# Debe existir base_datos.py en tu proyecto con get_conn()
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from base_datos import get_conn  # type: ignore
 
@@ -34,8 +35,8 @@ from base_datos import get_conn  # type: ignore
 BASE_URL   = "https://elabastecedor.com.ar/"
 LOGIN_URL  = "https://elabastecedor.com.ar/login"
 TARGET_URL = "https://elabastecedor.com.ar/almacen-aceites"
-OUT_XLSX   = "aceites_y_mas.xlsx"
-OUT_CSV    = None  # por ej. "aceites_y_mas.csv"
+OUT_XLSX   = "aceites.xlsx"
+OUT_CSV    = None  # si querés CSV además del XLSX, poné por ej. "aceites.csv"
 
 # Credenciales
 EMAIL    = os.getenv("ELABASTECEDOR_EMAIL", "mauro@factory-blue.com")
@@ -59,7 +60,7 @@ SUBMIT_WAIT_AFTER_TOKEN = 0.8
 TIENDA_CODIGO = "elabastecedor"
 TIENDA_NOMBRE = "El Abastecedor"
 
-# ====== Límites VARCHAR ======
+# ====== Límites VARCHAR (ajusta si tu schema difiere) ======
 MAXLEN_NOMBRE = 255
 MAXLEN_MARCA = 128
 MAXLEN_FABRICANTE = 128
@@ -70,139 +71,9 @@ MAXLEN_NOMBRE_TIENDA = 255
 MAXLEN_TIPO_OFERTA = 190
 MAXLEN_PROMO_COMENTARIOS = 480
 
-# =========================
-# CATEGORÍAS A ITERAR
-# (slug, nombre legible)
-# =========================
-CATEGORIES: List[Tuple[str, str]] = [
-    ("almacen-aceites", "ACEITES."),
-    ("almacen-aderezos", "ADEREZOS ."),
-    ("almacen-apto-celiacos", "APTOS PARA CELIACOS."),
-    ("almacen-arroces", "ARROCES ."),
-    ("almacen-pascuas", "ART. DE PASCUA."),
-    ("almacen-azucar", "AZUCAR ."),
-    ("almacen-bizcochuelos-para-preparar", "BIZCOCHUELOS P/PREPARAR ."),
-    ("almacen-bizcochuelos-preparados", "BIZCOCHUELOS PREPARADOS ."),
-    ("almacen-budines-magdalenas", "BUDINES Y MAGDALENAS."),
-    ("almacen-cacaos", "CACAOS."),
-    ("almacen-cafes", "CAFES."),
-    ("almacen-caldos", "CALDOS ."),
-    ("almacen-cereales", "CEREALES ."),
-    ("almacen-conservas-carnes", "CONSERVAS DE CARNES."),
-    ("almacen-conservas-pescado", "CONSERVAS DE PESCADO."),
-    ("almacen-conservas-legumbres", "CONSERVAS LEGUMBRES Y VEGETALES."),
-    ("almacen-edulcoran", "EDULCORANTES."),
-    ("almacen-encurtido", "ENCURTIDO ."),
-    ("almacen-especias-condimentos", "ESPECIAS/CONDIMENTOS."),
-    ("almacen-fiestas", "FIESTAS ."),
-    ("almacen-fruta-conserva", "FRUTA CONSERVA ."),
-    ("almacen-galletas-tostadas-grisines", "GALLETAS / TOSTADAS / GRISINES."),
-    ("almacen-galletitas-dulces", "GALLETITAS DULCES."),
-    ("almacen-galletitas-saladas", "GALLETITAS SALADAS."),
-    ("almacen-gelatina", "GELATINA."),
-    ("almacen-grasas", "GRASAS."),
-    ("almacen-harinas", "HARINAS."),
-    ("almacen-ketchup", "KETCHUP."),
-    ("almacen-legumbres-secas", "LEGUMBRES SECAS ."),
-    ("almacen-mayonesa", "MAYONESA."),
-    ("almacen-mermelada", "MERMELADA ."),
-    ("almacen-miel", "MIEL ."),
-    ("almacen-mostaza", "MOSTAZA."),
-    ("almacen-pan-rallado", "PAN RALLADO ."),
-    ("almacen-pastas-secas", "PASTAS SECAS ."),
-    ("almacen-postres-polvo", "POSTRES POLVO ."),
-    ("almacen-pure-de-tomate", "PURE DE TOMATE."),
-    ("almacen-pure-instantaneo", "PURE INSTANTANEO ."),
-    ("almacen-reposteria-varios", "REPOSTERIA VARIOS ."),
-    ("almacen-sales", "SALES ."),
-    ("almacen-salsa-golf", "SALSA GOLF."),
-    ("almacen-salsas", "SALSAS ."),
-    ("almacen-snacks", "SNACKS ."),
-    ("almacen-sopas", "SOPAS ."),
-    ("almacen-te-y-mate-cocido", "TE Y MATE COCIDO ."),
-    ("almacen-vinagre-aceto-jugo-limon", "VINAGRE /ACETO / JUGO DE LIMON."),
-    ("almacen-yerbas", "YERBAS ."),
-
-    #frescos
-
-    ("frescos-comidas-elaboradas-panificados", "COMIDAS ELABORADAS Y PANIFICADOS. "),
-    ("frescos-frutas-congeladas", "FRUTAS CONGELADAS. "),
-    ("frescos-hamburguesas-medallones", "HAMBURGUESAS Y MEDALLONES. "),
-    ("frescos-helados-postres", "HELADOS Y POSTRES. "),
-    ("frescos-papas-congeladas", "PAPAS CONGELADAS. "),
-    ("frescos-pescados-mariscos", "PESCADOS Y MARISCOS. "),
-    ("frescos-rebozados-congelados", "REBOZADOS CONGELADOS. "),
-    ("frescos-vegetales-congelados", "VEGETALES CONGELADOS. "),
-    ("frescos-fiambres", "FIAMBRES. "),
-    ("frescos-crema-de-leche", "CREMA DE LECHE. "),
-    ("frescos-dulce-de-leche", "DULCE DE LECHE. "),
-    ("frescos-lacteos-bebe", "LACTEOS BEBE. "),
-    ("frescos-leches", "LECHES . "),
-    ("frescos-mantecas", "MANTECAS . "),
-    ("frescos-margarina", "MARGARINA . "),
-    ("frescos-postres", "POSTRES . "),
-    ("frescos-salchichas", "SALCHICHAS. "),
-    ("frescos-yogur", "YOGUR. "),
-    ("frescos-empanadas-tapas", "EMPANADAS TAPAS. "),
-    ("frescos-levaduras", "LEVADURAS . "),
-    ("frescos-pascualinas-tapas", "PASCUALINAS TAPAS . "),
-    ("frescos-pastas-frescas", "PASTAS FRESCAS . "),
-    ("frescos-dulces-solidos", "DULCES SOLIDOS. "),
-    ("frescos-quesos-blandos", "QUESOS BLANDOS. "),
-    ("frescos-quesos-duros", "QUESOS DUROS. "),
-    ("frescos-quesos-rallados", "QUESOS RALLADOS. "),
-    ("frescos-quesos-semiduros", "QUESOS SEMIDUROS. "),
-    ("frescos-quesos-untables", "QUESOS UNTABLES . "),
-
-    ("carniceria-achuras", "ACHURAS . "),
-    ("carniceria-cerdo", "CERDO . "),
-    ("carniceria-cortes-vacunos", "CORTES VACUNOS. "),
-    ("carniceria-embutidos", "EMBUTIDOS. "),
-    ("carniceria-granja", "GRANJA. "),
-    ("carniceria-pollo", "POLLO . "),
-    ("carniceria-preparados", "PREPARADOS . "),
-
-    ("panificados-panificados", "PANIFICADOS. "),
-
-    ("bebidas-aperitivo", "APERITIVO C/ALCOHOL. "),
-    ("bebidas-bebidas-blancas", "BEBIDAS BLANCAS . "),
-    ("bebidas-cervezas", "CERVEZAS . "),
-    ("bebidas-espumantes-sidras", "ESPUMANTES / SIDRAS. "),
-    ("bebidas-estucheria", "ESTUCHERIA. "),
-    ("bebidas-generosos", "GENEROSOS. "),
-    ("bebidas-licores", "LICORES . "),
-    ("bebidas-vinos-blancos", "VINOS BLANCOS. "),
-    ("bebidas-vinos-rosados", "VINOS ROSADOS. "),
-    ("bebidas-vinos-tintos", "VINOS TINTOS. "),
-    ("bebidas-whiskys", "WHISKYS. "),
-    ("bebidas-aguas", "AGUAS. "),
-    ("bebidas-aguas-saborizadas", "AGUAS SABORIZADAS. "),
-    ("bebidas-aperitivos", "APERITIVO SIN ALCOHOL. "),
-    ("bebidas-gaseosas", "GASEOSAS . "),
-    ("bebidas-granadina", "GRANADINA. "),
-    ("bebidas-energizantes", "ISOTONICAS / ENERGIZANTES. "),
-    ("bebidas-jugos", "JUGOS. "),
-    ("bebidas-jugos-preparar", "JUGOS PARA PREPARAR. "),
-
-    ("verduleria-frutas", "FRUTAS . "),
-    ("verduleria-frutas-perecederas", "FRUTAS PERECEDERAS . "),
-    ("verduleria-frutas-verduras-envasadas", "FRUTAS Y VERDURAS ENVASADAS. "),
-    ("verduleria-hortalizas-pesadas", "HORTALIZAS PESADAS . "),
-    ("verduleria-productos-de-granja", "PROD. DE GRANJA . "),
-    ("verduleria-verdura", "VERDURA . "),
-    ("verduleria-verdura-en-hoja", "VERDURA EN HOJA . "),
-
-    ("kiosco-alfajores", "ALFAJORES. "),
-    ("kiosco-caramelos", "CARAMELOS. "),
-    ("kiosco-chicles", "CHICLES. "),
-    ("kiosco-chocolates", "CHOCOLATES. "),
-    ("kiosco-obleas", "OBLEAS. "),
-    ("kiosco-pochoclos", "POCHOLOS. "),
-    ("kiosco-turrones", "TURRONES. "),
-]
 
 # =========================
-# Utilidades
+# Utilidades varias
 # =========================
 def _truncate(val: Optional[Any], maxlen: int) -> Optional[str]:
     if val is None:
@@ -210,10 +81,16 @@ def _truncate(val: Optional[Any], maxlen: int) -> Optional[str]:
     s = str(val)
     return s if len(s) <= maxlen else s[:maxlen]
 
+
 # =========================
-# Selenium Driver
+# Selenium Driver (HEADLESS para VPS)
 # =========================
 def make_driver(headless: bool = True) -> (webdriver.Chrome, str):
+    """
+    Crea webdriver Chrome en modo headless y devuelve (driver, user_data_dir_tmp)
+    para poder borrar el perfil al final. Se usa un perfil único para evitar
+    'user data directory is already in use'.
+    """
     user_data_dir = tempfile.mkdtemp(prefix="chrome_profile_")
     opts = Options()
     if headless:
@@ -228,6 +105,7 @@ def make_driver(headless: bool = True) -> (webdriver.Chrome, str):
     opts.add_argument("--lang=es-AR")
     opts.add_argument("--window-size=1920,1080")
 
+    # Permitir override de binarios si ya los tenés instalados en el VPS
     chrome_bin = os.getenv("CHROME_BIN")
     if chrome_bin:
         opts.binary_location = chrome_bin
@@ -236,13 +114,17 @@ def make_driver(headless: bool = True) -> (webdriver.Chrome, str):
     if chromedriver_path and os.path.exists(chromedriver_path):
         service = Service(chromedriver_path)
     else:
+        # webdriver_manager descargará si no hay binario (requiere salida a internet)
         service = Service(ChromeDriverManager().install())
 
     driver = webdriver.Chrome(service=service, options=opts)
+
+    # Anti-automation mínimo
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
     })
     return driver, user_data_dir
+
 
 # =========================
 # CapSolver helpers
@@ -261,6 +143,7 @@ def caps_create_task(api_key: str, website_url: str, sitekey: str, is_enterprise
     except Exception as e:
         print(f"[CapSolver] createTask exception: {e}")
         return None
+
 
 def caps_poll_result(api_key: str, task_id: str, timeout_sec: int = CAPSOLVER_TIMEOUT) -> Optional[str]:
     start = time.time()
@@ -284,6 +167,7 @@ def caps_poll_result(api_key: str, task_id: str, timeout_sec: int = CAPSOLVER_TI
             time.sleep(CAPSOLVER_POLL_INTERVAL)
     print("[CapSolver] Timeout esperando resultado.")
     return None
+
 
 # =========================
 # reCAPTCHA helpers
@@ -356,6 +240,7 @@ def inject_recaptcha_token_and_trigger(driver, token: str) -> None:
     """
     driver.execute_script(js, token)
 
+
 # =========================
 # Cookies -> requests
 # =========================
@@ -365,44 +250,22 @@ def export_cookies_to_requests(driver) -> requests.Session:
         s.cookies.set(c.get("name"), c.get("value"), domain=c.get("domain"), path=c.get("path", "/"))
     return s
 
+
 # =========================
 # Utils scraping
 # =========================
 def clean_price(text: str) -> Optional[float]:
     if not text:
         return None
-    s = str(text).replace("\xa0", " ").strip()
-    # Quitar símbolos y letras, dejar dígitos y separadores
-    s = re.sub(r"[^\d,.\-]", "", s)
-    if not s:
-        return None
-
-    # Si hay coma y punto: el separador decimal suele ser el de más a la derecha
-    if "," in s and "." in s:
-        if s.rfind(".") > s.rfind(","):
-            # Caso tipo "$ 8,199.00" → decimal es el punto
-            s = s.replace(",", "")
-        else:
-            # Caso tipo "$ 8.199,00" → decimal es la coma
-            s = s.replace(".", "").replace(",", ".")
-    elif "," in s:
-        # Solo comas: si la parte final tiene 2 o 3 dígitos, interpretamos como decimal
-        frac = s.split(",")[-1]
-        if len(frac) in (2, 3):
-            s = s.replace(",", ".")
-        else:
-            # Comas como miles
-            s = s.replace(",", "")
-    elif "." in s:
-        # Solo puntos: si hay muchos puntos o la parte final no parece decimal → miles
-        parts = s.split(".")
-        if len(parts) > 2 or len(parts[-1]) not in (2, 3):
-            s = s.replace(".", "")
-
+    t = text.strip()
+    t = t.replace("$", "").replace("ARS", "").replace("USD", "").strip()
+    t = t.replace(".", "").replace(" ", "")
+    t = t.replace(",", ".")
     try:
-        return round(float(s), 2)
+        return round(float(t), 2)
     except Exception:
         return None
+
 
 def parse_products_from_html(html: str) -> List[Dict[str, Any]]:
     soup = BeautifulSoup(html, "html.parser")
@@ -452,46 +315,16 @@ def parse_products_from_html(html: str) -> List[Dict[str, Any]]:
         })
     return cards
 
+
 def go_to(driver, url: str, wait: WebDriverWait, expect_selector: Optional[str] = None):
     driver.get(url)
     wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
     if expect_selector:
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, expect_selector)))
 
-# — Intento genérico de paginación
-def try_click_next(driver, wait: WebDriverWait) -> bool:
-    # Varias heurísticas de "Siguiente"
-    selectors = [
-        "a[rel='next']",
-        "ul.pagination li.next a",
-        "a.page-link[aria-label='Next']",
-        "a.page-link[title*='Siguiente']",
-        "a[title*='Siguiente']",
-    ]
-    for sel in selectors:
-        try:
-            el = driver.find_element(By.CSS_SELECTOR, sel)
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-            time.sleep(0.1)
-            el.click()
-            wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
-            time.sleep(0.3)
-            return True
-        except Exception:
-            pass
-    # Plan B: por texto visible
-    try:
-        el = driver.find_element(By.LINK_TEXT, "Siguiente")
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-        el.click()
-        wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
-        time.sleep(0.3)
-        return True
-    except Exception:
-        return False
 
 # =========================
-# Helpers MySQL
+# Helpers MySQL (mismo esquema que vienes usando)
 # =========================
 import numpy as np
 from datetime import datetime as dt
@@ -517,20 +350,24 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     return cur.fetchone()[0]
 
 def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
-    ean = None  # la tienda no expone EAN
+    ean = None  # la lista no expone EAN; queda NULL
     nombre = _truncate(r.get("nombre") or "", MAXLEN_NOMBRE)
     marca = _truncate(r.get("marca_tienda") or None, MAXLEN_MARCA)
     fabricante = None
     categoria = None
     subcategoria = None
 
+    # 1) EAN (no lo tenemos)
+    # 2) nombre + marca
     if nombre and marca:
         cur.execute("""SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1""",
                     (nombre, marca or ""))
         row = cur.fetchone()
         if row:
-            return row[0]
+            pid = row[0]
+            return pid
 
+    # 3) Insert
     cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
         VALUES (%s, NULLIF(%s,''), %s, %s, %s, %s)
@@ -538,6 +375,7 @@ def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
     return cur.lastrowid
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
+    # Preferimos codigo_interno; si no, id_interno
     sku = (r.get("codigo_interno") or r.get("id_interno") or None)
     record_id = sku
     url = _truncate(r.get("url_producto") or None, MAXLEN_URL)
@@ -549,13 +387,14 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
+              producto_id = VALUES(producto_id),
               record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
         """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
-
         return cur.lastrowid
 
+    # Sin SKU: guardamos con URL/nombre
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, %s, %s)
@@ -563,14 +402,21 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
     return cur.lastrowid
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en: dt):
-    precio = r.get("precio_visible") if r.get("precio_visible") is not None else r.get("precio_hidden")
+    # Precio final: usamos visible si existe, sino hidden
+    precio = r.get("precio_visible")
+    if precio is None:
+        precio = r.get("precio_hidden")
+
     precio_lista = _price_str(precio)
     precio_oferta = _price_str(precio)
-    tipo_oferta = None
+    tipo_oferta = None  # no distinguimos promo aquí
+
+    # Comentarios con trazas útiles
     promo_comentarios = _truncate(
         f"precio_texto={r.get('precio_texto') or ''}".strip(),
         MAXLEN_PROMO_COMENTARIOS
     )
+
     cur.execute("""
         INSERT INTO historico_precios
           (tienda_id, producto_tienda_id, capturado_en,
@@ -591,56 +437,23 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
         tipo_oferta, None, None, promo_comentarios
     ))
 
-# =========================
-# Scrape por categoría
-# =========================
-def scrape_categoria(driver, wait: WebDriverWait, slug: str, nombre: str) -> List[Dict[str, Any]]:
-    url = urljoin(BASE_URL, slug)
-    print(f"➡️ Navegando a categoría: {nombre} ({url})")
-    go_to(driver, url, wait, expect_selector="article.list-product, .feature-slider-item.swiper-slide")
-
-    all_items: List[Dict[str, Any]] = []
-    page_idx = 1
-    while True:
-        html = driver.page_source
-        items = parse_products_from_html(html)
-        for it in items:
-            it["categoria_slug"] = slug
-            it["categoria_nombre"] = nombre
-        all_items.extend(items)
-        print(f"   • Página {page_idx}: {len(items)} items (acumulado {len(all_items)})")
-
-        # Intento pasar a la siguiente página (si existe)
-        moved = try_click_next(driver, wait)
-        if not moved:
-            break
-        page_idx += 1
-
-    print(f"🛒 Total en {nombre}: {len(all_items)}")
-    return all_items
 
 # =========================
 # MAIN
 # =========================
 def main():
     parser = argparse.ArgumentParser(description="El Abastecedor (Selenium headless VPS) → MySQL / Excel")
-    parser.add_argument("--url", default=None, help="URL de categoría a scrapear (si se pasa, NO itera por la lista)")
-    parser.add_argument("--outfile", default=OUT_XLSX, help="XLSX combinado de salida")
-    parser.add_argument("--csv", default=OUT_CSV, help="CSV combinado adicional (opcional)")
+    parser.add_argument("--url", default=TARGET_URL, help="URL de categoría a scrapear")
+    parser.add_argument("--outfile", default=OUT_XLSX, help="XLSX de salida")
+    parser.add_argument("--csv", default=OUT_CSV, help="CSV adicional de salida (opcional)")
     parser.add_argument("--no-mysql", action="store_true", help="No insertar en MySQL; solo exportar archivos")
-    parser.add_argument("--headless", action="store_true", default=True, help="Headless ON (por defecto)")
-    parser.add_argument("--per-category-files", action="store_true",
-                        help="Además del combinado, guarda un XLSX por categoría (Listado_<slug>.xlsx)")
-    parser.add_argument("--start-slug", default="almacen-aceites",
-                        help="Al iterar toda la lista, comenzar desde este slug (incluido).")
+    parser.add_argument("--headless", action="store_true", default=True, help="Ejecutar en headless (por defecto ON)")
     args = parser.parse_args()
 
-    driver, profile_dir = make_driver(headless=True)
+    driver, profile_dir = make_driver(headless=True)  # forzamos headless en VPS
     wait = WebDriverWait(driver, PAGE_WAIT)
 
-    from datetime import datetime as dt
     productos: List[Dict[str, Any]] = []
-
     try:
         # 1) Login
         driver.get(LOGIN_URL)
@@ -683,72 +496,40 @@ def main():
             except Exception:
                 continue
 
+        # Confirmación login (no estar en /login)
         try:
             WebDriverWait(driver, 30).until(lambda d: "/login" not in d.current_url)
         except Exception:
             pass
 
         if "/login" in driver.current_url:
-            print("⚠️ No se logró iniciar sesión. Revisa credenciales/recaptcha (seguimos igual).")
+            print("⚠️ No se logró iniciar sesión. Revisa credenciales/recaptcha (se intentará igual).")
         else:
             print("🎉 Sesión iniciada.")
 
-        # 2) Scrape: una URL concreta o iterar categorías
-        per_cat_results: Dict[str, List[Dict[str, Any]]] = {}
+        # 2) Ir a la categoría
+        print(f"➡️ Navegando a: {args.url}")
+        go_to(driver, args.url, wait, expect_selector="article.list-product, .feature-slider-item.swiper-slide")
 
-        if args.url:
-            # modo single URL (como antes)
-            slug_guess = args.url.rstrip("/").split("/")[-1]
-            nombre_guess = next((n for s, n in CATEGORIES if s == slug_guess), slug_guess)
-            items = scrape_categoria(driver, wait, slug_guess, nombre_guess)
-            per_cat_results[slug_guess] = items
+        # 3) Parsear productos de la página actual
+        html = driver.page_source
+        productos = parse_products_from_html(html)
+        print(f"🛒 Productos encontrados: {len(productos)}")
 
-        else:
-            # modo iteración completa, empezando en start-slug (incluido)
-            # reordena la lista para arrancar desde el slug indicado
-            if args.start_slug not in [s for s, _ in CATEGORIES]:
-                print(f"⚠️ start-slug '{args.start_slug}' no está en la lista; se empezará desde el principio.")
-                ordered = CATEGORIES[:]
-            else:
-                idx = [s for s, _ in CATEGORIES].index(args.start_slug)
-                ordered = CATEGORIES[idx:] + CATEGORIES[:idx]
-
-            for slug, nombre in ordered:
-                try:
-                    items = scrape_categoria(driver, wait, slug, nombre)
-                    per_cat_results[slug] = items
-                except Exception as e:
-                    print(f"❌ Error en categoría {slug}: {e}")
-                    continue
-
-        # 3) Exportar a Excel / CSV (combinado)
-        all_rows: List[Dict[str, Any]] = []
-        for slug, items in per_cat_results.items():
-            all_rows.extend(items)
-
-        df = pd.DataFrame(all_rows, columns=[
-            "categoria_slug", "categoria_nombre",
+        # 4) Exportar a Excel / CSV
+        df = pd.DataFrame(productos, columns=[
             "nombre", "url_producto", "imagen",
             "precio_visible", "precio_texto",
             "id_interno", "codigo_interno", "marca_tienda", "precio_hidden"
         ])
-
-        #df.to_excel(args.outfile, index=False)
-        print(f"✅ XLSX exportado: {args.outfile} ({len(df)} filas total)")
-
+        df.to_excel(args.outfile, index=False)
+        print(f"✅ XLSX exportado: {args.outfile} ({len(df)} filas)")
         if args.csv:
-            #df.to_csv(args.csv, index=False, encoding="utf-8")
+            df.to_csv(args.csv, index=False, encoding="utf-8")
             print(f"✅ CSV exportado: {args.csv}")
 
-        if args.per_category_files:
-            for slug, items in per_cat_results.items():
-                dfi = pd.DataFrame(items)
-                outp = f"Listado_{slug}.xlsx"
-                dfi.to_excel(outp, index=False)
-                print(f"   • Guardado: {outp} ({len(dfi)} filas)")
-
-        # 4) Ingesta MySQL (opcional)
-        if not args.no_mysql and len(df) > 0:
+        # 5) Ingesta MySQL (opcional)
+        if not args.no_mysql:
             conn = None
             try:
                 conn = get_conn()
@@ -768,7 +549,7 @@ def main():
                         conn.commit()
                 conn.commit()
                 print(f"💾 MySQL OK: {inserted} filas en historico_precios.")
-            except Exception:
+            except Exception as e:
                 if conn:
                     conn.rollback()
                 raise
@@ -784,6 +565,7 @@ def main():
             driver.quit()
         except Exception:
             pass
+        # Borrar el perfil temporal para no dejar basura
         try:
             shutil.rmtree(profile_dir, ignore_errors=True)
         except Exception:

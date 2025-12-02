@@ -4,18 +4,16 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="21-11-2015">
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/LArEINA/REINA_AUX.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/LArEINA/REINA_MAESTRO_AUX.xlsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/genovesa/GENOVESAaUX.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/genovesa/maestro_genovesa_aux.xlsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/tune_pinguino_corregido.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/25_pinguino/tunel/tunel_pinguino.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/lacteos.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/2_alvear/correccion/alvearMySQL.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="21-11-2015 commit - push">
+      <change afterPath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/tune_pinguino_corregido.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/28_elAbastecedor/abastecedor_ampliado/abastecedor_captcha_myslq.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/28_elAbastecedor/abastecedor_captcha_myslq.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/28_elAbastecedor/apicaptcha.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/28_elAbastecedor/prueba.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/correcciones/almacen.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/darMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/darMysql.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/darMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/darMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/almacen.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/request/elAbastecedor/abastecedor_ampliado/abastecedor_captcha_myslq.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/elAbastecedor/abastecedor_ampliado/abastecedor_captcha_myslq.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -181,7 +179,7 @@
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
     &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/David/PycharmProjects/scrapingTiendas/final/2_alvear/correccion&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/David/PycharmProjects/scrapingTiendas/final/3_comodin/correcciones&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -192,11 +190,11 @@
 }</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\3_comodin\correcciones" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\25_pinguino\tunel\correccion_tunel\correccion_de_la_correccion" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\2_alvear\correccion" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\26_DAR_EN_TU_CASA\correcciones" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\11_anonima\Tunnel\tunnel_correcciones" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\11_anonima\Tunnel\maestro" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\15_atomo\con_maestro" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\15_atomo\con_maestro" />
@@ -206,7 +204,7 @@
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\documentacion" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.main">
+  <component name="RunManager">
     <configuration name="genovesamysql" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="scrapingTiendas" />
       <option name="ENV_FILES" value="" />
@@ -587,7 +585,15 @@
       <option name="project" value="LOCAL" />
       <updated>1763777897238</updated>
     </task>
-    <option name="localTasksCounter" value="39" />
+    <task id="LOCAL-00039" summary="21-11-2015 commit - push">
+      <option name="closed" value="true" />
+      <created>1764392744824</created>
+      <option name="number" value="00039" />
+      <option name="presentableId" value="LOCAL-00039" />
+      <option name="project" value="LOCAL" />
+      <updated>1764392744825</updated>
+    </task>
+    <option name="localTasksCounter" value="40" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -605,7 +611,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="prueba interfaz" />
     <MESSAGE value="prueba interfaz_2" />
     <MESSAGE value="adelantos_streamlit" />
     <MESSAGE value="adelantos_streamlit_2" />
@@ -630,7 +635,8 @@
     <MESSAGE value="ftp_" />
     <MESSAGE value="14-11-2015" />
     <MESSAGE value="21-11-2015" />
-    <option name="LAST_COMMIT_MESSAGE" value="21-11-2015" />
+    <MESSAGE value="21-11-2015 commit - push" />
+    <option name="LAST_COMMIT_MESSAGE" value="21-11-2015 commit - push" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$abastecedor_captcha_myslq.coverage" NAME="abastecedor_captcha_myslq Coverage Results" MODIFIED="1759003919584" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/elAbastecedor" />

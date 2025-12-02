@@ -26,6 +26,7 @@ import os
 import re
 import sys
 import time
+import json
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from urllib.parse import urlsplit, urlunsplit
@@ -79,6 +80,7 @@ def normalize_url(u: str) -> str:
 
 _price_clean_re = re.compile(r"[^\d,\.]")
 
+
 def parse_price(text: Optional[str]) -> Optional[float]:
     """Convierte precio AR a float. Ej: '$ 3.599,00' -> 3599.00"""
     if not text:
@@ -98,6 +100,40 @@ def parse_price(text: Optional[str]) -> Optional[float]:
 def soup_select_text(soup: BeautifulSoup, selector: str) -> Optional[str]:
     el = soup.select_one(selector)
     return el.get_text(strip=True) if el else None
+
+
+def extract_ean_from_vtex(soup: BeautifulSoup) -> Optional[str]:
+    """
+    Busca un <script> con vtex.events.addData({ ... "productEans":["779..."] ... });
+    y devuelve el primer EAN, o None si no existe.
+    """
+    script_tag = soup.find(
+        "script",
+        string=lambda t: t and "vtex.events.addData" in t and "productEans" in t
+    )
+    if not script_tag:
+        return None
+
+    script_text = script_tag.string or script_tag.get_text()
+
+    m = re.search(
+        r"vtex\.events\.addData\(\s*(\{.*?\})\s*\);",
+        script_text,
+        re.S
+    )
+    if not m:
+        return None
+
+    try:
+        data = json.loads(m.group(1))
+    except Exception:
+        return None
+
+    eans = data.get("productEans")
+    if isinstance(eans, list) and eans:
+        return str(eans[0])
+
+    return None
 
 
 def clean_txt(x: Any) -> Optional[str]:
@@ -211,6 +247,7 @@ def infinite_scroll_collect_product_links(
 def extract_product_detail(driver: Chrome, url: str) -> Dict[str, Any]:
     """
     Extrae del detalle:
+      - ean (desde script VTEX, si existe)
       - brand (small gris)
       - name (h2 dentro de .header, con fallback)
       - offer price (.offer-price)
@@ -233,6 +270,9 @@ def extract_product_detail(driver: Chrome, url: str) -> Dict[str, Any]:
 
     html = driver.page_source
     soup = BeautifulSoup(html, "html.parser")
+
+    # EAN desde script VTEX (si existe)
+    ean = extract_ean_from_vtex(soup)
 
     # Marca & Nombre
     brand = soup_select_text(soup, ".shop-detail-right small")
@@ -271,6 +311,7 @@ def extract_product_detail(driver: Chrome, url: str) -> Dict[str, Any]:
 
     data = {
         "url": target,
+        "ean": clean_txt(ean),
         "brand": clean_txt(brand),
         "name": clean_txt(name),
         "price_offer": price_offer,
@@ -321,13 +362,29 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
 
 def find_or_create_producto(cur, row: Dict[str, Any]) -> int:
     """
-    En Comodín no hay EAN → ean=NULL.
-    Match suave: (nombre, marca) si ambos existen; fallback: solo nombre.
-    *Sugerencia*: si luego extraes 'presentacion' (p.ej. '500 ml'), añádelo a este match.
+    Match preferente por EAN.
+    Si no hay EAN → match suave: (nombre, marca) si ambos existen; fallback: solo nombre.
     """
+    ean = clean_txt(row.get("ean"))
     nombre = clean_txt(row.get("name"))
-    marca  = clean_txt(row.get("brand"))
+    marca = clean_txt(row.get("brand"))
 
+    # 1) Intentar por EAN si existe
+    if ean:
+        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
+        r = cur.fetchone()
+        if r:
+            pid = r[0]
+            # Actualiza campos básicos si vienen no vacíos
+            cur.execute("""
+                UPDATE productos
+                SET nombre = COALESCE(NULLIF(%s,''), nombre),
+                    marca  = COALESCE(NULLIF(%s,''), marca)
+                WHERE id = %s
+            """, (nombre or "", marca or "", pid))
+            return pid
+
+    # 2) Match por (nombre, marca)
     if nombre and marca:
         cur.execute(
             "SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1",
@@ -335,24 +392,34 @@ def find_or_create_producto(cur, row: Dict[str, Any]) -> int:
         )
         r = cur.fetchone()
         if r:
-            return r[0]
+            pid = r[0]
+            # Si tenemos EAN nuevo, lo actualizamos
+            if ean:
+                cur.execute(
+                    "UPDATE productos SET ean = COALESCE(NULLIF(%s,''), ean) WHERE id=%s",
+                    (ean, pid)
+                )
+            return pid
 
+    # 3) Match solo por nombre
     if nombre:
         cur.execute("SELECT id FROM productos WHERE nombre=%s LIMIT 1", (nombre,))
         r = cur.fetchone()
         if r:
             pid = r[0]
-            if marca:
-                cur.execute(
-                    "UPDATE productos SET marca=COALESCE(NULLIF(%s,''), marca) WHERE id=%s",
-                    (marca, pid)
-                )
+            cur.execute("""
+                UPDATE productos
+                SET marca = COALESCE(NULLIF(%s,''), marca),
+                    ean   = COALESCE(NULLIF(%s,''), ean)
+                WHERE id=%s
+            """, (marca or "", ean or "", pid))
             return pid
 
+    # 4) No existe → insert nuevo
     cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
-        VALUES (NULL, NULLIF(%s,''), NULLIF(%s,''), NULL, NULL, NULL)
-    """, (nombre or "", marca or ""))
+        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULL, NULL, NULL)
+    """, (ean or "", nombre or "", marca or ""))
     return cur.lastrowid
 
 
@@ -465,7 +532,17 @@ def main():
 
         if SAVE_EXCEL and out_rows:
             df = pd.DataFrame(out_rows)
-            cols = ["brand", "name", "price_offer", "price_regular", "availability", "product_code", "image_url", "url"]
+            cols = [
+                "ean",
+                "brand",
+                "name",
+                "price_offer",
+                "price_regular",
+                "availability",
+                "product_code",
+                "image_url",
+                "url",
+            ]
             df = df.reindex(columns=cols)
             df.to_excel(OUT_XLSX, index=False)
             print(f">> Exportado {OUT_XLSX}")
