@@ -11,7 +11,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 
 # ========= CONFIG =========
-ARCHIVO_IN = "REINA_MAESTRO_AUX.xlsx"       # <-- tu archivo nuevo
+ARCHIVO_IN = "REINA_MAESTRO_AUX_viernes.xlsx"       # <-- tu archivo nuevo
 ARCHIVO_OUT = "REINA_MAESTRO_CON_PRECIOS.xlsx"
 HOJA = 0  # o "Hoja1"
 

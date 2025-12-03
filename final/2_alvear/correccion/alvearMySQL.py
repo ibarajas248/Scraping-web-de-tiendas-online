@@ -359,42 +359,48 @@ def find_or_create_producto(cur, row: Dict[str, Any]) -> int:
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, row: Dict[str, Any]) -> int:
     """
-    Inserta o busca un registro en producto_tienda.
-    Si ya existe, NO actualiza producto_id.
+    Clave natural preferida: (tienda_id, codigoInterno) como sku_tienda.
+    Respaldo: (tienda_id, record_id_tienda) con idArticulo.
     """
     sku = clean_txt(row.get("codigoInterno"))
     record_id = clean_txt(row.get("idArticulo"))
-    url = None
+    url = None  # API no trae URL de PDP directa
     nombre_tienda = clean_txt(row.get("nombre"))
 
-    # 1) Caso principal → usa codigoInterno como sku_tienda
+    # -------------------------------------------------------
+    # CASO PRINCIPAL: hay SKU → NO actualizar producto_id
+    # -------------------------------------------------------
     if sku:
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
-              -- 👇 NO actualizar producto_id
+              -- producto_id = VALUES(producto_id),   <== REMOVIDO
               record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
         """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
         return cur.lastrowid
 
-    # 2) Segundo caso → usa idArticulo como record_id_tienda
+    # -------------------------------------------------------
+    # RESPALDO: existe record_id → aquí SI se mantiene la lógica
+    # -------------------------------------------------------
     if record_id:
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, NULL, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
-              -- 👇 NO actualizar producto_id
+              producto_id = VALUES(producto_id),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
         """, (tienda_id, producto_id, record_id, url, nombre_tienda))
         return cur.lastrowid
 
-    # 3) Último recurso (sin llaves naturales)
+    # -------------------------------------------------------
+    # ÚLTIMO RECURSO (sin llaves naturales)
+    # -------------------------------------------------------
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, %s, %s)
