@@ -40,7 +40,7 @@ wait = WebDriverWait(driver, 10)  # 10s de espera máx por precio
 
 def limpiar_precio(texto_raw: str):
     """
-    Recibe algo tipo '$ 3.950,00' y devuelve '3950,00' (como string).
+    Recibe algo tipo '$ 3.950,00' y devuelve 3950.00 como float.
     """
     if not texto_raw:
         return None
@@ -54,15 +54,18 @@ def limpiar_precio(texto_raw: str):
     if not texto:
         return None
 
-    # normalizar miles: "3.950,00" → "3950,00"
+    # normalizar miles y convertir a float
+    # "3.950,00" -> "3950.00"
     if "," in texto:
-        partes = texto.split(",")
-        entero = partes[0].replace(".", "")  # quitar puntos de miles
-        decimales = partes[1]
-        return f"{entero},{decimales}"
+        texto = texto.replace(".", "").replace(",", ".")
     else:
-        # sin coma decimal, lo devolvemos tal cual
-        return texto
+        texto = texto.replace(".", "")
+
+    try:
+        return float(texto)
+    except ValueError:
+        return None
+
 
 
 # ========= RECORRER TODAS LAS URLs =========

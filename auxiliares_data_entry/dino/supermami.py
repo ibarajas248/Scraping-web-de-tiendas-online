@@ -6,7 +6,7 @@ import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 
-INPUT_FILE = "supermami_aux_miercoles.xlsx"      # archivo de entrada
+INPUT_FILE = "dino_aux_viernes.xlsx"      # archivo de entrada
 OUTPUT_FILE = "supermami_precios.xlsx" # archivo de salida
 
 

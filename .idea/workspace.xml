@@ -5,17 +5,23 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="21-11-2015 commit - push-">
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/carrefour/carrefour_aux.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/coto/coto_aux.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/dino/supermami.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/categorias/frescos.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/scrap_profundo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/abastecedor/abastecedor_aux_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/anonima/anonima_aux_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/comodin/comodinaux.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/disco/disco aux.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/gallega/gallega_aux_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/josimar/josimar_viernes_aux.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/jumbo/jumbo_aux.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/kilbel/kilbel_aux.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/la_coope/lacoope_aux_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/masonline/mas_online_aux.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/modo/modo_aux_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/toledo/toledo_aux.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/LArEINA/REINA_AUX.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/LArEINA/REINA_AUX.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/LArEINA/REINA_MAESTRO_AUX.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/LArEINA/REINA_MAESTRO_AUX_viernes.xlsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/coto/coto_aux.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/coto/coto_aux.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/dino/supermami.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/dino/supermami.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/genovesa/GENOVESAaUX.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/genovesa/GENOVESAaUX.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/genovesa/maestro_genovesa_aux.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/genovesa/maestro_genovesa_aux_viernes.xlsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/2_alvear/correccion/alvearMySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/2_alvear/correccion/alvearMySQL.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -64,6 +70,7 @@
     "Python.PRUEBA.executor": "Run",
     "Python.REINA_AUX.executor": "Run",
     "Python.ToledoMySQL.executor": "Run",
+    "Python.abastecedor_aux_viernes.executor": "Run",
     "Python.abastecedor_captcha_myslq.executor": "Run",
     "Python.almacen.executor": "Run",
     "Python.almacenProxy.executor": "Run",
@@ -72,6 +79,7 @@
     "Python.alvear.executor": "Run",
     "Python.alvearMySQL.executor": "Run",
     "Python.anonima.executor": "Run",
+    "Python.anonima_aux_viernes.executor": "Run",
     "Python.apicaptcha.executor": "Run",
     "Python.app_regiones.executor": "Run",
     "Python.archivovtex.executor": "Run",
@@ -86,6 +94,7 @@
     "Python.carrefour_aux.executor": "Run",
     "Python.comodin.executor": "Run",
     "Python.comodinMySQL.executor": "Run",
+    "Python.comodinaux.executor": "Run",
     "Python.con_maestro.executor": "Run",
     "Python.con_maestro_mysql.executor": "Run",
     "Python.conectar.executor": "Run",
@@ -107,6 +116,7 @@
     "Python.dino2.executor": "Run",
     "Python.dinoMySQL.executor": "Run",
     "Python.dinoPaginado.executor": "Run",
+    "Python.disco aux.executor": "Run",
     "Python.disco.executor": "Run",
     "Python.disco_MySQL.executor": "Run",
     "Python.disco_cordoba.executor": "Run",
@@ -121,21 +131,26 @@
     "Python.estructura_coto.executor": "Run",
     "Python.frescos.executor": "Run",
     "Python.gallega1.executor": "Run",
+    "Python.gallega_aux_viernes.executor": "Run",
     "Python.genovesamysql.executor": "Run",
     "Python.hiperlibertad.executor": "Run",
     "Python.hiperlibertad_Mysql.executor": "Run",
     "Python.josimar.executor": "Run",
+    "Python.josimar_viernes_aux.executor": "Run",
     "Python.jumbo.executor": "Run",
     "Python.jumboMysql.executor": "Run",
+    "Python.jumbo_aux.executor": "Run",
     "Python.jumbo_correcion.executor": "Run",
     "Python.jumbo_excel.executor": "Run",
     "Python.kilbel.executor": "Run",
+    "Python.kilbel_aux.executor": "Run",
     "Python.kilbeldb.executor": "Run",
     "Python.laAnonima.executor": "Run",
     "Python.laAnonima_MySQL.executor": "Run",
     "Python.laGallega.executor": "Run",
     "Python.laReinaOnline.executor": "Run",
     "Python.laanonima_tunel.executor": "Run",
+    "Python.lacoope_aux_viernes.executor": "Run",
     "Python.lacoopeencasa.executor": "Run",
     "Python.lacoopemysql.executor": "Run",
     "Python.lacoopemysql1.executor": "Run",
@@ -145,10 +160,12 @@
     "Python.localidadprueba.executor": "Run",
     "Python.maestro.executor": "Run",
     "Python.main.executor": "Run",
+    "Python.mas_online_aux.executor": "Run",
     "Python.mascotas.executor": "Run",
     "Python.masonline.executor": "Run",
     "Python.modoMarket.executor": "Run",
     "Python.modoMarketMysql.executor": "Run",
+    "Python.modo_aux_viernes.executor": "Run",
     "Python.mysqlanonima_este_funciona.executor": "Run",
     "Python.pinguino.executor": "Run",
     "Python.proxy_almacen.executor": "Run",
@@ -175,6 +192,7 @@
     "Python.solvercaptcha.executor": "Run",
     "Python.sql.executor": "Run",
     "Python.supermami.executor": "Run",
+    "Python.toledo_aux.executor": "Run",
     "Python.tune_pinguino_corregido.executor": "Run",
     "Python.tunel.executor": "Run",
     "Python.tunel_pinguino.executor": "Run",
@@ -607,7 +625,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764699327079</updated>
     </task>
-    <option name="localTasksCounter" value="41" />
+    <task id="LOCAL-00041" summary="21-11-2015 commit - push-">
+      <option name="closed" value="true" />
+      <created>1764737094192</created>
+      <option name="number" value="00041" />
+      <option name="presentableId" value="LOCAL-00041" />
+      <option name="project" value="LOCAL" />
+      <updated>1764737094192</updated>
+    </task>
+    <option name="localTasksCounter" value="42" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

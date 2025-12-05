@@ -1,171 +1,156 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-Lee un Excel con URLs y completa las columnas:
-- PRECIO_LISTA
-- PRECIO_OFERTA
-- TIPO_OFERTA
-
-A partir de estructuras como:
-
-<div class="mt-2 small ng-star-inserted">
-  <b>Precio regular :</b>  $1.739,00
-</div>
-
-<div class="mb-1">
-  <var class="price h3"> $869,50 </var>
-</div>
-
-<div class="mb-2 ng-star-inserted">
-  <b class="text-success">2x1</b>
-</div>
-"""
-
 import re
 import time
 from pathlib import Path
 
-import requests
 import pandas as pd
-from bs4 import BeautifulSoup
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 
 
-# ==========================
-#  UTILIDADES
-# ==========================
-
-def build_session() -> requests.Session:
-    """Crea una sesión con reintentos básicos."""
-    s = requests.Session()
-    retry = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504]
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    s.mount("http://", adapter)
-    s.mount("https://", adapter)
-    s.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0 Safari/537.36"
-        )
-    })
-    return s
-
-
-PRICE_RE = re.compile(r"\$?\s*([\d\.\,]+)")
-
-
-def clean_price_str(text: str | None) -> str | None:
-    """
-    Devuelve el precio como string “limpio” en formato argentino.
-    Ej: " $1.739,00 " → "1.739,00"
-    """
+def parse_price(text: str):
+    """'$4.199,00' -> 4199.00 (float)"""
     if not text:
         return None
-    text = text.strip()
-    m = PRICE_RE.search(text)
-    if not m:
+    limpio = re.sub(r"[^\d.,]", "", text)
+    if not limpio:
         return None
-    return m.group(1)
+    limpio = limpio.replace(".", "").replace(",", ".")
+    try:
+        return float(limpio)
+    except ValueError:
+        return None
 
 
-# ==========================
-#  PARSEO DEL HTML
-# ==========================
+def scrape_pagina(driver, url: str, idx: int = 0):
+    # Limpia URLs tipo ...%3F...
+    if "%3F" in url:
+        url = url.split("%3F", 1)[0]
 
-def parse_promo(html: str) -> tuple[str | None, str | None, str | None]:
-    """
-    Extrae (precio_lista, precio_oferta, tipo_oferta) del HTML.
-    Devuelve strings (formato AR) o None si no se encuentran.
-    """
-    soup = BeautifulSoup(html, "html.parser")
+    print(f"    GET -> {url}")
+    try:
+        driver.get(url)
+    except Exception as e:
+        print(f"[ERROR] cargando {url}: {e}")
+        return None, None, None
 
-    # ---- PRECIO LISTA (Precio regular :) ----
+    # Esperar a que Angular pinte algo de precios:
+    try:
+        WebDriverWait(driver, 15).until(
+            EC.any_of(
+                EC.presence_of_element_located(
+                    (By.XPATH, "//var[contains(@class,'price')]")
+                ),
+                EC.presence_of_element_located(
+                    (By.XPATH, "//*[contains(.,'Precio regular')]")
+                )
+            )
+        )
+    except TimeoutException:
+        print(f"[WARN] No cargó contenido dinámico en {url}")
+
+    # DEBUG: guarda el HTML de la primera fila para inspeccionar
+    if idx == 0:
+        Path("debug_coto_0.html").write_text(driver.page_source, encoding="utf-8")
+        print("    [DEBUG] HTML guardado en debug_coto_0.html")
+
     precio_lista = None
-    b_regular = soup.find("b", string=lambda t: t and "Precio regular" in t)
-    if b_regular and b_regular.parent:
-        texto_div = b_regular.parent.get_text(" ", strip=True)
-        precio_lista = clean_price_str(texto_div)
-
-    # ---- PRECIO OFERTA (<var class="price h3">) ----
     precio_oferta = None
-    var_oferta = soup.find("var", class_=lambda c: c and "price" in c.split())
-    if var_oferta:
-        precio_oferta = clean_price_str(var_oferta.get_text(" ", strip=True))
-
-    # ---- TIPO OFERTA (<b class="text-success">2x1</b>) ----
     tipo_oferta = None
-    b_tipo = soup.find("b", class_=lambda c: c and "text-success" in c.split())
-    if b_tipo:
-        tipo_oferta = b_tipo.get_text(strip=True) or None
+
+    # -------- PRECIO OFERTA --------
+    try:
+        oferta_el = driver.find_element(
+            By.XPATH,
+            "//var[contains(@class,'price')]"
+        )
+        precio_oferta = parse_price(oferta_el.text)
+    except NoSuchElementException:
+        pass
+
+    # -------- PRECIO LISTA ("Precio regular :") --------
+    try:
+        base_el = driver.find_element(
+            By.XPATH,
+            "//div[contains(@class,'small') and contains(.,'Precio regular')]"
+        )
+        precio_lista = parse_price(base_el.text)
+    except NoSuchElementException:
+        precio_lista = None
+
+    # -------- TIPO OFERTA (25%Dto) --------
+    try:
+        tipo_el = driver.find_element(
+            By.XPATH,
+            "//b[contains(@class,'text-success')]"
+        )
+        tipo_oferta = tipo_el.text.strip()
+    except NoSuchElementException:
+        tipo_oferta = None
+
+    # -------- Regla: si lista == oferta, solo lista --------
+    if precio_lista is not None and precio_oferta is not None:
+        if abs(precio_lista - precio_oferta) < 0.01:
+            precio_oferta = None
+            tipo_oferta = None
 
     return precio_lista, precio_oferta, tipo_oferta
 
 
-# ==========================
-#  PROCESO PRINCIPAL
-# ==========================
-
-def procesar_excel(
-    input_path: str = "coto_aux_miercoles.xlsx",
-    output_path: str = "coto_aux_miercoles_precios.xlsx",
-    col_urls: str = "URLs",
+def main(
+    input_path="coto_maestro_viernes.xlsx",
+    output_path="coto_maestro_viernes_actualizado.xlsx",
+    col_url="URLs",
 ):
-    # Leer Excel
-    print(f"Leyendo archivo: {input_path}")
     df = pd.read_excel(input_path)
 
-    if col_urls not in df.columns:
-        raise ValueError(f"No se encontró la columna '{col_urls}' en el Excel.")
+    if col_url not in df.columns:
+        raise ValueError(f"No existe la columna '{col_url}' en el Excel")
 
-    # Crear columnas (como texto, para evitar problemas de tipos)
     for col in ["PRECIO_LISTA", "PRECIO_OFERTA", "TIPO_OFERTA"]:
         if col not in df.columns:
             df[col] = None
 
-    session = build_session()
+    options = webdriver.ChromeOptions()
+    # PRUEBA PRIMERO SIN HEADLESS PARA VER LA PÁGINA
+    # options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
 
-    for idx, row in df.iterrows():
-        url = str(row[col_urls]).strip()
-        if not url or url.lower() == "nan":
-            continue
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=options,
+    )
 
-        print(f"[{idx+1}/{len(df)}] Procesando: {url}")
-        try:
-            resp = session.get(url, timeout=25)
-            if resp.status_code != 200:
-                print(f"  -> Status {resp.status_code}, no se pudo obtener la página")
+    try:
+        for idx, row in df[df[col_url].notna()].iterrows():
+            url = str(row[col_url]).strip()
+            if not url:
                 continue
 
-            precio_lista, precio_oferta, tipo_oferta = parse_promo(resp.text)
+            print(f"[{idx}] Procesando: {url}")
+            lista, oferta, tipo = scrape_pagina(driver, url, idx=idx)
 
-            df.at[idx, "PRECIO_LISTA"] = precio_lista
-            df.at[idx, "PRECIO_OFERTA"] = precio_oferta
-            df.at[idx, "TIPO_OFERTA"] = tipo_oferta
+            df.at[idx, "PRECIO_LISTA"] = lista
+            df.at[idx, "PRECIO_OFERTA"] = oferta
+            df.at[idx, "TIPO_OFERTA"] = tipo
 
-            # Opcional: pequeño sleep para no pegarle tan fuerte al sitio
-            time.sleep(0.5)
+            print(f"    -> base={lista} oferta={oferta} tipo={tipo}")
+            time.sleep(1)
+    finally:
+        driver.quit()
 
-        except Exception as e:
-            print(f"  -> ERROR en {url}: {e}")
-
-    # Guardar resultado
-    out_path = Path(output_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_excel(out_path, index=False)
-    print(f"Archivo guardado con precios en: {out_path.resolve()}")
+    df.to_excel(output_path, index=False)
+    print(f"\n✅ Archivo guardado en: {output_path}")
 
 
 if __name__ == "__main__":
-    # Ajusta los nombres si tu archivo/columnas se llaman distinto
-    procesar_excel(
-        input_path="coto_aux_miercoles.xlsx",
-        output_path="coto_aux_miercoles_precios.xlsx",
-        col_urls="URLs",
-    )
+    main()

@@ -11,8 +11,8 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 
 # ========= CONFIG =========
-ARCHIVO_IN = "REINA_MAESTRO_AUX_viernes.xlsx"       # <-- tu archivo nuevo
-ARCHIVO_OUT = "REINA_MAESTRO_CON_PRECIOS.xlsx"
+ARCHIVO_IN = "jumbo_aux_viernes.xlsx"
+ARCHIVO_OUT = "jumbo_con_precios.xlsx"
 HOJA = 0  # o "Hoja1"
 
 # ========= CARGAR EXCEL =========
@@ -26,7 +26,7 @@ if "PRECIO_LISTA" not in df.columns:
 
 # ========= CONFIGURAR SELENIUM (CHROME HEADLESS) =========
 chrome_options = webdriver.ChromeOptions()
-chrome_options.add_argument("--headless=new")  # correr sin abrir ventana
+chrome_options.add_argument("--headless=new")
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--window-size=1920,1080")
@@ -36,38 +36,28 @@ driver = webdriver.Chrome(
     options=chrome_options
 )
 
-wait = WebDriverWait(driver, 10)  # 10s de espera máx por precio
-
+wait = WebDriverWait(driver, 10)
 
 def limpiar_precio(texto_raw: str):
     """
-    Recibe algo tipo '$3.669,00' o '$ 3.669,00' y devuelve 3669.00 (float).
+    Recibe '$29.221' y devuelve 29221.0 (float)
     """
     if not texto_raw:
         return None
 
-    # quitar símbolo de $ y espacios
     texto = texto_raw.replace("$", "").strip()
-
-    # dejar solo dígitos, puntos y comas
-    texto = re.sub(r"[^0-9,\.]", "", texto)  # p.ej: '3.669,00'
+    texto = re.sub(r"[^0-9\.]", "", texto)  # solo dígitos y puntos
 
     if not texto:
         return None
 
-    # normalizar y convertir a float
-    # "3.669,00" -> "3669.00"
-    if "," in texto:
-        texto = texto.replace(".", "").replace(",", ".")
-    else:
-        texto = texto.replace(".", "")
+    # Jumbo NO usa decimales, el punto es de miles
+    numero_str = texto.replace(".", "")  # '29.221' -> '29221'
 
     try:
-        return float(texto)
-    except ValueError:
+        return float(numero_str)
+    except:
         return None
-
-
 
 # ========= RECORRER TODAS LAS URLs =========
 total = len(df)
@@ -75,21 +65,21 @@ for i, url in enumerate(df["URLs"]):
     print(f"[{i+1}/{total}] URL: {url}")
 
     if not isinstance(url, str) or not url.strip():
-        print("   → URL vacía, se deja PRECIO_LISTA = None")
         df.at[i, "PRECIO_LISTA"] = None
         continue
 
     try:
         driver.get(url)
 
-        # Esperar el <b> dentro de .DetallPrec .izq
+        # ✅ SELECTOR EXACTO DE JUMBO
         elem = wait.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "div.DetallPrec div.izq b")
-            )
+            EC.presence_of_element_located((
+                By.CSS_SELECTOR,
+                "div.vtex-price-format-gallery"
+            ))
         )
 
-        texto_precio = elem.text.strip()
+        texto_precio = elem.text.strip()   # "$29.221"
         precio_limpio = limpiar_precio(texto_precio)
 
         print(f"   → texto bruto: {texto_precio}")
@@ -98,16 +88,15 @@ for i, url in enumerate(df["URLs"]):
         df.at[i, "PRECIO_LISTA"] = precio_limpio
 
     except TimeoutException:
-        print("   [WARN] No se encontró 'div.DetallPrec div.izq b' a tiempo.")
+        print("   [WARN] No se encontró el precio base.")
         df.at[i, "PRECIO_LISTA"] = None
     except NoSuchElementException:
-        print("   [WARN] No existe 'div.DetallPrec div.izq b' en el DOM.")
+        print("   [WARN] No existe el nodo del precio.")
         df.at[i, "PRECIO_LISTA"] = None
     except Exception as e:
         print(f"   [ERROR] {e}")
         df.at[i, "PRECIO_LISTA"] = None
 
-    # pequeña pausa para no saturar el sitio
     time.sleep(0.5)
 
 # ========= CERRAR NAVEGADOR Y GUARDAR =========
