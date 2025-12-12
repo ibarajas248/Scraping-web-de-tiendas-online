@@ -49,7 +49,7 @@ TIENDA_CODIGO = "kilbel"
 TIENDA_NOMBRE = "Kilbel Online"
 
 BASE = "https://www.kilbelonline.com"
-LISTING_FMT = "/mascotas/n1_995/pag/{page}/"
+LISTING_FMT = "/lacteos/yogur/n2_1066/pag/{page}/"
 
 # ======== Headers / Rotación ========
 USER_AGENTS = [

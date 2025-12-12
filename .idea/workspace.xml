@@ -5,23 +5,70 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="21-11-2015 commit - push-">
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/abastecedor/abastecedor_aux_viernes.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/anonima/anonima_aux_viernes.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/comodin/comodinaux.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/disco/disco aux.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/gallega/gallega_aux_viernes.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/josimar/josimar_viernes_aux.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/jumbo/jumbo_aux.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/kilbel/kilbel_aux.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/la_coope/lacoope_aux_viernes.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/masonline/mas_online_aux.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/modo/modo_aux_viernes.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/toledo/toledo_aux.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/abastecedor/abastecedor_aux_viernes_dos_manualsesion.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/anonima/anonima_aux_miercoles.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/comodin/aux_comodin_miercoles.xlsx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/comodin/comodin_aux_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/comodin/comodin_aux_viernes.xlsx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/cordiez/cordiez_aux_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/coto/coto_aux_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/dia/dia_aux_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/dino/dino_miercoles.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/dino/dino_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/gallega/gallega_aux_miercoles.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/jumbo/jumbo_aux_viernes.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/la_coope/lacoope_aux_miercoles.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/enviar_correo_prueba_borrar.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/enviar_prueba_correo_cuatro.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/enviar_prueba_dos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/enviarcorreoprueba3.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/18_lagenovesa/categorias/posibles_correcciones/correcciones_dos/almacen.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/carniceria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/congelados.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/extendido/leches.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/extendido/quesos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/extendido/yogur.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/ferreteria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/fiambreria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/limpieza.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/mascotas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/panificados.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/pastas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/perfumeria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/rotiseria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/verduleria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/buscador.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/input.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/correcciones/cremas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/correcciones/lacteos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/correcciones/leches.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/correcciones/mantecas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/correcciones/quesos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/3_comodin/correcciones/yogures.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/LArEINA/REINA_AUX.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/LArEINA/REINA_AUX.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/coto/coto_aux.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/coto/coto_aux.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/carrefour/carrefour_aux.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/carrefour/carrefour_aux.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/comodin/comodinaux.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/comodin/comodin_aux_miercoles.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/coto/coto_aux.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/coto/coto_aux_miercoles.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/dino/supermami.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/dino/supermami.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/genovesa/GENOVESAaUX.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/genovesa/GENOVESAaUX.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/disco/disco aux.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/disco/disco aux.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/jumbo/jumbo_aux.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/jumbo/jumbo_aux_miercoles.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correcciones/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/almacen.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correcciones/bebidas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/bebidas.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correcciones/lacteos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/lacteos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/fiambreria.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/fiambreria.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/lacteos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/lacteos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/limpieza.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/limpieza.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/mascotas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/mascotas.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/panificados.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/panificados.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/pastas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/pastas.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/perfumeria.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/perfumeria.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/rotiseria.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/rotiseria.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/verduleria.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/verduleria.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/darMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/darMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/lacteos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/lacteos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/darMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/darMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/almacen.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/correcciones/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/correcciones/frescos.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -71,6 +118,7 @@
     "Python.REINA_AUX.executor": "Run",
     "Python.ToledoMySQL.executor": "Run",
     "Python.abastecedor_aux_viernes.executor": "Run",
+    "Python.abastecedor_aux_viernes_dos_manualsesion.executor": "Run",
     "Python.abastecedor_captcha_myslq.executor": "Run",
     "Python.almacen.executor": "Run",
     "Python.almacenProxy.executor": "Run",
@@ -79,6 +127,7 @@
     "Python.alvear.executor": "Run",
     "Python.alvearMySQL.executor": "Run",
     "Python.anonima.executor": "Run",
+    "Python.anonima_aux_miercoles.executor": "Run",
     "Python.anonima_aux_viernes.executor": "Run",
     "Python.apicaptcha.executor": "Run",
     "Python.app_regiones.executor": "Run",
@@ -89,11 +138,14 @@
     "Python.bebes-y-ninos.executor": "Run",
     "Python.bebida.executor": "Run",
     "Python.bebidas.executor": "Run",
+    "Python.buscador.executor": "Run",
     "Python.carrefour.executor": "Run",
     "Python.carrefour_MySQL.executor": "Run",
     "Python.carrefour_aux.executor": "Run",
     "Python.comodin.executor": "Run",
     "Python.comodinMySQL.executor": "Run",
+    "Python.comodin_aux_miercoles.executor": "Run",
+    "Python.comodin_aux_viernes.executor": "Run",
     "Python.comodinaux.executor": "Run",
     "Python.con_maestro.executor": "Run",
     "Python.con_maestro_mysql.executor": "Run",
@@ -102,20 +154,26 @@
     "Python.copeprueba.executor": "Run",
     "Python.cordiez.executor": "Run",
     "Python.cordiezMysql.executor": "Run",
+    "Python.cordiez_aux_viernes.executor": "Run",
     "Python.cormoran.executor": "Run",
     "Python.coto.executor": "Run",
     "Python.cotoMysql2.executor": "Run",
     "Python.cotoRequestJson.executor": "Run",
     "Python.coto_aux.executor": "Run",
+    "Python.coto_aux_viernes.executor": "Run",
     "Python.darMysql.executor": "Run",
     "Python.dar_mysql_2.executor": "Run",
     "Python.darentucasa.executor": "Run",
     "Python.dia.executor": "Run",
+    "Python.dia_aux_miercoles.executor": "Run",
+    "Python.dia_aux_viernes.executor": "Run",
     "Python.dia_mysql.executor": "Run",
     "Python.dino.executor": "Run",
     "Python.dino2.executor": "Run",
     "Python.dinoMySQL.executor": "Run",
     "Python.dinoPaginado.executor": "Run",
+    "Python.dino_miercoles.executor": "Run",
+    "Python.dino_viernes.executor": "Run",
     "Python.disco aux.executor": "Run",
     "Python.disco.executor": "Run",
     "Python.disco_MySQL.executor": "Run",
@@ -128,18 +186,25 @@
     "Python.ean.executor": "Run",
     "Python.elPuente.executor": "Run",
     "Python.electrodomesticos.executor": "Run",
+    "Python.enviar_correo_prueba_borrar.executor": "Run",
+    "Python.enviar_prueba_correo_cuatro.executor": "Run",
+    "Python.enviar_prueba_dos.executor": "Run",
+    "Python.enviarcorreoprueba3.executor": "Run",
     "Python.estructura_coto.executor": "Run",
     "Python.frescos.executor": "Run",
     "Python.gallega1.executor": "Run",
+    "Python.gallega_aux_miercoles.executor": "Run",
     "Python.gallega_aux_viernes.executor": "Run",
     "Python.genovesamysql.executor": "Run",
     "Python.hiperlibertad.executor": "Run",
     "Python.hiperlibertad_Mysql.executor": "Run",
+    "Python.input.executor": "Run",
     "Python.josimar.executor": "Run",
     "Python.josimar_viernes_aux.executor": "Run",
     "Python.jumbo.executor": "Run",
     "Python.jumboMysql.executor": "Run",
     "Python.jumbo_aux.executor": "Run",
+    "Python.jumbo_aux_viernes.executor": "Run",
     "Python.jumbo_correcion.executor": "Run",
     "Python.jumbo_excel.executor": "Run",
     "Python.kilbel.executor": "Run",
@@ -203,7 +268,7 @@
     "RunOnceActivity.git.unshallow": "true",
     "git-widget-placeholder": "master",
     "ignore.virus.scanning.warn.message": "true",
-    "last_opened_file_path": "C:/Users/David/PycharmProjects/scrapingTiendas/final/2_alvear/correccion",
+    "last_opened_file_path": "C:/Users/David/PycharmProjects/scrapingTiendas/auxiliares_data_entry/abastecedor",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -214,11 +279,11 @@
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\2_alvear\correccion" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\auxiliares_data_entry\abastecedor" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\auxiliares_data_entry\dino" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\3_comodin\correcciones" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\25_pinguino\tunel\correccion_tunel\correccion_de_la_correccion" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\26_DAR_EN_TU_CASA\correcciones" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\auxiliares_data_entry\anonima" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\auxiliares_data_entry\gallega" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\15_atomo\con_maestro" />
@@ -633,7 +698,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764737094192</updated>
     </task>
-    <option name="localTasksCounter" value="42" />
+    <task id="LOCAL-00042" summary="21-11-2015 commit - push-">
+      <option name="closed" value="true" />
+      <created>1764970523837</created>
+      <option name="number" value="00042" />
+      <option name="presentableId" value="LOCAL-00042" />
+      <option name="project" value="LOCAL" />
+      <updated>1764970523837</updated>
+    </task>
+    <option name="localTasksCounter" value="43" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">

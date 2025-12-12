@@ -4,7 +4,7 @@
 """
 Scraper Comodín (categoría -> detalle) con inserción en MySQL
 
-Mejoras respecto a tu versión:
+Mejoras:
 - Normalización estricta de URL (sin query, sin slash final, host minúscula).
 - Deduplicación en memoria por SKU (product_code) y, si no existe, por URL.
 - Scroll infinito robusto (compara altura del documento + rondas inactivas).
@@ -12,6 +12,7 @@ Mejoras respecto a tu versión:
 - Limpieza de precios consistente (AR).
 - Inserciones idempotentes con claves naturales y ON DUPLICATE.
 - Posibilidad de exportar XLSX para control.
+- Extracción de EAN desde scripts VTEX, con match preferente por EAN.
 
 REQUISITOS SQL (recomendado):
   ALTER TABLE tiendas           ADD UNIQUE KEY ux_tiendas_codigo (codigo);
@@ -53,7 +54,7 @@ sys.path.append(
 from base_datos import get_conn  # type: ignore
 
 # ===================== Config =====================
-BASE_URL = "https://www.comodinencasa.com.ar/almacen"
+BASE_URL = "https://www.comodinencasa.com.ar/lacteos/yogures-y-postres"
 
 TIENDA_CODIGO = "comodin"
 TIENDA_NOMBRE = "Comodín En Casa"
@@ -102,40 +103,6 @@ def soup_select_text(soup: BeautifulSoup, selector: str) -> Optional[str]:
     return el.get_text(strip=True) if el else None
 
 
-def extract_ean_from_vtex(soup: BeautifulSoup) -> Optional[str]:
-    """
-    Busca un <script> con vtex.events.addData({ ... "productEans":["779..."] ... });
-    y devuelve el primer EAN, o None si no existe.
-    """
-    script_tag = soup.find(
-        "script",
-        string=lambda t: t and "vtex.events.addData" in t and "productEans" in t
-    )
-    if not script_tag:
-        return None
-
-    script_text = script_tag.string or script_tag.get_text()
-
-    m = re.search(
-        r"vtex\.events\.addData\(\s*(\{.*?\})\s*\);",
-        script_text,
-        re.S
-    )
-    if not m:
-        return None
-
-    try:
-        data = json.loads(m.group(1))
-    except Exception:
-        return None
-
-    eans = data.get("productEans")
-    if isinstance(eans, list) and eans:
-        return str(eans[0])
-
-    return None
-
-
 def clean_txt(x: Any) -> Optional[str]:
     if x is None:
         return None
@@ -155,6 +122,36 @@ def parse_price_to_varchar(x: Any) -> Optional[str]:
     except Exception:
         s = str(x).strip()
         return s if s else None
+
+
+def extract_ean_from_vtex(soup: BeautifulSoup) -> Optional[str]:
+    """
+    Busca en los <script> un fragmento con "productEans".
+    Intenta extraer el primer EAN sin depender 100% del JSON bien formado.
+    """
+    scripts = soup.find_all("script")
+    for script in scripts:
+        txt = script.string or script.get_text() or ""
+        if "productEans" not in txt:
+            continue
+
+        # 1) Intento simple por regex directo al array:
+        m = re.search(r'"productEans"\s*:\s*\[\s*"(\d+)"', txt)
+        if m:
+            return m.group(1)
+
+        # 2) Intento más genérico: buscar el objeto de addData y parsear JSON
+        m2 = re.search(r'addData\(\s*(\{.*?\})\s*\)', txt, re.S)
+        if m2:
+            try:
+                data = json.loads(m2.group(1))
+                eans = data.get("productEans")
+                if isinstance(eans, list) and eans:
+                    return str(eans[0])
+            except Exception:
+                pass
+
+    return None
 
 
 # ===================== Selenium =====================
@@ -247,7 +244,7 @@ def infinite_scroll_collect_product_links(
 def extract_product_detail(driver: Chrome, url: str) -> Dict[str, Any]:
     """
     Extrae del detalle:
-      - ean (desde script VTEX, si existe)
+      - ean (si aparece en scripts VTEX)
       - brand (small gris)
       - name (h2 dentro de .header, con fallback)
       - offer price (.offer-price)
@@ -271,14 +268,24 @@ def extract_product_detail(driver: Chrome, url: str) -> Dict[str, Any]:
     html = driver.page_source
     soup = BeautifulSoup(html, "html.parser")
 
-    # EAN desde script VTEX (si existe)
+    # EAN desde scripts VTEX (si existe)
     ean = extract_ean_from_vtex(soup)
 
     # Marca & Nombre
     brand = soup_select_text(soup, ".shop-detail-right small")
-    name = soup_select_text(soup, ".shop-detail-right.header h2") or soup_select_text(soup, "h2")
+    # ojo: aquí uso .shop-detail-right .header h2 (con espacio) para evitar el bug de selector
+    name = soup_select_text(soup, ".shop-detail-right .header h2") or soup_select_text(soup, "h2")
 
-    # Precios
+    # ===== Precios =====
+    # En la página:
+    #  - Sin oferta:
+    #       <p class="offer-price mb-1">$ 2.615,59</p>
+    #    → solo precio lista (NO oferta)
+    #  - Con oferta:
+    #       <span class="regular-price">$ 2.035,09</span>  (lista)
+    #       <p class="offer-price mb-1">$ 1.599,00</p>     (oferta)
+
+    # 1) Tomamos el texto de offer-price y regular-price
     offer_raw = soup_select_text(soup, ".shop-detail-right .offer-price") or soup_select_text(soup, ".offer-price")
     price_offer = parse_price(offer_raw) if offer_raw else None
 
@@ -287,6 +294,13 @@ def extract_product_detail(driver: Chrome, url: str) -> Dict[str, Any]:
     if reg_el:
         regular_raw = reg_el.get_text(strip=True)
     price_regular = parse_price(regular_raw) if regular_raw else None
+
+    # 2) Normalización de casos:
+    #    - Si NO hay regular-price pero SÍ hay offer-price,
+    #      interpretamos offer-price como precio_lista (sin oferta).
+    if price_regular is None and price_offer is not None:
+        price_regular = price_offer
+        price_offer = None
 
     # Disponibilidad
     availability = None
@@ -522,6 +536,13 @@ def main():
             try:
                 print(f"[{i}/{len(product_links)}] {url}")
                 row = extract_product_detail(driver, url)
+
+                # --- PRINT con EAN, SKU y precios ---
+                print(
+                    f"  → {row.get('name')} | SKU={row.get('product_code')} | "
+                    f"EAN={row.get('ean')} | Oferta={row.get('price_offer')} | Lista={row.get('price_regular')}"
+                )
+
                 out_rows.append(row)
             except Exception as e:
                 print(f"  ! Error con {url}: {e}")
@@ -544,7 +565,7 @@ def main():
                 "url",
             ]
             df = df.reindex(columns=cols)
-            df.to_excel(OUT_XLSX, index=False)
+            #df.to_excel(OUT_XLSX, index=False)
             print(f">> Exportado {OUT_XLSX}")
 
         # ===== MySQL =====

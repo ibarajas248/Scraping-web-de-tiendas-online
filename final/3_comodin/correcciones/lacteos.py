@@ -54,7 +54,7 @@ sys.path.append(
 from base_datos import get_conn  # type: ignore
 
 # ===================== Config =====================
-BASE_URL = "https://www.comodinencasa.com.ar/almacen"
+BASE_URL = "https://www.comodinencasa.com.ar/lacteos"
 
 TIENDA_CODIGO = "comodin"
 TIENDA_NOMBRE = "Comodín En Casa"
@@ -273,9 +273,19 @@ def extract_product_detail(driver: Chrome, url: str) -> Dict[str, Any]:
 
     # Marca & Nombre
     brand = soup_select_text(soup, ".shop-detail-right small")
-    name = soup_select_text(soup, ".shop-detail-right.header h2") or soup_select_text(soup, "h2")
+    # ojo: aquí uso .shop-detail-right .header h2 (con espacio) para evitar el bug de selector
+    name = soup_select_text(soup, ".shop-detail-right .header h2") or soup_select_text(soup, "h2")
 
-    # Precios
+    # ===== Precios =====
+    # En la página:
+    #  - Sin oferta:
+    #       <p class="offer-price mb-1">$ 2.615,59</p>
+    #    → solo precio lista (NO oferta)
+    #  - Con oferta:
+    #       <span class="regular-price">$ 2.035,09</span>  (lista)
+    #       <p class="offer-price mb-1">$ 1.599,00</p>     (oferta)
+
+    # 1) Tomamos el texto de offer-price y regular-price
     offer_raw = soup_select_text(soup, ".shop-detail-right .offer-price") or soup_select_text(soup, ".offer-price")
     price_offer = parse_price(offer_raw) if offer_raw else None
 
@@ -284,6 +294,13 @@ def extract_product_detail(driver: Chrome, url: str) -> Dict[str, Any]:
     if reg_el:
         regular_raw = reg_el.get_text(strip=True)
     price_regular = parse_price(regular_raw) if regular_raw else None
+
+    # 2) Normalización de casos:
+    #    - Si NO hay regular-price pero SÍ hay offer-price,
+    #      interpretamos offer-price como precio_lista (sin oferta).
+    if price_regular is None and price_offer is not None:
+        price_regular = price_offer
+        price_offer = None
 
     # Disponibilidad
     availability = None
@@ -520,7 +537,7 @@ def main():
                 print(f"[{i}/{len(product_links)}] {url}")
                 row = extract_product_detail(driver, url)
 
-                # --- PRINT con EAN, SKU y nombre ---
+                # --- PRINT con EAN, SKU y precios ---
                 print(
                     f"  → {row.get('name')} | SKU={row.get('product_code')} | "
                     f"EAN={row.get('ean')} | Oferta={row.get('price_offer')} | Lista={row.get('price_regular')}"
@@ -548,7 +565,7 @@ def main():
                 "url",
             ]
             df = df.reindex(columns=cols)
-            df.to_excel(OUT_XLSX, index=False)
+            #df.to_excel(OUT_XLSX, index=False)
             print(f">> Exportado {OUT_XLSX}")
 
         # ===== MySQL =====

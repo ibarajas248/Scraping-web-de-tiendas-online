@@ -2,119 +2,172 @@
 # -*- coding: utf-8 -*-
 
 """
-Lee carrefour_aux_miercoles.xlsx, toma la columna 'URLs',
-entra a cada página (VTEX Carrefour) y extrae el precio de:
+Script para extraer precio_base de productos Carrefour (VTEX)
+y agregarlo a un Excel existente.
 
-<span class="...currencyContainer">
-   $ 2.750,00
-</span>
+- Lee un archivo de entrada (Excel) con una columna de URLs.
+- Para cada URL, descarga el HTML y busca el bloque de precio_base:
+    <span class="valtech-carrefourar-product-price-0-x-sellingPriceValue">
+        <span class="valtech-carrefourar-product-price-0-x-currencyContainer">
+            ...
+        </span>
+    </span>
 
-Guarda el resultado en la columna 'PRECIO_LISTA'
-(como texto, para evitar problemas de tipos).
+- Reconstruye el precio desde los spans:
+    Integer + Group + Decimal + Fraction
+    Ej: 2 . 079 , 00  -> "2.079,00" -> 2079.00 (float)
+
+- Escribe un archivo de salida con una nueva columna: precio_base
 """
 
-import re
 import time
 import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 
-INPUT_FILE = "carrefour_aux_miercoles.xlsx"
-OUTPUT_FILE = "carrefour_precios.xlsx"
+# ========= CONFIGURACIÓN =========
+INPUT_FILE = "carrefour_aux_miercoles.xlsx"      # archivo de entrada
+OUTPUT_FILE = "carrefour_precios_base.xlsx"      # archivo de salida
+COLUMNA_URL = None  # se detecta entre 'url' o 'URL'
 
-
-def parse_vtex_price(soup):
-    """
-    Busca el contenedor de moneda y arma el número:
-
-    <span class="...currencyContainer">
-        $ 2.750,00
-    </span>
-
-    Devuelve float (2750.00) o 'N/A' si no lo encuentra.
-    """
-    # cualquier clase que contenga 'currencyContainer'
-    container = soup.find(
-        "span",
-        class_=lambda c: c and "currencyContainer" in c
+# User-Agent para evitar bloqueos tontos
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
     )
-    if not container:
-        return "N/A"
+}
 
-    # ejemplo de texto: "$ 2.750,00"
-    raw_text = container.get_text(strip=True)
 
-    # nos quedamos con la primera parte que tenga dígitos / puntos / comas
-    matches = re.findall(r"[\d\.,]+", raw_text)
-    if not matches:
-        return "N/A"
+def limpiar_precio_vtex(spans):
+    """
+    Recibe una lista de spans (Integer, Group, Decimal, Fraction)
+    y devuelve un float normalizado.
 
-    num_text = matches[0]  # p.ej. "2.750,00"
+    Ejemplo:
+        spans -> "2.079,00" -> 2079.00
+    """
+    if not spans:
+        return None
 
-    # VTEX usa '.' como miles y ',' como decimales
-    num_text = num_text.replace(".", "")   # "2750,00"
-    num_text = num_text.replace(",", ".")  # "2750.00"
+    # Unir textos de todos los spans
+    texto = "".join(span.get_text(strip=True) for span in spans)
+
+    # Normalizar formato argentino: miles con punto, decimales con coma
+    #  "2.079,00" -> "2079,00" -> "2079.00"
+    texto = texto.replace(".", "")   # elimina separador de miles
+    texto = texto.replace(",", ".")  # cambia coma decimal a punto
 
     try:
-        return float(num_text)
+        return float(texto)
     except Exception:
-        return "N/A"
+        return None
 
 
-def extraer_precio(url: str):
-    """Hace el GET a la URL y devuelve float o 'N/A'."""
-    if not isinstance(url, str) or not url.strip():
-        return "N/A"
+def extraer_precio_base(url, intentos=3, espera=3):
+    """
+    Dada la URL de un producto, devuelve el precio_base (float) o None.
+    Reintenta algunas veces en caso de error de red.
+    """
+    if not url:
+        return None
 
-    try:
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0 Safari/537.36"
+    url = url.strip()
+    if not url:
+        return None
+
+    for intento in range(1, intentos + 1):
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=20)
+            if resp.status_code != 200:
+                print(f"  [HTTP {resp.status_code}] {url}")
+                time.sleep(espera)
+                continue
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            # Bloque específico del precio_base (sellingPrice)
+            contenedor = soup.select_one(
+                "span.valtech-carrefourar-product-price-0-x-sellingPriceValue"
             )
-        }
-        resp = requests.get(url.strip(), headers=headers, timeout=25)
-        if resp.status_code != 200:
-            print(f"[WARN] {url} → status {resp.status_code}")
-            return "N/A"
+            if not contenedor:
+                # Fallback: intentar desde el contenedor general de precios
+                contenedor = soup.select_one(
+                    "div.vtex-flex-layout-0-x-flexColChild--product-view-prices-container"
+                )
 
-        soup = BeautifulSoup(resp.text, "html.parser")
-        return parse_vtex_price(soup)
+            if not contenedor:
+                return None
 
-    except Exception as e:
-        print(f"[ERROR] {url} → {e}")
-        return "N/A"
+            spans_precio = contenedor.select(
+                "span.valtech-carrefourar-product-price-0-x-currencyInteger, "
+                "span.valtech-carrefourar-product-price-0-x-currencyGroup, "
+                "span.valtech-carrefourar-product-price-0-x-currencyDecimal, "
+                "span.valtech-carrefourar-product-price-0-x-currencyFraction"
+            )
+
+            if not spans_precio:
+                return None
+
+            return limpiar_precio_vtex(spans_precio)
+
+        except requests.RequestException as e:
+            print(f"  [ERROR red intento {intento}/{intentos}] {url} -> {e}")
+            time.sleep(espera)
+
+        except Exception as e:
+            print(f"  [ERROR parseo] {url} -> {e}")
+            return None
+
+    return None
 
 
 def main():
-    # Lee el Excel
+    global COLUMNA_URL
+
+    print(f"📥 Leyendo archivo de entrada: {INPUT_FILE}")
     df = pd.read_excel(INPUT_FILE)
 
-    # Si no existe la columna, la creamos vacía
-    if "PRECIO_LISTA" not in df.columns:
-        df["PRECIO_LISTA"] = ""
+    # Detectar la columna de URL
+    columnas = [c.lower() for c in df.columns]
 
-    # Forzamos la columna a tipo object para poder guardar strings
-    df["PRECIO_LISTA"] = df["PRECIO_LISTA"].astype("object")
+    if "URLs" in columnas:
+        COLUMNA_URL = df.columns[columnas.index("URLs")]
+    elif "URL" in df.columns:
+        COLUMNA_URL = "URL"
+    else:
+        # Si se llama distinto, cambia aquí manualmente:
+        # COLUMNA_URL = "mi_columna_url"
+        raise ValueError(
+            "No se encontró columna 'url' ni 'URL' en el Excel. "
+            "Renombra la columna o edita el script."
+        )
 
-    # Recorremos URLs
-    for idx, url in df["URLs"].items():
-        print(f"Fila {idx} → {url}")
-        precio = extraer_precio(url)
+    print(f"✅ Usando columna de URL: {COLUMNA_URL}")
 
-        # Guardamos SIEMPRE texto, así evitamos el FutureWarning
-        if precio == "N/A":
-            df.at[idx, "PRECIO_LISTA"] = "N/A"
-        else:
-            # lo dejamos con 2 decimales como string
-            df.at[idx, "PRECIO_LISTA"] = f"{precio:.2f}"
+    # Crear columna de salida
+    if "precio_base" not in df.columns:
+        df["precio_base"] = None
 
-        time.sleep(1)  # pequeña pausa para no matar el sitio
+    total = len(df)
+    print(f"🔎 Procesando {total} filas...\n")
 
-    # Guardar resultado
+    for i, row in df.iterrows():
+        url = row[COLUMNA_URL]
+        print(f"[{i+1}/{total}] URL: {url}")
+
+        precio = extraer_precio_base(url)
+
+        df.at[i, "precio_base"] = precio
+
+        print(f"    → precio_base = {precio}\n")
+        # Pequeña pausa para no bombardear al server
+        time.sleep(1.0)
+
+    print(f"💾 Guardando resultados en: {OUTPUT_FILE}")
     df.to_excel(OUTPUT_FILE, index=False)
-    print(f"✔ Listo. Archivo guardado como {OUTPUT_FILE}")
+    print("✅ Listo.")
 
 
 if __name__ == "__main__":

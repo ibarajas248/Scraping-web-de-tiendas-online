@@ -743,7 +743,6 @@ def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
     return cur.lastrowid
 
 
-
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
     sku = r.get("codigo") or None
     record_id = sku
@@ -752,7 +751,8 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
 
     if sku:
         exec_with_retry(cur, """
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
+            INSERT INTO producto_tienda 
+                (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
@@ -760,18 +760,21 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
         """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
+
         return cur.lastrowid
 
     exec_with_retry(cur, """
-        INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
+        INSERT INTO producto_tienda 
+            (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
           id = LAST_INSERT_ID(id),
-          producto_id = VALUES(producto_id),
           url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
           nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
     """, (tienda_id, producto_id, url, nombre_tienda))
+
     return cur.lastrowid
+
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en):
     precio = r.get("precio")

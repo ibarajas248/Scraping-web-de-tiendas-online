@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
-Kilbel (kilbelonline.com) – Categoría → MySQL (modo súper respetuoso)
+Kilbel (kilbelonline.com) – Almacén n1_1 → MySQL (modo súper respetuoso)
 
-- Recorre /bebidas/n1_7/pag/1/, /2/, ... hasta que no haya productos. (Cambia LISTING_FMT si deseas /almacen/n1_1/)
+- Recorre /almacen/n1_1/pag/1/, /2/, ... hasta que no haya productos.
 - Extrae desde el listado y completa con detalle por producto.
 - Respeta robots.txt (Crawl-delay), RPS, jitter, siestas largas, backoff.
 - Ventana horaria opcional (solo ejecuta entre HH:MM y HH:MM).
@@ -33,10 +33,12 @@ import pandas as pd
 import urllib.robotparser as robotparser
 import numpy as np
 import mysql.connector  # solo para tipos/errores
-from mysql.connector.errors import DatabaseError
 
 # ======== Conexión MySQL =========
 # Debe existir un módulo base_datos.py con get_conn() que devuelva mysql.connector.connect(...)
+import sys, os
+
+# añade la carpeta raíz (2 niveles más arriba) al sys.path
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )
@@ -47,15 +49,17 @@ TIENDA_CODIGO = "kilbel"
 TIENDA_NOMBRE = "Kilbel Online"
 
 BASE = "https://www.kilbelonline.com"
-# Si quieres Almacén n1_1 usa: LISTING_FMT = "/almacen/n1_1/pag/{page}/"
-LISTING_FMT = "/almacen/n1_1/pag/{page}/"
+LISTING_FMT = "/mascotas/n1_995/pag/{page}/"
 
 # ======== Headers / Rotación ========
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 ]
 ACCEPT_LANGS = [
     "es-AR,es;q=0.9,en;q=0.8",
@@ -70,15 +74,15 @@ HEADERS_BASE = {
 }
 
 # ======== Límites de columnas (ajustá a tu schema) ========
-MAXLEN_TIPO_OFERTA = 190
-MAXLEN_PROMO_COMENTARIOS = 480
-MAXLEN_URL = 512
-MAXLEN_NOMBRE_TIENDA = 255
-MAXLEN_MARCA = 128
-MAXLEN_FABRICANTE = 128
-MAXLEN_CATEGORIA = 128
-MAXLEN_SUBCATEGORIA = 128
-MAXLEN_NOMBRE = 255
+MAXLEN_TIPO_OFERTA = 190          # historico_precios.tipo_oferta VARCHAR(190) (ejemplo)
+MAXLEN_PROMO_COMENTARIOS = 480    # historico_precios.promo_comentarios
+MAXLEN_URL = 512                  # producto_tienda.url_tienda
+MAXLEN_NOMBRE_TIENDA = 255        # producto_tienda.nombre_tienda
+MAXLEN_MARCA = 128                # productos.marca (si tu schema usa otro tamaño, ajustá)
+MAXLEN_FABRICANTE = 128           # productos.fabricante
+MAXLEN_CATEGORIA = 128            # productos.categoria
+MAXLEN_SUBCATEGORIA = 128         # productos.subcategoria
+MAXLEN_NOMBRE = 255               # productos.nombre
 
 def _truncate(val: Optional[Any], maxlen: int) -> Optional[str]:
     if val is None:
@@ -316,34 +320,13 @@ def _parse_price_num(val) -> Optional[str]:
     except Exception:
         return None
 
-def exec_retry(cur, sql: str, params=None, retries: int = 5, base_wait: float = 0.6):
-    """Ejecuta SQL con reintentos ante 1205 (lock wait) y 1213 (deadlock)."""
-    params = params or ()
-    for i in range(retries):
-        try:
-            cur.execute(sql, params)
-            return
-        except DatabaseError as e:
-            if getattr(e, "errno", None) in (1205, 1213):
-                wait = min(base_wait * (2 ** i), 8.0) + random.uniform(0, 0.5)
-                sys.stderr.write(f"[SQL-RETRY] errno={e.errno} intento {i+1}/{retries} -> sleep {wait:.2f}s\n")
-                # Si quedara una transacción abierta (en autocommit no debería)
-                try:
-                    if getattr(cur.connection, "in_transaction", False):
-                        cur.connection.rollback()
-                except Exception:
-                    pass
-                time.sleep(wait)
-                continue
-            raise
-
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
-    exec_retry(cur,
+    cur.execute(
         "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
         "ON DUPLICATE KEY UPDATE nombre=VALUES(nombre)",
         (codigo, nombre)
     )
-    exec_retry(cur, "SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
+    cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
     return cur.fetchone()[0]
 
 def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
@@ -356,11 +339,11 @@ def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
 
     # 1) Por EAN
     if ean:
-        exec_retry(cur, "SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
+        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
         row = cur.fetchone()
         if row:
             pid = row[0]
-            exec_retry(cur, """
+            cur.execute("""
                 UPDATE productos SET
                   nombre = COALESCE(NULLIF(%s,''), nombre),
                   marca = COALESCE(%s, marca),
@@ -373,14 +356,12 @@ def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
 
     # 2) Por (nombre, marca)
     if nombre and marca:
-        exec_retry(cur,
-            "SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1",
-            (nombre, marca or "")
-        )
+        cur.execute("""SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1""",
+                    (nombre, marca or ""))
         row = cur.fetchone()
         if row:
             pid = row[0]
-            exec_retry(cur, """
+            cur.execute("""
                 UPDATE productos SET
                   ean = COALESCE(%s, ean),
                   fabricante = COALESCE(%s, fabricante),
@@ -391,7 +372,7 @@ def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
             return pid
 
     # 3) Insert nuevo
-    exec_retry(cur, """
+    cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
         VALUES (%s, NULLIF(%s,''), %s, %s, %s, %s)
     """, (ean, nombre, marca, fabricante, categoria, subcategoria))
@@ -404,12 +385,12 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
     record_id = (r.get("RecordId_Tienda") or None)
 
     if sku:
-        exec_retry(cur, """
+        cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
-              producto_id = VALUES(producto_id),
+              -- OJO: NO tocamos producto_id cuando ya existe el SKU
               record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
@@ -417,7 +398,7 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
         return cur.lastrowid
 
     if record_id:
-        exec_retry(cur, """
+        cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, NULL, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
@@ -428,7 +409,7 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
         """, (tienda_id, producto_id, record_id, url, nombre_tienda))
         return cur.lastrowid
 
-    exec_retry(cur, """
+    cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, %s, %s)
     """, (tienda_id, producto_id, url, nombre_tienda))
@@ -438,9 +419,11 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
     precio_lista = _parse_price_num(r.get("PrecioLista"))
     precio_oferta = _parse_price_num(r.get("PrecioOferta"))
     tipo_oferta = _truncate((r.get("TipoOferta") or None), MAXLEN_TIPO_OFERTA)
+
+    # Comentarios promo: guardo página (y/o lo que quieras auditar)
     promo_comentarios = _truncate(f"pagina={r.get('Pagina', '')}", MAXLEN_PROMO_COMENTARIOS)
 
-    exec_retry(cur, """
+    cur.execute("""
         INSERT INTO historico_precios
           (tienda_id, producto_tienda_id, capturado_en,
            precio_lista, precio_oferta, tipo_oferta,
@@ -465,7 +448,7 @@ def run(max_pages: int,
         start_page: int,
         outfile: Optional[str],
         csv: Optional[str],
-        rps: Optional[float],
+        rps: float,
         sleep_item: Tuple[float, float],
         sleep_page: Tuple[float, float],
         long_nap_every_items: int,
@@ -515,31 +498,14 @@ def run(max_pages: int,
     if mysql_enabled:
         try:
             conn = get_conn()
-            # ==== Sesión amigable para scraping ====
-            conn.autocommit = True  # transacciones ultracortas
+            conn.autocommit = False
             cur = conn.cursor()
-            # aislamiento y timeout de locks
-            try:
-                cur.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
-            except Exception:
-                try:
-                    cur.execute("SET SESSION tx_isolation='READ-COMMITTED'")
-                except Exception:
-                    pass
-            try:
-                cur.execute("SET SESSION innodb_lock_wait_timeout=5")
-            except Exception:
-                pass
-            # =======================================
             tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
+            conn.commit()
             print(f"🗃 Tienda registrada: {TIENDA_CODIGO} -> id {tienda_id}")
-        except Exception:
+        except Exception as e:
             if conn:
-                try:
-                    if getattr(conn, "in_transaction", False):
-                        conn.rollback()
-                except Exception:
-                    pass
+                conn.rollback()
             raise
 
     for page in range(start_page, max_pages + 1):
@@ -609,19 +575,16 @@ def run(max_pages: int,
             vistos.add(url)
             total_items += 1
 
-            # Ingesta inmediata (fila por fila) — con autocommit no hace falta commit manual
+            # Ingesta inmediata (fila por fila) — menos memoria y más robusto ante cortes
             if mysql_enabled and cur and tienda_id:
                 try:
                     producto_id = find_or_create_producto(cur, merged)
                     pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, merged)
                     insert_historico(cur, tienda_id, pt_id, merged, capturado_en)
-                except Exception:
-                    # En autocommit normalmente no queda transacción abierta, pero por las dudas:
-                    try:
-                        if getattr(cur.connection, "in_transaction", False):
-                            cur.connection.rollback()
-                    except Exception:
-                        pass
+                    if total_items % 25 == 0:
+                        conn.commit()
+                except Exception as e:
+                    conn.rollback()
                     raise
 
             # Siesta larga por items
@@ -654,12 +617,19 @@ def run(max_pages: int,
         if max_consecutive_errors and consecutive_errors >= max_consecutive_errors:
             break
 
-    # Cierre MySQL
+    # Commit final MySQL
     if mysql_enabled and conn:
         try:
-            conn.close()
+            conn.commit()
+            print(f"\n✅ Ingesta MySQL completada. Filas procesadas: {total_items}")
         except Exception:
-            pass
+            conn.rollback()
+            raise
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     if not resultados:
         print("\n⚠ No se obtuvieron productos.")
@@ -690,7 +660,7 @@ def run(max_pages: int,
 
 # ======== CLI ========
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Kilbel categoría → MySQL (modo respetuoso).")
+    ap = argparse.ArgumentParser(description="Kilbel Almacén n1_1 → MySQL (modo respetuoso).")
     ap.add_argument("--max-pages", type=int, default=300)
     ap.add_argument("--start-page", type=int, default=1)
     ap.add_argument("--outfile", type=str, default=None, help="XLSX opcional")

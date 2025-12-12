@@ -7,7 +7,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 
 INPUT_FILE = "dino_aux_viernes.xlsx"      # archivo de entrada
-OUTPUT_FILE = "supermami_precios_VIERNES.xlsx" # archivo de salida
+OUTPUT_FILE = "supermami_precios_viernes.xlsx" # archivo de salida
 
 
 def limpiar_precio(texto: str):
@@ -34,14 +34,10 @@ def extraer_precio(url: str):
     """
     Abre la URL, busca el bloque:
       <div class="precio-unidad"> ... <span> $2,200.00 </span> ...
-    y devuelve una tupla (precio, nombre_en_tienda), donde:
-      - precio: número (float) o 'N/A'
-      - nombre_en_tienda: texto de
-          <h1 class="texto_titulo_prod_dest"> ... </h1>
-        o cadena vacía si no se encuentra.
+    y devuelve el precio como número (float) o 'N/A'.
     """
     if not isinstance(url, str) or not url.strip():
-        return "N/A", ""
+        return "N/A"
 
     try:
         headers = {
@@ -54,7 +50,7 @@ def extraer_precio(url: str):
         resp = requests.get(url.strip(), headers=headers, timeout=20)
         if resp.status_code != 200:
             print(f"[WARN] {url} → status {resp.status_code}")
-            return "N/A", ""
+            return "N/A"
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -65,48 +61,34 @@ def extraer_precio(url: str):
             # Opcional: guardar HTML para debug la primera vez
             # with open("debug_supermami.html", "w", encoding="utf-8") as f:
             #     f.write(resp.text)
-            return "N/A", ""
+            return "N/A"
 
         span = contenedor.find("span")
         if not span:
             print(f"[WARN] No se encontró <span> dentro de precio-unidad en {url}")
-            return "N/A", ""
+            return "N/A"
 
         texto_precio = span.get_text(strip=True)
-        precio = limpiar_precio(texto_precio)
-
-        # --- EXTRA: nombre_en_tienda desde el H1 ---
-        h1 = soup.find("h1", class_="texto_titulo_prod_dest")
-        if h1:
-            nombre_en_tienda = h1.get_text(strip=True)
-        else:
-            nombre_en_tienda = ""
-
-        return precio, nombre_en_tienda
+        return limpiar_precio(texto_precio)
 
     except Exception as e:
         print(f"[ERROR] {url} → {e}")
-        return "N/A", ""
+        return "N/A"
 
 
 def main():
     # Lee el Excel
     df = pd.read_excel(INPUT_FILE)
 
-    # Crea la columna de precio si no existe
+    # Crea la columna si no existe
     if "PRECIO_LISTA" not in df.columns:
         df["PRECIO_LISTA"] = None
-
-    # Crea la columna de nombre_en_tienda si no existe
-    if "nombre_en_tienda" not in df.columns:
-        df["nombre_en_tienda"] = None
 
     # Recorre las filas
     for idx, url in df["URLs"].items():
         print(f"Procesando fila {idx} → {url}")
-        precio, nombre_en_tienda = extraer_precio(url)
+        precio = extraer_precio(url)
         df.at[idx, "PRECIO_LISTA"] = precio
-        df.at[idx, "nombre_en_tienda"] = nombre_en_tienda
         # pequeña pausa para no bombardear al servidor
         time.sleep(1)
 
