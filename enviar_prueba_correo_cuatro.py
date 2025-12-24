@@ -27,7 +27,7 @@ SMTP_PORT = 587
 EMAIL_USER = "soporte.correo@khushiconfecciones.com"
 EMAIL_PASS = "b~86W[JJj@F6"
 
-DESTINATARIO = "ivanbarajashurtado@gmail.com"
+DESTINATARIO = "khushi.confecciones@gmail.com"
 
 ASUNTO = "Reporte seguimiento_produccion_febrero"
 

@@ -76,6 +76,42 @@ def extraer_precio(url: str):
         return "N/A"
 
 
+def extraer_nombre_en_tienda(url: str):
+    """
+    Abre la URL y extrae el nombre desde:
+      <h1 class="texto_titulo_prod_dest"> ... </h1>
+    Devuelve el texto o 'N/A'.
+    """
+    if not isinstance(url, str) or not url.strip():
+        return "N/A"
+
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0 Safari/537.36"
+            )
+        }
+        resp = requests.get(url.strip(), headers=headers, timeout=20)
+        if resp.status_code != 200:
+            print(f"[WARN] {url} → status {resp.status_code} (nombre)")
+            return "N/A"
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        h1 = soup.find("h1", class_="texto_titulo_prod_dest")
+        if not h1:
+            print(f"[WARN] No se encontró <h1 class='texto_titulo_prod_dest'> en {url}")
+            return "N/A"
+
+        return h1.get_text(strip=True)
+
+    except Exception as e:
+        print(f"[ERROR] {url} (nombre) → {e}")
+        return "N/A"
+
+
 def main():
     # Lee el Excel
     df = pd.read_excel(INPUT_FILE)
@@ -84,11 +120,19 @@ def main():
     if "PRECIO_LISTA" not in df.columns:
         df["PRECIO_LISTA"] = None
 
+    # Crea la columna si no existe
+    if "nombre_en_tienda" not in df.columns:
+        df["nombre_en_tienda"] = None
+
     # Recorre las filas
     for idx, url in df["URLs"].items():
         print(f"Procesando fila {idx} → {url}")
         precio = extraer_precio(url)
         df.at[idx, "PRECIO_LISTA"] = precio
+
+        nombre = extraer_nombre_en_tienda(url)
+        df.at[idx, "nombre_en_tienda"] = nombre
+
         # pequeña pausa para no bombardear al servidor
         time.sleep(1)
 

@@ -27,6 +27,10 @@ if "PRECIO_LISTA" not in df.columns:
 if "PRECIO_OFERTA" not in df.columns:
     df["PRECIO_OFERTA"] = None
 
+# NUEVO: columna nombre_en_tienda
+if "nombre_en_tienda" not in df.columns:
+    df["nombre_en_tienda"] = None
+
 # ========= CONFIGURAR SELENIUM (CHROME HEADLESS) =========
 chrome_options = webdriver.ChromeOptions()
 chrome_options.add_argument("--headless=new")  # sin ventana
@@ -83,10 +87,31 @@ for i, url in enumerate(df["URLs"]):
         print("   → URL vacía, se dejan precios en None")
         df.at[i, "PRECIO_LISTA"] = None
         df.at[i, "PRECIO_OFERTA"] = None
+        df.at[i, "nombre_en_tienda"] = None
         continue
 
     try:
         driver.get(url)
+
+        # NUEVO: esperar el H1 del nombre (si está)
+        try:
+            wait.until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "h1.titulo_producto.principal")
+                )
+            )
+        except TimeoutException:
+            pass
+
+        # NUEVO: extraer nombre_en_tienda
+        try:
+            h1 = driver.find_element(By.CSS_SELECTOR, "h1.titulo_producto.principal")
+            nombre_en_tienda = h1.text.strip()
+            df.at[i, "nombre_en_tienda"] = nombre_en_tienda
+            print(f"   → nombre_en_tienda: {nombre_en_tienda}")
+        except NoSuchElementException:
+            df.at[i, "nombre_en_tienda"] = None
+            print("   [INFO] No se encontró h1.titulo_producto.principal")
 
         # Esperar al menos el precio principal (aux1)
         wait.until(
@@ -128,10 +153,14 @@ for i, url in enumerate(df["URLs"]):
         print("   [WARN] No se cargó el precio principal a tiempo.")
         df.at[i, "PRECIO_LISTA"] = None
         df.at[i, "PRECIO_OFERTA"] = None
+        # nombre ya intentado arriba; si quieres forzar None:
+        # df.at[i, "nombre_en_tienda"] = None
     except Exception as e:
         print(f"   [ERROR] {e}")
         df.at[i, "PRECIO_LISTA"] = None
         df.at[i, "PRECIO_OFERTA"] = None
+        # nombre ya intentado arriba; si quieres forzar None:
+        # df.at[i, "nombre_en_tienda"] = None
 
     time.sleep(0.5)
 

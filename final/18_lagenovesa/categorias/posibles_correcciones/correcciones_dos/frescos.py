@@ -2,18 +2,24 @@
 # -*- coding: utf-8 -*-
 
 """
-La Genovesa (ALMACÉN) – Scraper con Selenium + BeautifulSoup + Persistencia MySQL
-Hardening para ejecución concurrente de múltiples scrapers.
+La Genovesa (ALMACÉN) – Scraper FULL -> MySQL (SIN IMÁGENES, SIN XLSX) + más rápido
 
-- HOME -> aceptar sucursal si aparece -> ir a categoría
-- Scroll sobre contenedor real (wheel + END + fondo real)
-- Lee tarjetas del listado, entra al detalle con CLICK y extrae:
-  EAN, Título, Precio unitario, Precio de referencia, Imagen, URL
-- Exporta a XLSX y persiste en MySQL (tiendas, productos, producto_tienda, historico_precios)
-- Concurrency-safe:
-    * Perfil y puerto exclusivos por proceso
-    * GET_LOCK por tienda durante la persistencia
-    * Retries + backoff en escritura
+Mejoras clave:
+- NO descarga ni procesa imágenes (solo datos).
+- NO genera XLSX (solo DB).
+- Detalle por producto: navega directo con driver.get(url) (mucho más rápido que click/back).
+- page_load_strategy="eager" + bloqueo de CSS/fonts (menos recursos, más velocidad).
+- Menos sleeps/logs (sin spam por producto).
+
+Flujo:
+- HOME -> aceptar sucursal si aparece
+- Ir a categoría
+- Scroll hasta cargar todo el listado
+- Extraer URLs del listado
+- Visitar cada URL de detalle y extraer:
+  EAN, nombre, precio unitario, precio referencia, URL
+- Persistir en MySQL (tiendas, productos, producto_tienda, historico_precios)
+- Concurrency-safe: GET_LOCK + retries lock/deadlock
 """
 
 import os
@@ -52,7 +58,7 @@ def _ensure_project_root_for_import():
         sys.path.append(os.path.abspath(env_root))
         return
     here = os.path.abspath(os.path.dirname(__file__))
-    for up in range(5):
+    for up in range(6):
         candidate = os.path.abspath(os.path.join(here, *([".."] * up)))
         if os.path.isfile(os.path.join(candidate, "base_datos.py")):
             sys.path.append(candidate)
@@ -73,24 +79,22 @@ DEFAULT_URL = (
 LIST_SELECTOR   = "div.columContainerList"
 CARD_TITLE_SEL  = ".textTituloProductos"
 CARD_PRICE_SEL  = "span.textPrecio b"
-CARD_IMG_SEL    = "img.imgListadoProducto"
 CARD_LINK_SEL   = "a.columTextList, a.columImgList"
 CARD_STOCK_TEXT = ".textSemaforo"
 CARD_STOCK_DOT  = "b.Semaforo"
 
 # Detalle
 DETAIL_TITLE_SEL = "p.titulo"
-# ✅ EAN desde: <div class="col textDescripcionDetalle" style="text-align:center"> 7790070012050 </div>
 DETAIL_EAN_SEL   = "div.col.textDescripcionDetalle"
 DETAIL_PRICE_SEL = "div.textPrecioUnitario"
 DETAIL_REF_SEL   = "div.textMensajeReferenciaEscritorio"
-DETAIL_IMG_SEL   = "img.imgPromocionesL, img.imgPromociones"
 
 # ===== Tiempos / Scroll =====
-WAIT = 30
+WAIT = 20
+WAIT_DETAIL = 15
 SCROLL_MAX_ROUNDS = 120
-SCROLL_MAX_NO_GROWTH_BURSTS = 6
-AFTER_ACTION_SLEEP = (0.6, 1.0)
+SCROLL_MAX_NO_GROWTH_BURSTS = 5
+AFTER_ACTION_SLEEP = (0.05, 0.12)
 
 
 # ================ Utils ================
@@ -188,23 +192,33 @@ def _possible_binaries():
             yield p
 
 
-# ============== Selenium setup (endurecido VPS) ==============
+# ============== Selenium setup (más rápido VPS) ==============
 def make_driver(
     headless: bool = True,
     user_data_dir: Optional[str] = None,
     profile_dir: Optional[str] = None,
     keep_profile: bool = False,
-    block_images: bool = True,
     job_id: Optional[str] = None
 ):
     log(f"[ENV] Python={platform.python_version()} | System={platform.platform()}")
+
     opts = Options()
+    opts.page_load_strategy = "eager"  # ✅ no espera a “complete”
+
     if headless:
         opts.add_argument("--headless=new")
 
-    if block_images:
-        prefs = {"profile.managed_default_content_settings.images": 2}
-        opts.add_experimental_option("prefs", prefs)
+    # ✅ bloquear recursos pesados (ya no usamos imágenes)
+    prefs = {
+        "profile.managed_default_content_settings.images": 2,
+        "profile.managed_default_content_settings.stylesheets": 2,
+        "profile.managed_default_content_settings.fonts": 2,
+        "profile.managed_default_content_settings.plugins": 2,
+        "profile.managed_default_content_settings.popups": 2,
+        "profile.managed_default_content_settings.geolocation": 2,
+        "profile.managed_default_content_settings.notifications": 2,
+    }
+    opts.add_experimental_option("prefs", prefs)
 
     temp_dir = None
     if not user_data_dir:
@@ -267,6 +281,12 @@ def make_driver(
     except Exception:
         pass
 
+    # timeouts más agresivos
+    try:
+        driver.set_page_load_timeout(25)
+    except Exception:
+        pass
+
     if temp_dir and not keep_profile:
         import atexit
         @atexit.register
@@ -291,10 +311,9 @@ def click_first_visible(driver, labels: List[str]) -> bool:
             try:
                 if e.is_displayed():
                     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", e)
-                    human_sleep(0.1, 0.2)
+                    human_sleep(0.05, 0.10)
                     e.click()
                     human_sleep(*AFTER_ACTION_SLEEP)
-                    log(f"[MODAL] Click en: {txt}")
                     return True
             except (ElementClickInterceptedException, WebDriverException):
                 continue
@@ -307,7 +326,7 @@ def select_first_valid_option(sel_el) -> bool:
             val = (op.get_attribute("value") or "").strip()
             if val and val not in ("0", "-1"):
                 s.select_by_index(i)
-                human_sleep(0.2, 0.4)
+                human_sleep(0.10, 0.20)
                 return True
     except Exception:
         pass
@@ -315,14 +334,13 @@ def select_first_valid_option(sel_el) -> bool:
 
 def try_accept_location_modal(driver) -> bool:
     acted = False
-    human_sleep(0.4, 0.8)
+    human_sleep(0.20, 0.40)
     selects = driver.find_elements(By.XPATH, "//select[not(@disabled)]")
     for sel in selects:
         if not sel.is_displayed():
             continue
         if select_first_valid_option(sel):
             acted = True
-            log("[MODAL] Select sucursal/zona elegido.")
     if click_first_visible(driver, ["Aceptar", "Confirmar", "Continuar", "Ingresar", "Entrar", "Guardar"]):
         acted = True
     closes = driver.find_elements(By.XPATH, "//button[contains(@class,'close') or @aria-label='Close' or contains(., '×')]")
@@ -330,8 +348,7 @@ def try_accept_location_modal(driver) -> bool:
         try:
             if c.is_displayed():
                 c.click()
-                human_sleep(0.2, 0.4)
-                log("[MODAL] Cerrado con botón de cierre")
+                human_sleep(0.10, 0.20)
                 acted = True
                 break
         except Exception:
@@ -340,19 +357,15 @@ def try_accept_location_modal(driver) -> bool:
 
 def warmup_lazy_load(driver, selector: str, rounds: int = 6) -> bool:
     for _ in range(rounds):
-        driver.execute_script("window.scrollBy(0, 600);")
-        human_sleep(0.3, 0.6)
-        driver.execute_script("window.scrollBy(0, -400);")
-        human_sleep(0.25, 0.5)
+        driver.execute_script("window.scrollBy(0, 700);")
+        human_sleep(0.15, 0.25)
+        driver.execute_script("window.scrollBy(0, -500);")
+        human_sleep(0.10, 0.20)
         if driver.find_elements(By.CSS_SELECTOR, selector):
             return True
     return False
 
 def ensure_listing_ready(driver, url: str):
-    try:
-        log(f"[NAV] UA: {driver.execute_script('return navigator.userAgent')}")
-    except Exception:
-        pass
     for attempt in range(1, 3):
         try:
             WebDriverWait(driver, WAIT).until(
@@ -363,21 +376,19 @@ def ensure_listing_ready(driver, url: str):
                 log(f"[INIT] Listado visible con {len(cards)} tarjetas (intento {attempt}).")
                 return
         except TimeoutException:
-            log(f"[INIT] Timeout esperando listado (intento {attempt}). Intentando resolver modal…")
+            log(f"[INIT] Timeout listado (intento {attempt}). Intentando modal / warmup…")
             if try_accept_location_modal(driver):
-                human_sleep(0.6, 1.0)
+                human_sleep(0.3, 0.6)
                 driver.get(url)
-                human_sleep(0.6, 1.0)
                 continue
             if warmup_lazy_load(driver, LIST_SELECTOR, rounds=10):
                 return
             snapshot_debug(driver, "genovesa_debug_init")
             if attempt == 1:
                 driver.get(url)
-                human_sleep(0.8, 1.2)
+                human_sleep(0.3, 0.6)
                 continue
-            else:
-                raise
+            raise
 
 
 # ============== Breadcrumb ==============
@@ -418,9 +429,8 @@ def try_click_load_more(driver) -> bool:
             try:
                 if el.is_displayed() and el.is_enabled():
                     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-                    human_sleep(0.2, 0.4)
+                    human_sleep(0.10, 0.20)
                     el.click()
-                    log("[SCROLL] Click en botón de carga incremental.")
                     human_sleep(*AFTER_ACTION_SLEEP)
                     return True
             except Exception:
@@ -457,42 +467,28 @@ def get_scroll_root(driver, item_selector: str):
         return driver.find_element(By.TAG_NAME, "body")
 
 
-# ============== Scroll gentil ==============
-def _scroll_burst_gentle(driver, item_selector: str, root_el):
+# ============== Scroll (más agresivo, menos espera) ==============
+def _scroll_burst(driver, root_el):
     try:
         driver.execute_script("arguments[0].focus();", root_el)
         root_el.click()
     except Exception:
         pass
-    for _ in range(6):
-        try:
-            driver.execute_script(
-                "arguments[0].dispatchEvent(new WheelEvent('wheel', {deltaY: 600, bubbles: true}));",
-                root_el
-            )
-        except Exception:
-            break
-        human_sleep(0.05, 0.12)
     try:
-        for _ in range(10):
-            driver.execute_script("arguments[0].scrollTop = arguments[0].scrollTop + 200;", root_el)
-            human_sleep(0.08, 0.15)
-    except Exception:
-        pass
-    try:
+        driver.execute_script("arguments[0].scrollTop = arguments[0].scrollTop + 1200;", root_el)
+        driver.execute_script("arguments[0].scrollTop = arguments[0].scrollTop + 1200;", root_el)
         driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", root_el)
     except Exception:
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    human_sleep(0.12, 0.22)
     try:
         root_el.send_keys(Keys.END)
     except Exception:
         pass
 
 def _poll_for_growth(driver, item_selector: str, prev_count: int, prev_height: int, root_el) -> Optional[Tuple[int, int]]:
-    deadline = time.time() + 3.5
+    deadline = time.time() + 2.2
     while time.time() < deadline:
-        human_sleep(0.20, 0.25)
+        human_sleep(0.12, 0.18)
         new_count = len(driver.find_elements(By.CSS_SELECTOR, item_selector))
         try:
             new_height = driver.execute_script(
@@ -501,7 +497,6 @@ def _poll_for_growth(driver, item_selector: str, prev_count: int, prev_height: i
         except Exception:
             new_height = driver.execute_script("return document.scrollingElement.scrollHeight")
         if new_count > prev_count or new_height > prev_height:
-            log(f"[SCROLL] +{new_count - prev_count} (total {new_count}).")
             return new_count, int(new_height)
     return None
 
@@ -541,7 +536,7 @@ def scroll_until_no_more(
                 no_growth_bursts = 0
                 continue
 
-        _scroll_burst_gentle(driver, item_selector, root_el)
+        _scroll_burst(driver, root_el)
         grew = _poll_for_growth(driver, item_selector, prev_count, prev_height, root_el)
         if grew:
             prev_count, prev_height = grew
@@ -550,43 +545,28 @@ def scroll_until_no_more(
             continue
 
         same_rounds += 1
-        cur = len(driver.find_elements(By.CSS_SELECTOR, item_selector))
-        log(f"[SCROLL] Sin nuevos items (chequeo {same_rounds}/{calm_rounds}) — total {cur}.")
-
         if same_rounds >= calm_rounds:
             no_growth_bursts += 1
-            log(f"[SCROLL] Ráfaga extra sin crecimiento ({no_growth_bursts}/{max_no_growth_bursts}).")
             same_rounds = 0
-
-            _scroll_burst_gentle(driver, item_selector, root_el)
-            grew2 = _poll_for_growth(driver, item_selector, prev_count, prev_height, root_el)
-            if grew2:
-                prev_count, prev_height = grew2
-                no_growth_bursts = 0
-                continue
-
             if no_growth_bursts >= max_no_growth_bursts:
-                log("[SCROLL] No se cargan más productos tras varias ráfagas extra. Fin del scroll.")
                 break
 
-    if rounds >= max_rounds:
-        log("[SCROLL] Alcanzado tope de rondas. Fin del scroll.")
+    log(f"[SCROLL] Fin. Total visible aprox: {len(driver.find_elements(By.CSS_SELECTOR, item_selector))}")
 
 
-# ============== Lectura de Listado ==============
+# ============== Lectura de Listado (solo URLs + precios básicos) ==============
 def collect_list_cards(driver) -> List[Dict]:
-    html = driver.page_source
-    soup = BeautifulSoup(html, "lxml")
+    soup = BeautifulSoup(driver.page_source, "lxml")
     out: List[Dict] = []
 
     for card in soup.select(LIST_SELECTOR):
         link = card.select_one(CARD_LINK_SEL)
-        href = urljoin(BASE, link.get("href")) if link else None
+        href = urljoin(BASE, link.get("href")) if link and link.get("href") else None
+
         title = safe_text(card.select_one(CARD_TITLE_SEL))
-        price_list = safe_text(card.select_one(CARD_PRICE_SEL))
-        price_list_num = parse_price(price_list)
-        img = card.select_one(CARD_IMG_SEL)
-        img_src = urljoin(BASE, img.get("src")) if img and img.get("src") else None
+        price_list_txt = safe_text(card.select_one(CARD_PRICE_SEL))
+        price_list_num = parse_price(price_list_txt)
+
         stock_txt = safe_text(card.select_one(CARD_STOCK_TEXT))
         stock_dot = card.select_one(CARD_STOCK_DOT)
         stock_color = stock_dot.get("style") if stock_dot else ""
@@ -596,18 +576,15 @@ def collect_list_cards(driver) -> List[Dict]:
             qs = parse_qs(urlparse(href).query)
             articulo_id = (qs.get("ArticuloID") or [None])[0]
 
-        row = {
+        out.append({
             "list_title": title,
-            "list_price_text": price_list,
+            "list_price_text": price_list_txt,
             "list_price": price_list_num,
-            "list_img": img_src,
             "list_stock_text": stock_txt,
             "list_stock_color": stock_color,
             "detail_url": href,
             "articulo_id": articulo_id,
-        }
-        out.append(row)
-        log(f"[LIST] {title} | {price_list or '-'} | {href or '-'}")
+        })
 
     return out
 
@@ -615,18 +592,14 @@ def collect_list_cards(driver) -> List[Dict]:
 # ============== Detalle ==============
 _EAN_RE = re.compile(r"\b(\d{8,14})\b")
 
-def parse_detail_page(driver, url: str = None) -> Dict:
-    WebDriverWait(driver, WAIT).until(
+def parse_detail_page(driver) -> Dict:
+    WebDriverWait(driver, WAIT_DETAIL).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, DETAIL_TITLE_SEL))
     )
-    human_sleep(0.2, 0.5)
 
-    html = driver.page_source
-    soup = BeautifulSoup(html, "lxml")
-
+    soup = BeautifulSoup(driver.page_source, "lxml")
     title = safe_text(soup.select_one(DETAIL_TITLE_SEL))
 
-    # ✅ EAN desde div.col.textDescripcionDetalle (centrado)
     ean = None
     for div in soup.select(DETAIL_EAN_SEL):
         t = safe_text(div)
@@ -638,11 +611,6 @@ def parse_detail_page(driver, url: str = None) -> Dict:
     price_text = safe_text(soup.select_one(DETAIL_PRICE_SEL))
     price_num  = parse_price(price_text)
     ref_text   = safe_text(soup.select_one(DETAIL_REF_SEL))
-    img        = soup.select_one(DETAIL_IMG_SEL)
-    img_src    = urljoin(BASE, img.get("src")) if img and img.get("src") else None
-
-    current_url = driver.current_url
-    log(f"[DETAIL] EAN={ean or '-'} | {title} | {price_text or '-'} | {current_url}")
 
     return {
         "ean": ean,
@@ -650,8 +618,7 @@ def parse_detail_page(driver, url: str = None) -> Dict:
         "detail_price_text": price_text,
         "detail_price": price_num,
         "detail_ref": ref_text,
-        "detail_img": img_src,
-        "detail_url": current_url,
+        "detail_url": driver.current_url,
     }
 
 
@@ -662,7 +629,6 @@ def scrape_categoria(
     user_data_dir: Optional[str] = None,
     profile_dir: Optional[str] = None,
     keep_profile: bool = False,
-    sleep_between_detail=(0.05, 0.15),
     job_id: Optional[str] = None
 ) -> pd.DataFrame:
     driver = make_driver(
@@ -673,19 +639,18 @@ def scrape_categoria(
         job_id=job_id
     )
     try:
-        log("[INIT] Entrando al HOME…")
+        log("[INIT] HOME…")
         driver.get(BASE)
-        human_sleep(0.8, 1.2)
+        human_sleep(0.4, 0.8)
         try_accept_location_modal(driver)
 
-        log(f"[INIT] Abriendo categoría: {url}")
+        log(f"[INIT] Categoría: {url}")
         driver.get(url)
-
         ensure_listing_ready(driver, url)
 
         categoria, subcategoria = get_breadcrumb(driver)
 
-        log("[INIT] Iniciando scroll gentil…")
+        log("[INIT] Scroll para cargar TODO…")
         scroll_until_no_more(
             driver,
             LIST_SELECTOR,
@@ -694,85 +659,58 @@ def scrape_categoria(
             max_no_growth_bursts=SCROLL_MAX_NO_GROWTH_BURSTS
         )
 
-        log("[LIST] Leyendo tarjetas del listado…")
+        log("[LIST] Extrayendo tarjetas (solo URLs + precio)…")
         cards = collect_list_cards(driver)
-        log(f"[LIST] Total en listado: {len(cards)}")
+
+        # dedupe por URL
+        seen = set()
+        uniq_cards = []
+        for c in cards:
+            u = (c.get("detail_url") or "").strip()
+            if not u or u in seen:
+                continue
+            seen.add(u)
+            uniq_cards.append(c)
+
+        log(f"[LIST] Total URLs únicas: {len(uniq_cards)}")
 
         rows: List[Dict] = []
-        total_cards = len(cards)
+        total = len(uniq_cards)
 
-        for i, card in enumerate(cards, 1):
+        # ✅ más rápido: navegar directo a cada detalle con driver.get(url)
+        for i, card in enumerate(uniq_cards, 1):
             href = card.get("detail_url")
             if not href:
-                log(f"[WARN] Sin URL de detalle para: {card.get('list_title','(sin título)')}")
                 continue
 
-            articulo_id = card.get("articulo_id")
             tries = 0
-
             while tries < 2:
                 try:
-                    if articulo_id:
-                        xpath = f"//a[contains(@href, 'ArticuloID={articulo_id}')]"
-                    else:
-                        href_fragment = href.split("ArticuloID=")[-1] if "ArticuloID=" in href else href
-                        xpath = f"//a[contains(@href, '{href_fragment}')]"
-
-                    link_el = WebDriverWait(driver, WAIT).until(
-                        EC.element_to_be_clickable((By.XPATH, xpath))
-                    )
-                    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", link_el)
-                    human_sleep(0.2, 0.4)
-                    link_el.click()
-                    log(f"[CLICK] ({i}/{total_cards}) Abriendo detalle -> {href}")
-                    human_sleep(0.4, 0.8)
-
-                    det = parse_detail_page(driver, href)
-
+                    driver.get(href)
+                    det = parse_detail_page(driver)
                     row = {**card, **det}
                     row["categoria"] = categoria
                     row["subcategoria"] = subcategoria
                     rows.append(row)
-                    log(f"[OK] ({i}/{total_cards}) Guardado con EAN={row.get('ean') or '-' }.")
 
-                    driver.back()
-                    WebDriverWait(driver, WAIT).until(
-                        EC.presence_of_all_elements_located((By.CSS_SELECTOR, LIST_SELECTOR))
-                    )
+                    if (i % 50) == 0 or i == total:
+                        log(f"[PROG] {i}/{total} detalles OK…")
                     break
 
-                except TimeoutException:
-                    tries += 1
-                    log(f"[ERROR] Timeout detalle (intento {tries}) -> {href}")
-                    if tries >= 2:
-                        snapshot_debug(driver, f"genovesa_detail_fail_{i}")
-                        try:
-                            driver.get(url)
-                            ensure_listing_ready(driver, url)
-                            scroll_until_no_more(driver, LIST_SELECTOR, calm_rounds=2, max_rounds=10, max_no_growth_bursts=3)
-                        except Exception:
-                            pass
                 except Exception as e:
                     tries += 1
-                    log(f"[ERROR] {type(e).__name__}: {e}")
                     if tries >= 2:
                         snapshot_debug(driver, f"genovesa_detail_fail_{i}")
-                        try:
-                            driver.get(url)
-                            ensure_listing_ready(driver, url)
-                            scroll_until_no_more(driver, LIST_SELECTOR, calm_rounds=2, max_rounds=10, max_no_growth_bursts=3)
-                        except Exception:
-                            pass
-                finally:
-                    human_sleep(*sleep_between_detail)
+                    # pequeño backoff
+                    human_sleep(0.15, 0.35)
 
         df = pd.DataFrame(rows)
         cols = [
             "ean", "articulo_id",
             "detail_title", "detail_price", "detail_price_text", "detail_ref",
-            "detail_img", "detail_url",
+            "detail_url",
             "list_title", "list_price", "list_price_text",
-            "list_img", "list_stock_text", "list_stock_color",
+            "list_stock_text", "list_stock_color",
             "categoria", "subcategoria",
         ]
         for c in cols:
@@ -790,7 +728,7 @@ def scrape_categoria(
         log("[END] Driver cerrado.")
 
 
-# =================== DB (contrato estándar) ===================
+# =================== DB (tu contrato estándar) ===================
 _NULLLIKE = {"", "null", "none", "nan", "na"}
 def clean(val):
     if val is None:
@@ -942,12 +880,12 @@ def row_to_db_product(row: Dict[str, Any]) -> Dict[str, Any]:
     sku = (row.get("articulo_id") or
            (parse_qs(urlparse(row.get("detail_url") or "").query).get("ArticuloID") or [None])[0])
 
-    precio_oferta = row.get("detail_price")        # float
-    precio_lista  = row.get("list_price")          # float
-    if not precio_lista and row.get("detail_ref"):
-        m = re.search(r"([\$]?\s*\d[\d\.\,]*)", row["detail_ref"])
-        if m:
-            precio_lista = m.group(1)
+    precio_oferta = row.get("detail_price")  # float
+    precio_lista  = row.get("list_price")    # float
+
+    # si no vino precio_lista del listado, intenta del texto de referencia
+    if (precio_lista is None or precio_lista == 0) and row.get("detail_ref"):
+        precio_lista = parse_price(row.get("detail_ref"))
 
     nombre_det = clean(row.get("detail_title") or row.get("list_title"))
 
@@ -978,7 +916,7 @@ def persistir_df_en_mysql(
     df: pd.DataFrame,
     tienda_codigo=TIENDA_CODIGO,
     tienda_nombre=TIENDA_NOMBRE,
-    chunk_size: int = 200,
+    chunk_size: int = 300,
     max_retries: int = 3,
     lock_timeout_sec: int = 60
 ):
@@ -1033,12 +971,11 @@ def persistir_df_en_mysql(
                         code = getattr(e, "errno", None)
                         conn.rollback()
                         if code in (1205, 1213) and attempt < max_retries - 1:
-                            delay = 1.5 * (attempt + 1) + random.uniform(0.2, 0.8)
+                            delay = 1.2 * (attempt + 1) + random.uniform(0.2, 0.6)
                             print(f"⏳ Lock/Deadlock (errno={code}). Reintentando en {delay:.1f}s…")
                             time.sleep(delay)
                             continue
-                        else:
-                            raise
+                        raise
         finally:
             try:
                 cur = conn.cursor()
@@ -1067,12 +1004,11 @@ if __name__ == "__main__":
     parser.add_argument("--url", default=DEFAULT_URL, help="URL de la categoría a scrapear")
     parser.add_argument("--headless", action="store_true", help="Forzar modo headless")
     parser.add_argument("--no-headless", action="store_true", help="Desactivar headless")
-    parser.add_argument("--outfile", default="LaGenovesa_ALMACEN.xlsx", help="Archivo XLSX de salida")
-    parser.add_argument("--no-xlsx", action="store_true", help="No exportar XLSX")
     parser.add_argument("--user-data-dir", default=None, help="Ruta a User Data dir de Chrome (opcional)")
     parser.add_argument("--profile-dir", default=None, help="Nombre de profile de Chrome (opcional, ej. 'Default')")
     parser.add_argument("--keep-profile", action="store_true", help="No borrar el perfil temporal al salir")
     parser.add_argument("--job-id", default=None, help="Identificador opcional del job (solo trazas)")
+    parser.add_argument("--chunk", type=int, default=300, help="Chunk size DB (default 300)")
     args = parser.parse_args()
 
     _headless = True
@@ -1081,7 +1017,7 @@ if __name__ == "__main__":
     if args.headless:
         _headless = True
 
-    log(f"[RUN] Headless={_headless} | Outfile={args.outfile} | JobID={args.job_id or '-'}")
+    log(f"[RUN] Headless={_headless} | JobID={args.job_id or '-'}")
 
     df = scrape_categoria(
         url=args.url,
@@ -1092,12 +1028,4 @@ if __name__ == "__main__":
         job_id=args.job_id
     )
 
-    persistir_df_en_mysql(df, tienda_codigo=TIENDA_CODIGO, tienda_nombre=TIENDA_NOMBRE)
-
-    if not args.no_xlsx:
-        log(f"[SAVE] Exportando a {args.outfile} …")
-        try:
-            df.to_excel(args.outfile, index=False)
-            log("[SAVE] Archivo XLSX generado.")
-        except Exception as e:
-            log(f"[SAVE] Error al exportar XLSX: {e}")
+    persistir_df_en_mysql(df, tienda_codigo=TIENDA_CODIGO, tienda_nombre=TIENDA_NOMBRE, chunk_size=args.chunk)

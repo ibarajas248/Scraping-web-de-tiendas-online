@@ -138,8 +138,21 @@ def safe_get(d: dict, key: str, default=""):
     return "" if v is None else v
 
 def extract_ean(item: dict, product: dict):
-    """Forzado: NUNCA devolver EAN -> None para que DB guarde NULL."""
+    # 1) campo directo
+    ean = item.get("ean") or item.get("EAN")
+    if ean:
+        return str(ean).strip()
+
+    # 2) referenceId (varía según tienda)
+    refs = item.get("referenceId") or item.get("referenceIds") or []
+    for r in refs:
+        k = (r.get("Key") or r.get("key") or "").upper()
+        v = (r.get("Value") or r.get("value") or "")
+        if k == "EAN" and v:
+            return str(v).strip()
+
     return None
+
 
 def extract_teaser(co: dict) -> str:
     teasers = co.get("Teasers") or []
@@ -288,7 +301,7 @@ def scrape_toledo() -> pd.DataFrame:
     df = pd.DataFrame(rows)
 
     # Normalizaciones ligeras
-    df["EAN"] = None  # <-- forzar None (no "", no "nan"), y NUNCA usar para DB
+
     df["Código Interno"] = df["Código Interno"].astype(str)
     df["Precio de Lista"]  = pd.to_numeric(df["Precio de Lista"], errors="coerce")
     df["Precio de Oferta"] = pd.to_numeric(df["Precio de Oferta"], errors="coerce")
