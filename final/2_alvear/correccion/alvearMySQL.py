@@ -2,19 +2,15 @@
 # -*- coding: utf-8 -*-
 
 """
-Scraper Alvear Online → MySQL
+Scraper Alvear Online → MySQL (robusto por horarios)
 
-- Baja catálogo via API (GetCatalagoSeleccionado).
-- Aplana items y calcula precio efectivo.
-- Inserta/actualiza:
-  - tiendas (codigo='alvear', nombre='Alvear Online')
-  - productos (EAN = NULL)
-  - producto_tienda (clave natural: tienda_id + codigoInterno)
-  - historico_precios (precios como VARCHAR, según tu preferencia)
+Objetivo: que NO se muera si a partir de cierta hora el backend empieza a tirar 500/403/429 o responde HTML.
 
-Requisitos:
-  pip install requests pandas certifi mysql-connector-python
-y un módulo base_datos.py con get_conn() que devuelva una conexión MySQL.
+Cambios clave:
+- PAGE_SIZE más chico + sleep más grande (evita rate-limit / saturación).
+- get_json_resilient “infinito controlado”: nunca crashea por 5xx/429/403; enfría y reintenta.
+- Detecta no-JSON (HTML) y reintenta (muy común en WAF).
+- No corta por 1 página vacía (grace).
 """
 
 import os
@@ -27,14 +23,13 @@ from typing import List, Dict, Any, Optional, Tuple
 
 import numpy as np
 import requests
-import pandas as pd
 import certifi
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib3.exceptions import InsecureRequestWarning
 from mysql.connector import Error as MySQLError
 
-import sys, os
+import sys
 
 # añade la carpeta raíz (2 niveles más arriba) al sys.path
 sys.path.append(
@@ -47,23 +42,29 @@ from base_datos import get_conn  # <- tu conexión MySQL
 TIENDA_CODIGO = "alvear"
 TIENDA_NOMBRE = "Alvear Online"
 
-# Catálogo a relevar
 ID_CATALOGO = 1042
-PAGE_SIZE = 20
-START_PAGE = 0
-MAX_PAGES_CAP = 1000
 ID_INSTALACION = 3
 ES_RUBRO = False
 VISTA_FAVORITOS = False
-SLEEP_BETWEEN_PAGES = 0.3
-FORCE_INSECURE = True  # desactiva verificación TLS si tu entorno rompe certs
 
-# Endpoint
+# ↓↓↓ Ajustes anti-“después de las 5 AM” ↓↓↓
+PAGE_SIZE = int(os.environ.get("ALVEAR_PAGE_SIZE", "12"))          # antes 20
+SLEEP_BETWEEN_PAGES = float(os.environ.get("ALVEAR_SLEEP", "1.2")) # antes 0.3
+
+START_PAGE = int(os.environ.get("ALVEAR_START_PAGE", "0"))
+MAX_PAGES_CAP = int(os.environ.get("ALVEAR_MAX_PAGES", "1000"))
+
+# Si tu entorno rompe certs
+FORCE_INSECURE = True
+
 BASE = "https://www.alvearonline.com.ar/BackOnline/api/Catalogo/GetCatalagoSeleccionado"
 
 DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/139.0.0.0 Safari/537.36"
+    ),
     "Accept": "application/json, text/plain, */*",
     "Origin": "https://www.alvearonline.com.ar",
     "Referer": "https://www.alvearonline.com.ar/",
@@ -78,11 +79,19 @@ def resolve_verify() -> bool | str:
     bundle = os.environ.get("REQUESTS_CA_BUNDLE")
     return bundle if bundle else certifi.where()
 
+def jitter_delay(base: float, factor: float = 0.35) -> float:
+    return base * (1.0 + random.uniform(-factor, factor))
+
+def _safe_snippet(txt: str, n: int = 250) -> str:
+    if not txt:
+        return ""
+    return txt[:n].replace("\n", " ").replace("\r", " ")
+
 def make_session(
-    retries: int = 5,
-    backoff: float = 1.0,
-    connect_timeout: int = 20,
-    read_timeout: int = 90,
+    retries: int = 2,             # poco acá; el retry serio está en get_json_resilient
+    backoff: float = 0.8,
+    connect_timeout: int = 30,
+    read_timeout: int = 240,
 ) -> Tuple[requests.Session, Tuple[int, int]]:
     s = requests.Session()
     retry = Retry(
@@ -93,12 +102,14 @@ def make_session(
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"],
         raise_on_status=False,
+        respect_retry_after_header=True,
     )
     adapter = HTTPAdapter(max_retries=retry, pool_connections=20, pool_maxsize=20)
     s.mount("https://", adapter)
     s.headers.update(DEFAULT_HEADERS)
     s.verify = resolve_verify()
     s.trust_env = True
+
     default_timeout = (connect_timeout, read_timeout)
 
     orig_request = s.request
@@ -107,51 +118,115 @@ def make_session(
             kwargs["timeout"] = default_timeout
         return orig_request(method, url, **kwargs)
     s.request = _wrapped
-    return s, default_timeout
 
-def jitter_delay(base: float, factor: float = 0.3) -> float:
-    return base * (1.0 + random.uniform(-factor, factor))
+    return s, default_timeout
 
 def get_json_resilient(
     session: requests.Session,
     url: str,
     params: Dict[str, Any],
     timeout: Tuple[int, int],
-    attempts: int = 5,
-    base_backoff: float = 1.5,
+    attempts: int = 8,
+    base_backoff: float = 1.7,
+    max_total_wait_s: int = 20 * 60,   # 20 min tolerancia por página (ajustable)
 ) -> Dict[str, Any]:
-    last_exc = None
-    for i in range(1, attempts + 1):
-        try:
-            r = session.get(url, params=params, timeout=timeout)
-            r.raise_for_status()
-            return r.json()
-        except requests.exceptions.SSLError as e:
-            last_exc = e
+    """
+    Devuelve dict JSON.
+    - Reintenta 403/408/429/5xx y errores de red.
+    - Si se agotan attempts, entra en cooldown largo y sigue reintentando.
+    - Solo abandona tras max_total_wait_s acumulado intentando esa misma página.
+    """
+    start = time.time()
+    cycle = 0
+    last_exc: Optional[Exception] = None
+
+    while True:
+        cycle += 1
+
+        for i in range(1, attempts + 1):
             try:
-                warnings.simplefilter("ignore", InsecureRequestWarning)
-                r = session.get(url, params=params, timeout=timeout, verify=False)
-                r.raise_for_status()
-                return r.json()
-            except Exception as e2:
-                last_exc = e2
-        except (requests.exceptions.ReadTimeout,
+                r = session.get(url, params=params, timeout=timeout)
+
+                status = r.status_code
+                ct = (r.headers.get("Content-Type") or "").lower()
+
+                # Si viene HTML/no-json, log y tratar como retry
+                if "application/json" not in ct:
+                    print(f"[WARN] page={params.get('page')} HTTP {status} CT={ct} snip='{_safe_snippet(r.text)}'")
+                    # muchas veces es WAF/edge; forzamos retry
+                    raise ValueError(f"Respuesta no-JSON (CT={ct})")
+
+                # Si status “problemático”, retry
+                if status in (403, 408, 429, 500, 502, 503, 504):
+                    raise requests.HTTPError(f"HTTP {status}", response=r)
+
+                # OK
+                data = r.json()
+                if not isinstance(data, dict):
+                    raise ValueError("JSON no es dict")
+                return data
+
+            except requests.exceptions.SSLError as e:
+                last_exc = e
+                # fallback insecure
+                try:
+                    warnings.simplefilter("ignore", InsecureRequestWarning)
+                    r = session.get(url, params=params, timeout=timeout, verify=False)
+                    status = r.status_code
+                    if status in (403, 408, 429, 500, 502, 503, 504):
+                        raise requests.HTTPError(f"HTTP {status}", response=r)
+                    data = r.json()
+                    if isinstance(data, dict):
+                        return data
+                    raise ValueError("JSON no es dict (insecure)")
+                except Exception as e2:
+                    last_exc = e2
+
+            except (
+                requests.exceptions.ReadTimeout,
                 requests.exceptions.ConnectTimeout,
-                requests.exceptions.ConnectionError) as e:
-            last_exc = e
-            sleep_s = jitter_delay(base_backoff ** i)
-            print(f"[NET] Reintento {i}/{attempts} tras '{type(e).__name__}': {sleep_s:.1f}s")
-            time.sleep(sleep_s)
-            continue
-        except requests.HTTPError as e:
-            last_exc = e
-            if 500 <= e.response.status_code < 600 and i < attempts:
+                requests.exceptions.ConnectionError,
+                requests.exceptions.HTTPError,
+                ValueError,
+            ) as e:
+                last_exc = e
+                code = getattr(getattr(e, "response", None), "status_code", None)
+
+                # Backoff
                 sleep_s = jitter_delay(base_backoff ** i)
-                print(f"[HTTP {e.response.status_code}] Reintento {i}/{attempts} en {sleep_s:.1f}s")
+
+                # Si es 500 repetido después de las 5am, enfriar más
+                if code == 500:
+                    sleep_s = max(sleep_s, jitter_delay(20.0))
+
+                # Si es 403/429, enfriar más (posible rate-limit / WAF)
+                if code in (403, 429):
+                    sleep_s = max(sleep_s, jitter_delay(45.0))
+
+                print(
+                    f"[RETRY] ciclo={cycle} intento={i}/{attempts} page={params.get('page')} "
+                    f"status={code} err={type(e).__name__} sleep={sleep_s:.1f}s"
+                )
                 time.sleep(sleep_s)
                 continue
-            raise
-    raise requests.exceptions.RequestException(f"Fallo tras múltiples intentos: {last_exc}")
+
+            except Exception as e:
+                last_exc = e
+                sleep_s = jitter_delay(base_backoff ** i)
+                print(f"[RETRY] ciclo={cycle} intento={i}/{attempts} page={params.get('page')} err={type(e).__name__} sleep={sleep_s:.1f}s")
+                time.sleep(sleep_s)
+                continue
+
+        # Se agotaron intentos -> cooldown y seguir sin morir
+        elapsed = time.time() - start
+        if elapsed >= max_total_wait_s:
+            raise requests.exceptions.RequestException(
+                f"Fallo sostenido en page={params.get('page')} tras {int(elapsed)}s. Último error: {last_exc}"
+            )
+
+        cooldown = jitter_delay(90.0)  # 1.5 min aprox
+        print(f"[COOLDOWN] Agoté {attempts} intentos. Espero {cooldown:.1f}s y reintento page={params.get('page')}.")
+        time.sleep(cooldown)
 
 # ===================== Helpers de datos =====================
 def norm_img_path(p: Optional[str]) -> Optional[str]:
@@ -194,6 +269,7 @@ def flatten_item(it: Dict[str, Any]) -> Dict[str, Any]:
             img_url = norm_img_path(im["path"])
             if img_url:
                 break
+
     row = {
         "idArticulo": it.get("idArticulo"),
         "idCatalogoEntrada": it.get("idCatalogoEntrada"),
@@ -232,6 +308,9 @@ def fetch_catalogo_all(session: requests.Session, timeout: Tuple[int, int]) -> L
     total_pages: Optional[int] = None
     page = START_PAGE
 
+    empty_pages_in_a_row = 0
+    MAX_EMPTY_PAGES_GRACE = 3
+
     while True:
         params = {
             "idCatalogo": ID_CATALOGO,
@@ -243,7 +322,13 @@ def fetch_catalogo_all(session: requests.Session, timeout: Tuple[int, int]) -> L
             "vistaFavoritos": str(VISTA_FAVORITOS).lower(),
         }
 
-        data = get_json_resilient(session, BASE, params, timeout=timeout, attempts=5, base_backoff=1.5)
+        try:
+            data = get_json_resilient(session, BASE, params, timeout=timeout, attempts=8, base_backoff=1.7)
+        except Exception as e:
+            # Si una página está “rota”, no mates la corrida
+            print(f"[WARN] page={page} fallo sostenido ({type(e).__name__}). Espero 120s y reintento la misma página.")
+            time.sleep(jitter_delay(120.0))
+            continue
 
         if total_pages is None:
             total_pages = total_pages_from_payload(data, PAGE_SIZE)
@@ -251,10 +336,24 @@ def fetch_catalogo_all(session: requests.Session, timeout: Tuple[int, int]) -> L
             if total_pages:
                 print(f"[INFO] Total estimado: {total_pages} páginas (~{total_reg} items)")
 
+        # payload inesperado -> reintentar
+        if not isinstance(data, dict) or "listadoSecciones" not in data:
+            print(f"[WARN] Payload inesperado en page={page}. Espero 60s y reintento.")
+            time.sleep(jitter_delay(60.0))
+            continue
+
         items = parse_page_items(data)
+
         if not items:
-            print(f"[INFO] Página {page}: sin items. Fin.")
-            break
+            empty_pages_in_a_row += 1
+            print(f"[WARN] page={page}: sin items (vacías seguidas={empty_pages_in_a_row}/{MAX_EMPTY_PAGES_GRACE}).")
+            if empty_pages_in_a_row >= MAX_EMPTY_PAGES_GRACE:
+                print("[INFO] Varias páginas vacías seguidas. Fin real.")
+                break
+            time.sleep(jitter_delay(10.0))
+            continue
+
+        empty_pages_in_a_row = 0
 
         for it in items:
             row = flatten_item(it)
@@ -269,7 +368,7 @@ def fetch_catalogo_all(session: requests.Session, timeout: Tuple[int, int]) -> L
             print(f"[WARN] Cap de páginas alcanzado ({MAX_PAGES_CAP}). Corto.")
             break
 
-        time.sleep(SLEEP_BETWEEN_PAGES)
+        time.sleep(jitter_delay(SLEEP_BETWEEN_PAGES))
 
     return all_rows
 
@@ -278,12 +377,9 @@ def clean_txt(x: Any) -> Optional[str]:
     if x is None:
         return None
     s = str(x).strip()
-    if s == "":
-        return None
-    return s
+    return s if s else None
 
 def parse_price_to_varchar(x: Any) -> Optional[str]:
-    """Devuelve precio como VARCHAR (o None) según tu preferencia de almacenar texto."""
     if x is None:
         return None
     try:
@@ -292,7 +388,6 @@ def parse_price_to_varchar(x: Any) -> Optional[str]:
             return None
         return f"{round(v, 2)}"
     except Exception:
-        # si viene string ya bien, déjalo
         s = str(x).strip()
         return s if s else None
 
@@ -306,13 +401,6 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     return cur.fetchone()[0]
 
 def find_or_create_producto(cur, row: Dict[str, Any]) -> int:
-    """
-    En Alvear no hay EAN → guardamos NULL.
-    Intentamos evitar dupli
-    cados usando (nombre, idMarca) si ambos existen;
-    si no, solo nombre (riesgo aceptado).
-    """
-    ean = None  # explícito
     nombre = clean_txt(row.get("nombre"))
     marca_id = row.get("idMarca")
 
@@ -324,28 +412,24 @@ def find_or_create_producto(cur, row: Dict[str, Any]) -> int:
         r = cur.fetchone()
         if r:
             pid = r[0]
-            # Actualizamos metadatos suaves (categorías por ids si quieres)
             cur.execute("""
                 UPDATE productos SET
-                  fabricante = fabricante,
                   categoria = COALESCE(categoria, %s),
                   subcategoria = COALESCE(subcategoria, %s)
                 WHERE id=%s
-            """, (str(row.get("idRubro") or "") or None,
-                  str(row.get("idSubrubro") or "") or None,
-                  pid))
+            """, (
+                (str(row.get("idRubro") or "") or None),
+                (str(row.get("idSubrubro") or "") or None),
+                pid
+            ))
             return pid
 
     if nombre:
-        cur.execute(
-            "SELECT id FROM productos WHERE nombre=%s LIMIT 1",
-            (nombre,)
-        )
+        cur.execute("SELECT id FROM productos WHERE nombre=%s LIMIT 1", (nombre,))
         r = cur.fetchone()
         if r:
             return r[0]
 
-    # Insert nuevo
     cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
         VALUES (NULL, NULLIF(%s,''), NULLIF(%s,''), NULL, NULLIF(%s,''), NULLIF(%s,''))
@@ -358,34 +442,23 @@ def find_or_create_producto(cur, row: Dict[str, Any]) -> int:
     return cur.lastrowid
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, row: Dict[str, Any]) -> int:
-    """
-    Clave natural preferida: (tienda_id, codigoInterno) como sku_tienda.
-    Respaldo: (tienda_id, record_id_tienda) con idArticulo.
-    """
     sku = clean_txt(row.get("codigoInterno"))
     record_id = clean_txt(row.get("idArticulo"))
-    url = None  # API no trae URL de PDP directa
+    url = None
     nombre_tienda = clean_txt(row.get("nombre"))
 
-    # -------------------------------------------------------
-    # CASO PRINCIPAL: hay SKU → NO actualizar producto_id
-    # -------------------------------------------------------
     if sku:
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
-              -- producto_id = VALUES(producto_id),   <== REMOVIDO
               record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
         """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
         return cur.lastrowid
 
-    # -------------------------------------------------------
-    # RESPALDO: existe record_id → aquí SI se mantiene la lógica
-    # -------------------------------------------------------
     if record_id:
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
@@ -398,25 +471,18 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, row: Dict[str,
         """, (tienda_id, producto_id, record_id, url, nombre_tienda))
         return cur.lastrowid
 
-    # -------------------------------------------------------
-    # ÚLTIMO RECURSO (sin llaves naturales)
-    # -------------------------------------------------------
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, %s, %s)
     """, (tienda_id, producto_id, url, nombre_tienda))
     return cur.lastrowid
 
-
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, row: Dict[str, Any], capturado_en: datetime):
     precio_lista = parse_price_to_varchar(row.get("precioLista"))
     precio_oferta = parse_price_to_varchar(row.get("precioPromocional"))
-    # Si quieres guardar precio_efectivo también, calcula y guarda en promo_texto_regular, por ejemplo
-    precio_efectivo_txt = parse_price_to_varchar(precio_efectivo(row.get("precioLista"), row.get("precioPromocional")))
-    promo_tipo = None
-    promo_txt_regular = precio_efectivo_txt  # opcional: almacenar aquí el efectivo
-    promo_txt_desc = None
-    promo_comentarios = None
+    precio_efectivo_txt = parse_price_to_varchar(
+        precio_efectivo(row.get("precioLista"), row.get("precioPromocional"))
+    )
 
     cur.execute("""
         INSERT INTO historico_precios
@@ -435,7 +501,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, row: Dict[str
     """, (
         tienda_id, producto_tienda_id, capturado_en,
         precio_lista, precio_oferta, None,
-        promo_tipo, promo_txt_regular, promo_txt_desc, promo_comentarios
+        None, precio_efectivo_txt, None, None
     ))
 
 # ===================== Main =====================
@@ -472,11 +538,14 @@ def main():
         print(f"💾 Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOMBRE} ({capturado_en})")
 
     except MySQLError as e:
-        if conn: conn.rollback()
+        if conn:
+            conn.rollback()
         print(f"❌ Error MySQL: {e}")
+
     finally:
         try:
-            if conn: conn.close()
+            if conn:
+                conn.close()
         except Exception:
             pass
 

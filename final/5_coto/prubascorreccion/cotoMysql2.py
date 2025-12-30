@@ -163,6 +163,18 @@ def extract_records_tree(root) -> List[dict]:
     walk(root)
     return found
 
+# --------- NUEVO: selector robusto de precios ----------
+def pick_price_as_text(val) -> str:
+    """Devuelve string numérico (no formatea) a partir de lo que venga (str/float/int)."""
+    if val is None:
+        return ""
+    n = parse_price(val)
+    if isinstance(n, float) and not np.isnan(n):
+        # lo devolvemos sin forzar 2 decimales acá; se normaliza al guardar histórico
+        return str(n)
+    s = str(val).strip()
+    return s
+
 def parse_record(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Construye el dict del producto desde un 'record' Endeca."""
     if not isinstance(rec, dict) or "attributes" not in rec:
@@ -187,17 +199,19 @@ def parse_record(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     else:
         ean = str(ean_any or "").strip()
 
-    # ---- Precios ----
+    # ---- Precios (Coto) ----
+    # ✅ precio_lista como estaba antes: dtoPrice.precioLista
     precio_lista = ""
-    precio_final = ""
-
     if isinstance(dto_price, dict):
         precio_lista = dto_price.get("precioLista", "")
 
-    # Si hay promo, tomar precioDescuento (unitario) limpiando con parse_price
+    # ✅ precio_oferta: lo que se ve en la web (prioridad activePrice; si hay promo, precioDescuento)
+    sku_active_price = get_attr(attrs, "sku.activePrice", "")
+    precio_oferta = pick_price_as_text(sku_active_price) if sku_active_price else ""
+
     promo_tipo = ""
-    precio_regular_promo = ""
-    precio_descuento = ""
+    precio_regular_promo = ""   # texto sin "Precio Contado:"
+    precio_descuento = ""       # numérico string
     comentarios_promo = ""
 
     if isinstance(dto_desc, list) and dto_desc:
@@ -207,22 +221,22 @@ def parse_record(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         d0 = (dto_desc[0] or {})
 
         # Texto de referencia del precio regular (como viene en el JSON)
-        precio_regular_promo = str(d0.get("textoPrecioRegular", "")).replace("Precio Contado:", "").strip()
+        texto_regular = str(d0.get("textoPrecioRegular", "")).strip()   # "Precio Contado: $6859"
+        precio_regular_promo = texto_regular.replace("Precio Contado:", "").strip()
 
-        # EJ: "$2272.50c/u" -> 2272.5
+        # Si hay promo, preferimos precioDescuento por encima de activePrice (por si difiere)
         raw_desc = d0.get("precioDescuento", "")
-        precio_desc_num = parse_price(raw_desc)
-        if isinstance(precio_desc_num, float) and not np.isnan(precio_desc_num):
-            precio_descuento = f"{round(precio_desc_num, 2)}"
-            precio_final = precio_descuento  # prioridad al unitario con descuento
-        else:
-            # fallback si no se puede parsear
-            precio_final = dto_price.get("precio", "") if isinstance(dto_price, dict) else ""
+        desc_num = parse_price(raw_desc)
+        if isinstance(desc_num, float) and not np.isnan(desc_num):
+            precio_descuento = f"{round(desc_num, 2)}"
+            precio_oferta = precio_descuento  # ✅ oferta = descuento
 
         comentarios_promo = str(d0.get("comentarios", "")).strip()
-    else:
-        # sin promo: usar precio de dtoPrice
-        precio_final = dto_price.get("precio", "") if isinstance(dto_price, dict) else ""
+
+    # Fallback final si no quedó nada
+    if not precio_oferta and isinstance(dto_price, dict):
+        # ojo: dtoPrice.precio a veces es el "precio referencia" raro, pero lo dejamos como último recurso
+        precio_oferta = pick_price_as_text(dto_price.get("precio"))
 
     fabricante = extract_fabricante(dto_caract)
     categoria, subcategoria = best_category(attrs)
@@ -234,13 +248,17 @@ def parse_record(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "nombre":     clean(get_any(attrs, ["product.displayName", "product.description"])),
         "marca":      clean(get_any(attrs, ["product.brand", "product.MARCA"])),
         "fabricante": clean(fabricante),
+
         "precio_lista":   clean(precio_lista),
-        "precio_oferta":  clean(precio_final),   # ahora: unitario del descuento, limpio
+        "precio_oferta":  clean(precio_oferta),
+
         "tipo_oferta":    clean(get_any(attrs, ["product.tipoOferta", "product.TipoOferta"])),
+
         "promo_tipo":     clean(promo_tipo),
-        "precio_regular_promo": clean(precio_regular_promo),   # texto sin "Precio Contado:"
-        "precio_descuento":     clean(precio_descuento),       # numérico como texto (ej: "2272.5")
+        "precio_regular_promo": clean(precio_regular_promo),
+        "precio_descuento":     clean(precio_descuento),
         "comentarios_promo":    clean(comentarios_promo),
+
         "categoria":    clean(categoria),
         "subcategoria": clean(subcategoria),
         "url":          clean(build_product_url(attrs, rec)),
@@ -250,6 +268,7 @@ def parse_record(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if p["sku"] or p["record_id"] or p["precio_lista"] or p["precio_oferta"]:
         return p
     return None
+
 
 
 def fetch_json(params: Dict[str, str]) -> Dict[str, Any]:
@@ -362,7 +381,7 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
         """, (tienda_id, producto_id, rec, url, nombre_tienda))
         return cur.lastrowid
 
-    # Último recurso (sin llaves naturales) - no hay ON DUPLICATE posible
+    # Último recurso (sin llaves naturales)
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
@@ -370,11 +389,14 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
     return cur.lastrowid
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
-    def to_txt_or_none(x):
+    def to_varchar_2dec(x):
+        if x is None:
+            return None
         v = parse_price(x)
-        if x is None: return None
-        if isinstance(v, float) and np.isnan(v): return None
-        return f"{round(float(v), 2)}"  # guardamos como VARCHAR
+        if isinstance(v, float) and np.isnan(v):
+            return None
+        # ✅ SIEMPRE "5399.00"
+        return f"{float(v):.2f}"
 
     cur.execute("""
         INSERT INTO historico_precios
@@ -392,9 +414,12 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
           promo_comentarios = VALUES(promo_comentarios)
     """, (
         tienda_id, producto_tienda_id, capturado_en,
-        to_txt_or_none(p.get("precio_lista")), to_txt_or_none(p.get("precio_oferta")),
-        p.get("tipo_oferta") or None, p.get("promo_tipo") or None,
-        p.get("precio_regular_promo") or None, p.get("precio_descuento") or None,
+        to_varchar_2dec(p.get("precio_lista")),
+        to_varchar_2dec(p.get("precio_oferta")),
+        p.get("tipo_oferta") or None,
+        p.get("promo_tipo") or None,
+        p.get("precio_regular_promo") or None,
+        p.get("precio_descuento") or None,
         p.get("comentarios_promo") or None
     ))
 
@@ -465,9 +490,6 @@ def main():
 
         insertados = 0
         for p in productos:
-            # Logs mínimos para diagnóstico
-            # print(f"→ PT upsert sku={p.get('sku')} rec={p.get('record_id')} url={p.get('url')}")
-            # print(f"→ HIST precios: lista={p.get('precio_lista')} oferta={p.get('precio_oferta')} tipo={p.get('tipo_oferta')}")
             producto_id = find_or_create_producto(cur, p)
             pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
             insert_historico(cur, tienda_id, pt_id, p, capturado_en)

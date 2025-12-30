@@ -288,3 +288,11 @@ ALTER TABLE historico_precios
 
 
 CREATE INDEX idx_hist_tienda ON historico_precios (tienda_id);
+
+
+ALTER TABLE `scrap`.`productos`
+ADD COLUMN `ean_auxiliar` VARCHAR(45) NULL DEFAULT NULL AFTER `subcategoria`;
+
+
+ALTER TABLE historico_precios
+ADD INDEX idx_tienda_id (tienda_id);

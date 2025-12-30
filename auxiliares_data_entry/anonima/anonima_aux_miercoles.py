@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import time
 import re
 import pandas as pd
@@ -26,6 +29,10 @@ if "PRECIO_LISTA" not in df.columns:
 
 if "PRECIO_OFERTA" not in df.columns:
     df["PRECIO_OFERTA"] = None
+
+# NUEVO: columna para nombre en tienda
+if "NOMBRE_EN_TIENDA" not in df.columns:
+    df["NOMBRE_EN_TIENDA"] = None
 
 # ========= CONFIGURAR SELENIUM (CHROME HEADLESS) =========
 chrome_options = webdriver.ChromeOptions()
@@ -62,7 +69,7 @@ def limpiar_precio(texto_raw: str):
 
     # Formato latino: coma decimal
     if "," in texto:
-        partes = texto.split(",")
+        partes = texto.split(",", 1)
         entero = partes[0].replace(".", "")  # quita puntos de miles
         decimales = partes[1]
         numero_str = f"{entero}.{decimales}"
@@ -85,6 +92,7 @@ for i, url in enumerate(df["URLs"]):
         print("   → URL vacía, se dejan precios en None")
         df.at[i, "PRECIO_LISTA"] = None
         df.at[i, "PRECIO_OFERTA"] = None
+        df.at[i, "NOMBRE_EN_TIENDA"] = None
         continue
 
     try:
@@ -96,6 +104,17 @@ for i, url in enumerate(df["URLs"]):
                 (By.CSS_SELECTOR, "div.precio, div.precio.plus")
             )
         )
+
+        # ===== NOMBRE EN TIENDA (NUEVO) =====
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "h1.titulo")))
+            nombre_en_tienda = driver.find_element(By.CSS_SELECTOR, "h1.titulo").text.strip()
+            print(f"   → nombre_en_tienda: {nombre_en_tienda}")
+        except (TimeoutException, NoSuchElementException):
+            nombre_en_tienda = None
+            print("   [WARN] No se encontró h1.titulo (nombre_en_tienda).")
+
+        df.at[i, "NOMBRE_EN_TIENDA"] = nombre_en_tienda
 
         precio_lista = None
         precio_oferta = None
@@ -155,10 +174,12 @@ for i, url in enumerate(df["URLs"]):
         print("   [WARN] No se encontró ningún bloque de precio a tiempo.")
         df.at[i, "PRECIO_LISTA"] = None
         df.at[i, "PRECIO_OFERTA"] = None
+        df.at[i, "NOMBRE_EN_TIENDA"] = None
     except Exception as e:
         print(f"   [ERROR] {e}")
         df.at[i, "PRECIO_LISTA"] = None
         df.at[i, "PRECIO_OFERTA"] = None
+        df.at[i, "NOMBRE_EN_TIENDA"] = None
 
     time.sleep(0.5)
 

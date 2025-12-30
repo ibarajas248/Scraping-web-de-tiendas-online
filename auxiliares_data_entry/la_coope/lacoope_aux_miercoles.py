@@ -30,6 +30,14 @@ if "PRECIO_LISTA" not in df.columns:
 if "PRECIO_OFERTA" not in df.columns:
     df["PRECIO_OFERTA"] = None
 
+# ✅ NUEVA COLUMNA
+if "nombre_en_tienda" not in df.columns:
+    df["nombre_en_tienda"] = None
+
+# ✅ NUEVA COLUMNA (SKU)
+if "sku" not in df.columns:
+    df["sku"] = None
+
 # ========= CONFIGURAR SELENIUM (CHROME HEADLESS) =========
 chrome_options = webdriver.ChromeOptions()
 chrome_options.add_argument("--headless=new")
@@ -85,10 +93,42 @@ for i, url in enumerate(df["URLs"]):
     if not isinstance(url, str) or not url.strip():
         df.at[i, "PRECIO_LISTA"] = None
         df.at[i, "PRECIO_OFERTA"] = None
+        df.at[i, "nombre_en_tienda"] = None
+        df.at[i, "sku"] = None
         continue
 
     try:
         driver.get(url)
+
+        # ✅ Buscar NOMBRE EN TIENDA (h1.articulo-detalle-titulo)
+        nombre_en_tienda = None
+        try:
+            h1_el = wait.until(
+                EC.presence_of_element_located((
+                    By.CSS_SELECTOR,
+                    "h1.articulo-detalle-titulo"
+                ))
+            )
+            nombre_en_tienda = h1_el.text.strip()
+        except TimeoutException:
+            nombre_en_tienda = None
+        except NoSuchElementException:
+            nombre_en_tienda = None
+
+        # ✅ Buscar SKU (Código del producto) -> div.articulo-codigo span
+        sku = None
+        try:
+            sku_el = wait.until(
+                EC.presence_of_element_located((
+                    By.CSS_SELECTOR,
+                    "div.articulo-codigo span"
+                ))
+            )
+            sku = sku_el.text.strip()
+        except TimeoutException:
+            sku = None
+        except NoSuchElementException:
+            sku = None
 
         # -------- Buscar precio TACHADO (base) --------
         precio_lista_raw = None
@@ -120,9 +160,13 @@ for i, url in enumerate(df["URLs"]):
             precio_lista = limpiar_precio(precio_actual_raw)
             precio_oferta = None
 
+        print(f"   → nombre_en_tienda: {nombre_en_tienda}")
+        print(f"   → sku: {sku}")
         print(f"   → bruto_lista: {precio_lista_raw}  bruto_oferta: {precio_actual_raw}")
         print(f"   → PRECIO_LISTA: {precio_lista}  PRECIO_OFERTA: {precio_oferta}")
 
+        df.at[i, "nombre_en_tienda"] = nombre_en_tienda
+        df.at[i, "sku"] = sku
         df.at[i, "PRECIO_LISTA"] = precio_lista
         df.at[i, "PRECIO_OFERTA"] = precio_oferta
 
@@ -130,14 +174,27 @@ for i, url in enumerate(df["URLs"]):
         print("   [WARN] No se encontró el precio base.")
         df.at[i, "PRECIO_LISTA"] = None
         df.at[i, "PRECIO_OFERTA"] = None
+        # nombre_en_tienda podría haber quedado, pero por consistencia:
+        if pd.isna(df.at[i, "nombre_en_tienda"]):
+            df.at[i, "nombre_en_tienda"] = None
+        if pd.isna(df.at[i, "sku"]):
+            df.at[i, "sku"] = None
     except NoSuchElementException:
         print("   [WARN] No existe el nodo del precio.")
         df.at[i, "PRECIO_LISTA"] = None
         df.at[i, "PRECIO_OFERTA"] = None
+        if pd.isna(df.at[i, "nombre_en_tienda"]):
+            df.at[i, "nombre_en_tienda"] = None
+        if pd.isna(df.at[i, "sku"]):
+            df.at[i, "sku"] = None
     except Exception as e:
         print(f"   [ERROR] {e}")
         df.at[i, "PRECIO_LISTA"] = None
         df.at[i, "PRECIO_OFERTA"] = None
+        if pd.isna(df.at[i, "nombre_en_tienda"]):
+            df.at[i, "nombre_en_tienda"] = None
+        if pd.isna(df.at[i, "sku"]):
+            df.at[i, "sku"] = None
 
     time.sleep(0.5)
 

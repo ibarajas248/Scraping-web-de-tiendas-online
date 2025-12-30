@@ -142,7 +142,7 @@ def scrape_pagina(driver, url: str, idx: int = 0):
 # ---------- Main ----------
 
 def main(
-    input_path: str = "disco_aux_viernescaba.xlsx",
+    input_path: str = "disco_aux_cordoba_viernes.xlsx",
     output_path: str = "disco_aux_vieres_actualizado.xlsx",
     col_url: str = "URLs",
 ):
