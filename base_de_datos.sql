@@ -296,3 +296,6 @@ ADD COLUMN `ean_auxiliar` VARCHAR(45) NULL DEFAULT NULL AFTER `subcategoria`;
 
 ALTER TABLE historico_precios
 ADD INDEX idx_tienda_id (tienda_id);
+
+ALTER TABLE productos
+  ADD INDEX idx_productos_ean_aux (ean_auxiliar);

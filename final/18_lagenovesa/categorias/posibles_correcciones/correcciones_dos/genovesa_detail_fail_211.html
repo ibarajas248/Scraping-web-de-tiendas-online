@@ -1,0 +1,235 @@
+<html lang="es"><head>
+    <meta charset="utf-8">
+    <script src="/js/site.js?v=8ayCtDQZHmH6UxwY45azmCU1RfRtAtq89qlGzLF5fd8"></script>
+    <link rel="manifest" href="/Manifest">
+    <!-- CODELAB: Add iOS meta tags and icons -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="white">
+    <meta name="apple-mobile-web-app-title" content="La Genovesa - Supermercados de la Zona Sur de GBA">
+    <link rel="apple-touch-icon" href="/Images/Logos/Favicon.png">
+    <meta name="description" content="La Genovesa - Supermercados de la Zona Sur de GBA">
+    <meta name="theme-color" content="#FFFFFF">
+
+    <!-- Allow web app to be run in full-screen mode - Android. -->
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>La Genovesa - Supermercados de la Zona Sur de GBA</title>
+            <link rel="shortcut icon" href="/Images/Logos/Favicon.png" type="image/x-icon">
+
+    <!-- CSS -->
+
+    
+        <link rel="stylesheet" href="/css/select2.css">
+        <link rel="stylesheet" href="/css/select2-bootstrap.css">
+        <link rel="stylesheet" href="/css/bootstrap.min.css">
+        <link rel="stylesheet" href="/css/site.css">
+        <link href="/css/site_Escritorio.css" rel="stylesheet">
+        <link rel="stylesheet" href="/css/animation.css">
+    
+
+
+    <!-- JSs -->
+
+    
+    
+        <script src="/lib/jquery/dist/jquery.min.js"></script>
+        <script src="/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="/js/select2.full.min.js"></script>
+    
+
+
+</head>
+<body style="height:100vh">
+    <div style=" background-color:;">
+        
+
+
+        <main role="main" style="overflow-x: hidden; overflow-y:auto; height: 100vh ">
+            
+<div class="card-body text-center col-12">
+    <div class="text-center col card-body">
+                <img src="/Images/Logos/Logo.png" alt="" width="200" height="100" algin="center">
+    </div>
+    <div class="text-center row card-body">
+            <svg class="mr-auto ml-auto" viewBox="">
+                <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="50px" y="50px" width:100="" height:100="" viewBox="0 0 1500 1500" style="enable-background:new 0 0 1500 1500;" xml:space="preserve" class="text-center">
+                <path style="fill:#E04F5F;" d="M496.158,248.085c0-137.021-111.07-248.082-248.076-248.082C111.07,0.003,0,111.063,0,248.085
+                         c0,137.002,111.07,248.07,248.082,248.07C385.088,496.155,496.158,385.087,496.158,248.085z"></path>
+                <path style="fill:#FFFFFF;" d="M277.042,248.082l72.528-84.196c7.91-9.182,6.876-23.041-2.31-30.951
+                         c-9.172-7.904-23.032-6.876-30.947,2.306l-68.236,79.212l-68.229-79.212c-7.91-9.188-21.771-10.216-30.954-2.306
+                         c-9.186,7.91-10.214,21.77-2.304,30.951l72.522,84.196l-72.522,84.192c-7.91,9.182-6.882,23.041,2.304,30.951
+                         c4.143,3.569,9.241,5.318,14.316,5.318c6.161,0,12.294-2.586,16.638-7.624l68.229-79.212l68.236,79.212
+                         c4.338,5.041,10.47,7.624,16.637,7.624c5.069,0,10.168-1.749,14.311-5.318c9.186-7.91,10.22-21.77,2.31-30.951L277.042,248.082z"></path>
+                </svg>
+            </svg>
+    </div>
+    <div class="text-center col card-body">
+           <h1 class="text-center">
+                    Disculpe, se ha producido un error.
+            </h1>
+            <p class="text-center">Intente nuevamente más tarde.</p>
+    </div>
+</div>
+         
+
+
+        </main>
+    </div>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => {
+                        console.log('Registration succeeded. Scope is ' + reg.scope);
+                    })
+                    .catch(registrationError => {
+                        console.log('SW registration failed: ', registrationError);
+                    });
+            });
+        }
+    </script>
+
+
+    <script type="text/javascript">
+        $(document).ready(function () {
+            /*Cada 3 minutos hace la peticion y mantiene la sesion viva.*/
+            setInterval(refreshSession, 120000);
+        });
+
+
+        function refreshSession() {
+            $.ajax({
+                method: "GET",
+                url: 'Home/?handler=RefreshSession',
+                beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                timeout: 10000,
+                success: function () { }
+            });
+        }
+    </script>
+
+
+
+    
+<div class="modal" tabindex="-1" role="dialog" id="loginInvitado">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Ingresar Datos</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+            <div class="modal-body d-flex justify-content-center">
+
+                <div class="col-10">
+                    <div class="row">
+                        <div class="col-12">
+                            <input type="text" name="UserName" id="UserName" class="form-control col-12" placeholder="Usuario">
+                            <span class="text-danger col-12" id="validationUserName"></span>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-12">
+                            <input type="password" name="Password" id="Password" class="form-control col-12" placeholder="Contraseña">
+                            <span class="text-danger col-12" id="validationPassword"></span>
+                        </div>
+                        <span class="col-12 text-danger mb-4" id="msgerror"></span>
+                    </div>
+                    <div class="row">
+                        <div class="col-7">
+                            <a style="color:black;" class="float-left" href="/ResetPassword">¿Olvidaste tu contraseña?</a>
+                        </div>
+                        <div class="col-5">
+                            <button type="button" style="background-color:#2F658C;color:#FFFFFF" class="btn btn-warning float-right" id="btnLogin">Ingresar</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer">
+                <div class="d-flex justify-content-center col-12">
+                    <div class="col-6 d-flex align-items-center justify-content-end">
+                        <span class="float-right">¿Nuevo Cliente?</span>
+                    </div>
+                    <div class="col-6 d-flex align-items-center justify-content-start">
+                        <a type="button" style="background-color:#2F658C;color:#FFFFFF" class="btn btn-warning" href="/Register">Registrarse</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $('.openModalInvitado').click(function () {
+        $('#loginInvitado').modal("show");
+    });
+
+    $('#loginInvitado').on('keypress', function (e) {
+        
+        let keycode = (e.keyCode ? e.keyCode : e.which);
+        if (keycode == 13) 
+        {
+            $('#btnLogin').click(); 
+        }
+        
+    });
+
+    $('#btnLogin').click(function () {
+        $(this).prop('disabled', true);
+        $(this).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Cargando');
+        let userName = $('#UserName').val();
+        let password = $('#Password').val();
+        let isValid = true;
+        $('#validationUserName').text('');
+        $('#validationPassword').text('');
+        $('#msgerror').text('');
+
+        if (!userName || userName.length == 0) {
+            $('#validationUserName').text('Ingrese el usuario.');
+            isValid = false;
+        }
+        if (!password || password.length == 0) {
+            $('#validationPassword').text('Ingrese la clave.');
+            isValid = false;
+        }
+
+        if (!isValid) {
+            $(this).html('Ingresar');
+            $(this).prop('disabled', false);
+            return;
+        }
+        login(userName, password);
+
+    });
+
+    function login(usr, pass) {
+
+        $.ajax({
+            data: { "user": usr, "pass": pass, "currentpage": location.href },
+            type: "POST",
+            dataType: "json",
+            beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+            url: "Login/?handler=LoginModal",
+            timeout: 10000,
+            success(data) {
+                $('#btnLogin').html('Ingresar');
+                $('#btnLogin').prop('disabled', false);
+                if (data.status == 0 || data.status == 1) {
+                    location.href = data.page;
+                } else {
+                    $('#msgerror').text(data.msg);
+                }
+            },
+            error(data) {
+                $('#btnLogin').html('Ingresar');
+                $('#btnLogin').prop('disabled', false);
+                $('#msgerror').text('Ocurrió un error.Intente nuevamente.');
+            }
+        });
+    }
+</script>
+
+</body></html>

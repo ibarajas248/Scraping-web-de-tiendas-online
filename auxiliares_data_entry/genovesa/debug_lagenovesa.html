@@ -1,0 +1,2063 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <script src="/js/site.js?v=8ayCtDQZHmH6UxwY45azmCU1RfRtAtq89qlGzLF5fd8"></script>
+    <link rel="manifest" href="/Manifest">
+    <!-- CODELAB: Add iOS meta tags and icons -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="white">
+    <meta name="apple-mobile-web-app-title" content="La Genovesa - Supermercados de la Zona Sur de GBA">
+    <link rel="apple-touch-icon" href="/Images/Logos/Favicon.png">
+    <meta name="description" content="La Genovesa - Supermercados de la Zona Sur de GBA">
+    <meta name="theme-color" content="#FFFFFF" />
+
+    <!-- Allow web app to be run in full-screen mode - Android. -->
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>La Genovesa - Supermercados de la Zona Sur de GBA</title>
+            <link rel="shortcut icon" href="/Images/Logos/Favicon.png" type="image/x-icon">
+
+    <!-- CSS -->
+
+    
+        <link rel="stylesheet" href="/css/select2.css">
+        <link rel="stylesheet" href="/css/select2-bootstrap.css">
+        <link rel="stylesheet" href="/css/bootstrap.min.css" />
+        <link rel="stylesheet" href="/css/site.css" />
+        <link href="/css/site_Escritorio.css" rel="stylesheet" />
+        <link rel="stylesheet" href="/css/animation.css" />
+    
+
+
+    <!-- JSs -->
+
+    
+    
+        <script src="/lib/jquery/dist/jquery.min.js"></script>
+        <script src="/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="/js/select2.full.min.js"></script>
+    
+
+
+</head>
+<body style="height:100vh">
+    <div style=" background-color:;">
+        
+
+
+        <main role="main" style="overflow-x: hidden; overflow-y:auto; height: 100vh ">
+            
+<style>
+
+    .botonPersonalizado {
+        background-color: #154B7A;
+        border: none;
+        text-align: center;
+        color: #FFFFFF;
+        font-family: "Poppins";
+        padding: 15px 0px;
+        text-decoration: none;
+    }
+
+    .botonPersonalizado:hover {
+        color: #FFFFFF;
+    }
+
+
+    #rcorners {
+        border-radius: 25px;
+        background: #E20007;
+    }
+
+    @media screen and (max-width: 374px) {
+        .imagenCampania {
+            border-radius: 5px;
+            height: 70px;
+        }
+
+        .textoCampania {
+            font-size: 1.0rem;
+        }
+
+        .textoNuevosIngresos {
+            font-size: 0.8rem;
+        }
+
+        .botonPersonalizado {
+            font-size: 10px;
+            letter-spacing: 1px;
+            height: 42px;
+        }
+    }
+
+    @media screen and (max-width: 413px) and (min-width: 375px) {
+        .imagenCampania {
+            border-radius: 5px;
+            height: 75px;
+        }
+
+        .textoCampania {
+            font-size: 1.2rem;
+        }
+        .textoNuevosIngresos {
+            font-size: 1.0rem;
+        }
+
+        .botonPersonalizado {
+            font-size: 13px;
+            letter-spacing: 1px;
+            height: 47px;
+        }
+    }
+
+    @media screen and (max-width: 600px) and (min-width: 414px) {
+        .imagenCampania {
+            border-radius: 5px;
+            height: 95px;
+        }
+
+        .textoCampania {
+            font-size: 1.4rem;
+        }
+
+        .textoNuevosIngresos {
+            font-size: 1.2rem;
+        }
+
+        .botonPersonalizado {
+            font-size: 14px;
+            letter-spacing: 1px;
+            height: 46px;
+        }
+    }
+
+    @media screen and (min-width: 601px) {
+        .imagenCampania {
+            border-radius: 5px;
+            height: 120px;
+        }
+
+        .textoCampania{
+            font-size: 1.6rem;
+        }
+
+        .textoNuevosIngresos {
+            font-size: 1.4rem;
+        }
+
+        .botonPersonalizado {
+            font-size: 18px;
+            letter-spacing: 2px;
+            height: 57px;
+            border-radius: 12px;
+        }
+
+    }
+
+    @media only screen and (min-width: 768px) {
+        .imagenCampania {
+            border-radius: 5px;
+            height: 150px;
+        }
+
+        .textoCampania {
+            font-size: 1.6rem;
+        }
+
+        .textoNuevosIngresos {
+            font-size: 1.4rem;
+        }
+
+        .botonPersonalizado {
+            font-size: 27px;
+            letter-spacing: 2px;
+            height: 69px;
+        }
+    }
+
+    @media only screen and (min-width: 992px) {
+        .imagenCampania {
+            border-radius: 15px;
+            height: 200px;
+        }
+
+        .textoCampania {
+            font-size: 1.8rem;
+        }
+
+        .textoNuevosIngresos {
+            font-size: 1.6rem;
+        }
+
+        .botonPersonalizado {
+            font-size: 36px;
+            letter-spacing: 3px;
+            height: 80px;
+            border-radius: 25px;
+        }
+    }
+
+    @media only screen and (min-width: 1200px) {
+        .imagenCampania {
+            border-radius: 25px;
+            height: 230px;
+        }
+    }
+
+</style>
+
+<div>
+<style>
+    .buttonRegistrarseEscritorio {
+        background-color: #2F658C;
+        color: #FFFFFF;
+        padding: 13px 9px;
+        text-align: center;
+        display: inline-block;
+        border-radius: 6px;
+        border: 1px solid #ECEBEB;
+        font-size: 12px;
+        font-family: Roboto;
+        font-weight: bold;
+        transition: color 0.5s;
+    }
+
+    .buttonRegistrarseEscritorio:hover {
+        color:  #009FE3;
+    }
+
+
+    .buttonRegistrarseMobile {
+        background-color: #2F658C;
+        color: #FFFFFF;
+        padding: 6px 6px;
+        text-align: center;
+        display: inline-block;
+        border-radius: 4px;
+        border: 1px solid #ECEBEB;
+        font-size: 10px;
+        font-family: Roboto;
+        font-weight: bold;
+        transition: color 0.5s;
+    }
+
+    .buttonRegistrarseEscritorio:hover {
+        color:  #009FE3;
+    }
+
+</style>
+<header>
+<nav id="navBarPrincipal" class="navbar navbar-light col-12" style="background-color:#2F658C;">
+    <button class="navbar-toggler" type="button" data-toggle="dropdown" data-target="#dropDownMenu" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+    <a style="margin-left:20px;cursor:pointer;" href="/Home"><i class="fas fa-home" style="color:white; font-size:20px"></i></a>
+    <div class="mr-auto" id="dropDownMenu">
+        <ul class="dropdown-menu animated fadeIn" style="background-color:#6E6E6E;">
+            <li class="dropdown-item itemsMenuPrincipal">
+                <div class="col-12">
+                    <div class="row">
+                        
+                        <div class="col-10">
+                            <span class="headMenuPrincipal" style="color:#FFFFFF" ;>
+                                    <span>
+                                        Usuario Invitado
+                                    </span> <br />
+
+                            </span>
+
+                        </div>
+                    </div>
+                </div>
+
+            </li>
+                <li class="dropdown-divider dividerMenuPrincipal"></li>
+                <li>
+                    <a href="javascript: void(0);"  class="dropdown-item itemsMenuPrincipal openModalInvitado" style="color:#FFFFFF;">Ingresar</a>
+                </li>
+                            <li class="dropdown-divider dividerMenuPrincipal"></li>
+                <li>
+                    <a class="dropdown-item itemsMenuPrincipal" style="color:#FFFFFF;" href="/Register">Registrarse</a>
+                </li>
+                            <li class="dropdown-divider dividerMenuPrincipal"></li>
+                <li>
+                    <a class="dropdown-item itemsMenuPrincipal" style="color:#FFFFFF;" href="/ResetPassword">¿Olvidaste tu contraseña?</a>
+                </li>
+
+            
+
+                            <li class="dropdown-divider dividerMenuPrincipal"></li>
+                <li>
+                    <a class="dropdown-item itemsMenuPrincipal" style="color:#FFFFFF;" href="/Departamentos">Productos</a>
+                </li>
+
+            
+            
+            
+                            <li class="dropdown-divider dividerMenuPrincipal"></li>
+                <li>
+                    <a class="dropdown-item itemsMenuPrincipal" style="color:#FFFFFF;" href="/HorarioEntrega">Horarios de Entrega</a>
+                </li>
+
+            <li class="dropdown-divider dividerMenuPrincipal"></li>
+            
+            
+
+
+                <li>
+                    <div class="d-flex flex-row flex-nowrap m-0 pt-2 pb-2 text-center" style="overflow-x:auto; overflow-y:hidden;white-space:nowrap; ">
+                            <div class="col p-0 m-0 text-right">
+                                <a href="/ContactoEmpresa">
+                                    <div><i class="fas fa-info-circle" style="font-size:25px; color:#FFFFFF; text-decoration:none;"></i></div>
+
+                                </a>
+                            </div>                                 <div class="col p-0 m-0 text-left" onclick="window.open(' https://api.whatsapp.com/send?phone=5491154778308 ')"><i class="fab fa-whatsapp" style="color:#FFFFFF;;font-size:25px"></i></div>                     </div>
+                </li>
+        </ul>
+    </div>
+
+    <a class="nav-item d-sm-block d-md-none d-xxl-none" style="margin-inline-end:auto; margin-right:auto;">
+        <img class="logoNavBar" src="/Images/Logos/LogoNav.png" />
+    </a>
+    <div class="navbar-right form-inline d-sm-flex d-md-none d-xxl-none">
+        <img src="/Imagenes/Icons/busqueda.svg" class="spaceIconRigth" height="20" width="20" alt="" style="cursor:pointer;" data-toggle="modal" data-target="#exampleModalBusqueda">
+
+            <a href="/LectorQR"><img src="/Imagenes/Icons/scanner.svg" class="spaceIconRigth" height="30" width="30" alt="" style="cursor:pointer;" /></a>
+            <a class="imgCarrito" href="/Carrito"><img id="imgCarrito" src="/Imagenes/Icons/carrito.svg" height="30" width="30" alt="" style="cursor:pointer;" /></a>
+            <a class="imgCarritoPunto d-none" href="/Carrito"><img id="imgCarritoPunto" src=/Images/PedidoEnCurso.png height="30" width="30" alt="" style="cursor:pointer;" /></a>
+    </div>
+    <div class="form-inline col-10 d-none d-md-flex d-xxl-flex">
+        <a class="nav-item col-3" style="margin-inline-end:auto; margin-right:auto;" href="/Home">
+            <img class="logoNavBar" src="/Images/Logos/LogoNav.png" />
+        </a>
+        <div class="navbar-right form-inline col-7">
+            <div class="input-group col-8" style="border-top-left-radius:40px;">
+                <input id="textBuscarEscritorio" type="text" autocomplete="off" class="row form-control col-10" style="border-right-style: none; width: 100%; padding-bottom: 3%; border-bottom-left-radius: 40px; border-top-left-radius: 40px;">
+                <div id="lupaBuscar" class="input-group-append ml-2">
+                    <span class="input-group-text" id="imgSearch" style="background-color:white; border-left-style:none; border-bottom-right-radius: 40px; border-top-right-radius: 40px;"><i class="fas fa-search"></i></span>
+                </div>
+                <div id="ListSearch" class="row col-10 marginSearchEscritorio" style="position: absolute; z-index: 999;">
+                    <div class="row">
+                        <div id="listaCategorias" class="col" style="background-color:white">
+
+                        </div>
+                    </div>
+
+
+
+                    <div class="row">
+                        <div id="listaArticulos" class="col">
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-inline col-3" style="text-align:right; flex-flow:initial;">
+                    <a href="/LectorQR"><img src="/Imagenes/Icons/scanner.svg" class="spaceIconRigth" height="27" width="27" alt="" style="cursor:pointer;" /></a>
+                    <a class="imgCarrito" href="/Carrito"><img id="imgCarrito" src="/Imagenes/Icons/carrito.svg" height="27" width="27" alt="" style="cursor:pointer;" /></a>
+                    <a class="imgCarritoPunto d-none" href="/Carrito"><img id="imgCarritoPunto" src=/Images/PedidoEnCurso.png height="27" width="27" alt="" style="cursor:pointer;" /></a>
+
+            </div>
+        </div>
+    </div>
+
+</nav>
+</header>
+<!-- Modal -->
+<div style="padding-right:0px;" class="modal fade modal-busqueda" id="exampleModalBusqueda" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-body">
+                <div class="container">
+                    <div class="row">
+                        <div class="col" style="padding: 0px;">
+                            <div class="input-group mb-3">
+                                <div class="input-group-prepend">
+                                    <div class="input-group-prepend">
+                                        <span class="input-group-text" id="basic-addon1" style="background-color:#2F658C"><i class="fas fa-search" style="color:white;"></i></span>
+                                    </div>
+                                </div>
+                                <input id="textBuscar" type="text" class="form-control noColorFocus" placeholder="Buscar..." onkeyup="" aria-label="Buscar" aria-describedby="basic-addon1">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col">
+                            <div class="row">
+                                <div id="listaCategoriasMobile" class="col">
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div id="listaArticulosMobile" class="col">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col text-center">
+                            <span id="msjErrorBusqueda" style="color:red;font-family: Roboto;font-size: 14px;font-weight: 400;line-height: 17px;width: 199px;text-align: center;"></span><br />
+                            <button style="margin-top:15px;background-color:#2F658C;color: #FFFFFF;font-family: Roboto;font-size: 14px;font-weight: 400;line-height: 17px;width: 199px;text-align: center;" class="btn" onclick="toProductosFiltradosBusqueda(document.getElementById('textBuscar').value)">Ver todos los resultados</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form action="/Home" method="post"><input name="__RequestVerificationToken" type="hidden" value="CfDJ8KtfdyXuEHFPo_pdreipXE_DF4cG00JhrqtkxWZFWyRcAj_8alpSDtBWyWFYMgHQdCdZ8XE0dFmfKdr_oqaSLuJhrnK4N8WF0lR3orjr95GFG1qxKtv6COTDoIdJcIhSgk_ZSuIs3UhQ_xkIK8yo_-o" /></form>
+<style>
+    @media screen and (max-width: 374px) {
+        .logoNavBar {
+            height: 30px;
+            width: 70px;
+        }
+
+        .marginSearchEscritorio {
+            margin-top: 8%;
+        }
+    }
+
+    @media screen and (max-width: 413px) and (min-width: 375px) {
+        .logoNavBar {
+            height: 50px;
+            width: 115px;
+        }
+
+        .marginSearchEscritorio {
+            margin-top: 9%;
+        }
+    }
+
+    @media screen and (max-width: 600px) and (min-width: 414px) {
+        .logoNavBar {
+            height: 60px;
+            width: 150px;
+        }
+
+        .marginSearchEscritorio {
+            margin-top: 6%;
+        }
+    }
+
+    @media screen and (min-width: 601px) {
+        .logoNavBar {
+            height: 75px;
+            width: 200px;
+            margin-left: -10px;
+        }
+
+        .marginSearchEscritorio {
+            margin-top: 16%;
+        }
+    }
+
+    /* Medium devices (landscape tablets, 768px and up) */
+    @media only screen and (min-width: 768px) {
+        .logoNavBar {
+            height: 75px;
+            width: 200px;
+            margin-left: -10px;
+        }
+
+        .marginSearchEscritorio {
+            margin-top: 14%;
+        }
+    }
+
+    /* Large devices (laptops/desktops, 992px and up) */
+    @media only screen and (min-width: 992px) {
+        .logoNavBar {
+            height: 75px;
+            width: 200px;
+        }
+
+        .marginSearchEscritorio {
+            margin-top: 12%;
+        }
+    }
+
+    /* Extra large devices (large laptops and desktops, 1200px and up) */
+    @media only screen and (min-width: 1200px) {
+        .logoNavBar {
+            height: 75px;
+            width: 200px;
+        }
+
+        .marginSearchEscritorio {
+            margin-top: 10%;
+        }
+    }
+
+    @media only screen and (min-width: 1300px) {
+        .logoNavBar {
+            height: 75px;
+            width: 200px;
+        }
+
+        .marginSearchEscritorio {
+            margin-top: 8%;
+        }
+    }
+
+    @media only screen and (min-width: 1580px) {
+        .logoNavBar {
+            height: 75px;
+            width: 200px;
+        }
+
+        .marginSearchEscritorio {
+            margin-top: 7%;
+        }
+    }
+
+    @media only screen and (min-width: 1700px) {
+        .logoNavBar {
+            height: 75px;
+            width: 200px;
+        }
+
+        .marginSearchEscritorio {
+            margin-top: 6%;
+        }
+    }
+</style>
+
+<script>
+    var expreg = new RegExp("^[0-9a-zA-ZáéíóúàèìòùÀÈÌÒÙÁÉÍÓÚñÑüÜ_\\s]+$");
+
+    $('#exampleModalBusqueda').on('show.bs.modal', function (e) {
+        $('#textBuscar').val("");
+    });
+    $('#exampleModalBusqueda').on('shown.bs.modal', function (e) {
+        $('#textBuscar').focus();
+    });
+    $('#exampleModalBusqueda').on('hide.bs.modal', function (e) {
+        $('#textBuscar').val("");
+    });
+
+    function toProductosFiltradosBusqueda(txtBuscar) {
+        if (txtBuscar.length > 2) {
+                var aBuscar = encodeURI(txtBuscar);
+                location.href = "/ProductosFiltrados?aBuscar=" + aBuscar + "&handler=Busqueda";
+        }
+    }
+    function toProductosFiltradosBusquedaEscritorio(txtBuscar) {
+        consolo.log("toProductosFiltradosBusquedaEscritorio");
+        if (textBuscarEscritorio.length > 2) {
+            var aBuscar = encodeURI(textBuscarEscritorio);
+            location.href = "/ProductosFiltrados?aBuscar=" + aBuscar + "&handler=Busqueda";
+        }
+    }
+
+    function misDomiciliosOpen() {
+        $.ajax({
+            url: 'Home/?handler=GoDom',
+            beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+            method: "post",
+            success() {
+                location.href = "Home";
+            },
+        });
+    };
+
+    function pedidoEnCurso(items) {
+        if (items == 0) {
+            $('.imgCarrito').addClass("d-block");
+            $('.imgCarritoPunto').addClass("d-none");
+            $('.imgCarrito').removeClass("d-none");
+            $('.imgCarritoPunto').removeClass("d-block");
+        }
+        else {
+            $('.imgCarrito').addClass("d-none");
+            $('.imgCarritoPunto').addClass("d-block");
+            $('.imgCarrito').removeClass("d-block");
+            $('.imgCarritoPunto').removeClass("d-none");
+        }
+    }
+
+    function toProductosFiltradosSubFamilia(sFamiliaId, descFamilia) {
+        var sFamiliaID = encodeURI(sFamiliaId);
+        var subFamilia = encodeURI(atob(descFamilia.trim()));
+        location.href = "/ProductosFiltrados?sFamiliaID=" + sFamiliaID + "&subFamilia=" + subFamilia + "&handler=Categoria";
+    }
+
+    function toDetalleArticulo(articuloID, promID, tipo, presID) {
+
+
+        var ArticuloID = encodeURI(articuloID);
+        var PromID = encodeURI(promID);
+        var Tipo = encodeURI(tipo);
+        var ClienteID = encodeURI(-466654);
+        var IDDom = encodeURI(1);
+        var IDPres = encodeURI(presID);
+
+
+        location.href = "/DetalleProducto?Tipo=" + Tipo + "&ArticuloID=" + ArticuloID + "&PromID=" + PromID + "&IDDom=" + IDDom + "&PresID=" + IDPres + "";
+    }
+
+    $(document).ready(function () {
+        var clienteID = 0;
+        if (clienteID != null && clienteID > 0)
+        {
+            pedidoEnCurso(clienteID);
+        }
+    });
+
+    window.onload = function () {
+
+        var ListaCategorias = document.getElementById('listaCategorias');
+        var ListaCategoriasMobile = document.getElementById('listaCategoriasMobile');
+        var ListaArticulos = document.getElementById('listaArticulos');
+        var ListaArticulosMobile = document.getElementById('listaArticulosMobile');
+        var botonBuscar = document.getElementById('lupaBuscar');
+        var txtBuscar = document.getElementById('textBuscar');
+        var timer;
+
+        txtBuscar.onpaste = function (e) {
+            e.preventDefault();
+        }
+
+        //txtBuscar.onkeydown = function (e) {
+        //    if (window.event.altKey || window.event.shiftKey || window.event.ctrlKey || window.event.altLeft) return false;
+        //    else if ((e.keyCode >= 48 && e.keyCode <= 57) || (e.keyCode >= 96 && e.keyCode <= 106) || (e.keyCode >= 65 && e.keyCode <= 90) || e.keyCode == 32 || e.keyCode == 20 || e.keyCode == 8 || e.keyCode == 13) return true;
+        //    else return false;
+        //}
+
+        txtBuscar.onkeyup = function (e) {
+            //if (!(e.keyCode >= 37 && e.keyCode <= 40)) {
+                clearTimeout(timer);
+                timer = setTimeout(function () {
+                if (e.keyCode == '13') {
+                    if (txtBuscar.value.length > 2) {
+                        if (expreg.test(txtBuscar.value)) {
+                            toProductosFiltradosBusqueda(txtBuscar.value);
+                            $('#msjErrorBusqueda').text('');
+                        } else {
+                            $('#msjErrorBusqueda').text('*Solo se permite numero y letras');
+                        }
+                    }
+
+                } else {
+                    var tituloCategoria = true;
+                    var tituloArticulo = true;
+                    ListaArticulosMobile.innerHTML = "";
+                    ListaCategoriasMobile.innerHTML = "";
+
+                    if (txtBuscar.value.length > 2) {
+
+                        if (expreg.test(txtBuscar.value)) {
+                            var oBuscar = "oBuscar=" + document.getElementById('textBuscar').value; //a modo prueba para ver la imagen
+
+                            var sToken = document.getElementsByName("__RequestVerificationToken")[0].value;
+                            $('#msjErrorBusqueda').text('');
+
+                            const http = new XMLHttpRequest()
+                            http.open('POST', 'Home')
+                            http.setRequestHeader("XSRF-TOKEN", sToken);
+                            http.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+                            http.send(oBuscar) // Make sure to stringify
+                            http.onload = function (data) {
+
+                                var json = JSON.parse(data.currentTarget.responseText);
+
+
+                                if (json.data.length > 0) {
+
+                                    for (var i = 0; i < json.data.length; i++) {
+                                    if (json.data[i].categoria == 1) {
+                                            if (tituloCategoria) {
+                                                ListaCategoriasMobile.innerHTML += '<div class="row" style="background-color:white;"><div id="divCategoria" class="col text-left headerTituloArticulosCategorias" ><b>Categorias</b></div></div>' +
+                                                    '<div class="dropdown-divider col-4" style="background-color:white; border-color:#2F658C;margin-left: -15px;"></div>';
+                                            }
+                                            tituloCategoria = false;
+                                            ListaCategoriasMobile.innerHTML += '<div class="row" style="background-color:white;"><a id="articulo_' + json.data[i].articuloID + '" onclick=toProductosFiltradosSubFamilia(' + json.data[i].articuloID + ',"' + btoa(json.data[i].descripcion.trim()) + '") class="col text-left headerCategorias" style="cursor:pointer" name="itemArticulo"> ' + json.data[i].descripcion.trim() + '</a></div>'
+                                        }
+                                        else if (json.data[i].categoria == 0) {
+                                            if (tituloArticulo) {
+                                                ListaArticulosMobile.innerHTML += '<div class="row" style="background-color:white;"><div id="divCategoria" class="col headerTituloArticulosCategorias" style="background-color:white;"><b>Articulos</b></div></div>' +
+                                                    '<div class="row"><div class="dropdown-divider col-4"  style="background-color:white; border-color:#2F658C;"></div></div>';
+
+                                                ListaArticulosMobile.innerHTML += '<div class="row" style="background-color:white;">' +
+                                                    '<div id="scrollListaArticulosMobile" class="col" style="overflow-y:scroll;max-height:40vh;"></div>' +
+                                                    '</div>';
+                                                var scrollListaArticuloMobile = document.getElementById('scrollListaArticulosMobile');
+                                            }
+                                            tituloArticulo = false;
+                                            var attrParameterSrcEsquinero = '/Images/Productos/S/';
+                                            if (json.data[i].tipo == 1 || json.data[i].tipo == 2) {
+
+                                                var attrSrcImgOferta = attrParameterSrcEsquinero + "esquinero-oferta-S.png";
+
+                                                scrollListaArticuloMobile.innerHTML += '<a id="articulo_' + json.data[i].articuloID + '" class="row" onclick=toDetalleArticulo(' + json.data[i].articuloID + ',' + json.data[i].promID + ',' + json.data[i].tipo + ',' + json.data[i].idPres + ') name="itemArticulo" style="cursor:pointer">' +
+                                                    '<div class="col-2 text-left d-inline-flex" style="position:relative;width: 50px;height: 50px;"><img class="headerImgArticulo" style="position:absolute;z-index:0" src="' + json.data[i].imagenArticulo + '"/><img class="headerImgArticulo" style="position:absolute;z-index:5" src="' + attrSrcImgOferta + '"/></div>' +
+                                                    '<div class="col-8 text-left headerDescripcionArticulo"> ' + json.data[i].descripcion + '</div>' +
+                                                    '<div class="col-2 text-left headerLeyenda"> ' + json.data[i].leyenda + '</div>' +
+                                                    '</a> ';
+                                            } else if (json.data[i].tipo == 3) {
+                                                var attrSrcImgDescuento = attrParameterSrcEsquinero + "esquinero-descuento-S.png";
+
+                                                scrollListaArticuloMobile.innerHTML += '<a id="articulo_' + json.data[i].articuloID + '" class="row" onclick=toDetalleArticulo(' + json.data[i].articuloID + ',' + json.data[i].promID + ',' + json.data[i].tipo + ',' + json.data[i].idPres + ') name="itemArticulo" style="cursor:pointer">' +
+                                                    '<div class="col-2 text-left d-inline-flex" style="position:relative;width: 50px;height: 50px;"><img class="headerImgArticulo" style="position:absolute;z-index:0" src="' + json.data[i].imagenArticulo + '"/><img class="headerImgArticulo" style="position:absolute;z-index:5" src="'+ attrSrcImgDescuento + '"/></div>' +
+                                                    '<div class="col-8 text-left headerDescripcionArticulo"> ' + json.data[i].descripcion + '</div>' +
+                                                    '<div class="col-2 text-left headerLeyenda"> ' + json.data[i].leyenda + '</div>' +
+                                                    '</a> ';
+                                            } else {
+                                                scrollListaArticuloMobile.innerHTML += '<a id="articulo_' + json.data[i].articuloID + '" class="row" onclick=toDetalleArticulo(' + json.data[i].articuloID + ',' + json.data[i].promID + ',' + json.data[i].tipo + ',' + json.data[i].idPres + ') name="itemArticulo" style="cursor:pointer">' +
+                                                    '<div class="col-2 text-left"><img class="headerImgArticulo" src="' + json.data[i].imagenArticulo + '"/></div>' +
+                                                    '<div class="col-8 text-left headerDescripcionArticulo"> ' + json.data[i].descripcion + '</div>' +
+                                                    '<div class="col-2 text-left headerLeyenda"> ' + json.data[i].leyenda + '</div>' +
+                                                    '</a> ';
+                                            }
+                                        }
+                                    }
+
+                                    var attrParameterSrc = '/Images/Productos/S/';
+                                    var attrSrcImg = attrParameterSrc + "ImagenNotFound.jpg";
+                                    var attrImgOnError = 'if (true) { $(this).attr("src","' + attrSrcImg + '") }';
+                                    $('.headerImgArticulo').attr('onerror', attrImgOnError);
+                                }
+
+                                else {
+                                    ListaCategoriasMobile.innerHTML = '' +
+                                        '<div class="container" style="margin-top:5px">' +
+                                        '<div class="row">' +
+                                        '<div class="col text-center">' +
+                                        '<span style="font-size: 15px;font-family: Roboto;color:gray">' +
+                                        '<b>¡No se encontraron Articulos!</b>' +
+                                        '</span>' +
+                                        '</div>' +
+                                        '</div>' +
+                                        '<div class="row">' +
+                                        '<div class="col text-center">' +
+                                        '<img style="height:60px;width:60px" src="/Imagenes/Icons/iconfinder_ecommerce-30_4707191.svg"/>' +
+                                        '</div>' +
+                                        '</div>' +
+                                        '</div>';
+                                }
+                            }
+                        } else { $('#msjErrorBusqueda').text('*Solo se permite numero y letras');}
+                    }
+                }
+            }, 500);
+            //}
+        };
+
+        //mobile
+        if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+        }
+        else
+        {
+            botonBuscar.onclick = function (e) {
+                if (textBuscarEscritorio.value.length > 2) {
+                    if (expreg.test(textBuscarEscritorio.value)) {
+                        toProductosFiltradosBusqueda(textBuscarEscritorio.value);
+                        $('#msjErrorBusqueda').text('');
+                    } else {
+                        $('#msjErrorBusqueda').text('*Solo se permite numero y letras');
+                    }
+                }
+            }
+        textBuscarEscritorio.onkeyup = function (e) {
+            clearTimeout(timer);
+
+                timer = setTimeout(function () {
+                if (e.keyCode == '13') {
+                    if (textBuscarEscritorio.value.length > 2) {
+                        if (expreg.test(textBuscarEscritorio.value)) {
+                            toProductosFiltradosBusqueda(textBuscarEscritorio.value);
+                            $('#msjErrorBusqueda').text('');
+                        } else {
+                            $('#msjErrorBusqueda').text('*Solo se permite numero y letras');
+                        }
+                    }
+
+                } else {
+                    var tituloCategoria = true;
+                    var tituloArticulo = true;
+                    ListaArticulos.innerHTML = "";
+                    ListaCategorias.innerHTML = "";
+
+                          //$('#listaCategorias').toggleClass('d-none');
+                          //           $('#listaArticulos').toggleClass('d-none');
+                    if (textBuscarEscritorio.value.length > 2) {
+
+                        if (expreg.test(textBuscarEscritorio.value)) {
+                            var oBuscar = "oBuscar=" + document.getElementById('textBuscarEscritorio').value; //a modo prueba para ver la imagen
+                            var sToken = document.getElementsByName("__RequestVerificationToken")[0].value;
+                            $('#msjErrorBusqueda').text('');
+
+                            const http = new XMLHttpRequest()
+                            http.open('POST', 'Home')
+                            http.setRequestHeader("XSRF-TOKEN", sToken);
+                            http.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+                            http.send(oBuscar) // Make sure to stringify
+                            http.onload = function (data) {
+                                $("#ListSearch").css("background-color", "white");
+
+                                var json = JSON.parse(data.currentTarget.responseText);
+
+                                if (json.data.length > 0) {
+                                 console.log(ListaCategorias.innerHTML);
+                                //if (ListaCategorias.innerHTML == null) {
+
+
+                                //}
+                                    for (var i = 0; i < json.data.length; i++) {
+                                        if (json.data[i].categoria == 1) {
+                                            if (tituloCategoria) {
+                                                ListaCategorias.innerHTML += '<div class="row" style="background-color:white;"><div id="divCategoria" class="col text-left headerTituloArticulosCategorias" ><b>Categorias</b></div></div>' +
+                                                    '<div class="dropdown-divider col-4" style="background-color:white; border-color:#2F658C;margin-left: -15px;"></div>';
+                                            }
+                                            tituloCategoria = false;
+                                            ListaCategorias.innerHTML += '<div class="row" style="background-color:white;"><a id="articulo_' + json.data[i].articuloID + '" onclick=toProductosFiltradosSubFamilia(' + json.data[i].articuloID + ',"' + btoa(json.data[i].descripcion.trim()) + '") class="col text-left headerCategorias" style="cursor:pointer" name="itemArticulo"> ' + json.data[i].descripcion.trim() + '</a></div>'
+                                        }
+                                        else if (json.data[i].categoria == 0) {
+                                            if (tituloArticulo) {
+                                                ListaArticulos.innerHTML += '<div class="row" style="background-color:white;"><div id="divCategoria" class="col headerTituloArticulosCategorias" style="background-color:white;"><b>Articulos</b></div></div>' +
+                                                    '<div class="row"><div class="dropdown-divider col-4"  style="background-color:white; border-color:#2F658C;"></div></div>';
+
+                                                ListaArticulos.innerHTML += '<div class="row" style="background-color:white;">' +
+                                                    '<div id="scrollListaArticulos" class="col" style="overflow-y:scroll;max-height:40vh;"></div>' +
+                                                    '</div>';
+                                                var scrollListaArticulo = document.getElementById('scrollListaArticulos');
+                                            }
+                                            tituloArticulo = false;
+                                            var attrParameterSrcEsquinero = '/Images/Productos/S/';
+                                            if (json.data[i].tipo == 1 || json.data[i].tipo == 2) {
+
+                                                var attrSrcImgOferta = attrParameterSrcEsquinero + "esquinero-oferta-S.png";
+
+                                                scrollListaArticulo.innerHTML += '<a id="articulo_' + json.data[i].articuloID + '" class="row" onclick=toDetalleArticulo(' + json.data[i].articuloID + ',' + json.data[i].promID + ',' + json.data[i].tipo + ',' + json.data[i].idPres +  ') name="itemArticulo" style="cursor:pointer">' +
+                                                    '<div class="col-2 text-left d-inline-flex" style="position:relative;width: 50px;height: 50px;"><img class="headerImgArticulo" style="position:absolute;z-index:0" src="' + json.data[i].imagenArticulo + '"/><img class="headerImgArticulo" style="position:absolute;z-index:5" src="' + attrSrcImgOferta + '"/></div>' +
+                                                    '<div class="col-8 text-left headerDescripcionArticulo"> ' + json.data[i].descripcion + '</div>' +
+                                                    '<div class="col-2 text-left headerLeyenda"> ' + json.data[i].leyenda + '</div>' +
+                                                    '</a> ';
+                                            } else if (json.data[i].tipo == 3) {
+                                                var attrSrcImgDescuento = attrParameterSrcEsquinero + "esquinero-descuento-S.png";
+
+                                                scrollListaArticulo.innerHTML += '<a id="articulo_' + json.data[i].articuloID + '" class="row" onclick=toDetalleArticulo(' + json.data[i].articuloID + ',' + json.data[i].promID + ',' + json.data[i].tipo + ',' + json.data[i].idPres +') name="itemArticulo" style="cursor:pointer">' +
+                                                    '<div class="col-2 text-left d-inline-flex" style="position:relative;width: 50px;height: 50px;"><img class="headerImgArticulo" style="position:absolute;z-index:0" src="' + json.data[i].imagenArticulo + '"/><img class="headerImgArticulo" style="position:absolute;z-index:5" src="'+ attrSrcImgDescuento + '"/></div>' +
+                                                    '<div class="col-8 text-left headerDescripcionArticulo"> ' + json.data[i].descripcion + '</div>' +
+                                                    '<div class="col-2 text-left headerLeyenda"> ' + json.data[i].leyenda + '</div>' +
+                                                    '</a> ';
+                                            } else {
+                                                scrollListaArticulo.innerHTML += '<a id="articulo_' + json.data[i].articuloID + '" class="row" onclick=toDetalleArticulo(' + json.data[i].articuloID + ',' + json.data[i].promID + ',' + json.data[i].tipo + ',' + json.data[i].idPres + ') name="itemArticulo" style="cursor:pointer">' +
+                                                    '<div class="col-2 text-left"><img class="headerImgArticulo" src="' + json.data[i].imagenArticulo + '"/></div>' +
+                                                    '<div class="col-8 text-left headerDescripcionArticulo"> ' + json.data[i].descripcion + '</div>' +
+                                                    '<div class="col-2 text-left headerLeyenda"> ' + json.data[i].leyenda + '</div>' +
+                                                    '</a> ';
+                                            }
+                                        }
+                                    }
+
+                                    var attrParameterSrc = '/Images/Productos/S/';
+                                    var attrSrcImg = attrParameterSrc + "ImagenNotFound.jpg";
+                                    var attrImgOnError = 'if (true) { $(this).attr("src","' + attrSrcImg + '") }';
+                                    $('.headerImgArticulo').attr('onerror', attrImgOnError);
+                                }
+                                else {
+                                    ListaCategorias.innerHTML = '' +
+                                        '<div class="container" style="margin-top:5px">' +
+                                        '<div class="row">' +
+                                        '<div class="col text-center">' +
+                                        '<span style="font-size: 15px;font-family: Roboto;color:gray">' +
+                                        '<b>¡No se encontraron Articulos!</b>' +
+                                        '</span>' +
+                                        '</div>' +
+                                        '</div>' +
+                                        '<div class="row">' +
+                                        '<div class="col text-center">' +
+                                        '<img style="height:60px;width:60px" src="/Imagenes/Icons/iconfinder_ecommerce-30_4707191.svg"/>' +
+                                        '</div>' +
+                                        '</div>' +
+                                        '</div>';
+                                }
+
+                            }
+                        } else { $('#msjErrorBusqueda').text('*Solo se permite numero y letras');}
+                    }
+                }
+            }, 500);
+            //}
+            };
+        }
+    };
+</script></div>
+
+<div class="bodyHome" style="background-color:#F4F6F6;   overflow-x: hidden;">
+
+            <div class="homeSection">
+                    <div class="d-flex flex-row flex-nowrap m-0 p-3 scrollNav" style="background-color:#E8E8E8 ;overflow-x:auto; overflow-y:hidden;white-space:nowrap; ">
+                                <div class="col d-xl-block d-none" style="min-width:140px">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col-xl-5 d-flex justify-content-center p-0" style="white-space: nowrap;">
+                                            <a style="display:block;width:50px;height:50px;cursor:pointer" href="/ProdFiltrados_DFS?id=2&amp;dptoID=2&amp;descripcion=ALMACEN%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="ALMACEN                                 " src="/Images/Departamentos/2.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col-xl-7 d-flex justify-content-center p-0" style="align-items: center;white-space: normal;line-height: 0.5;">
+                                            <a style="text-decoration:none;cursor:pointer" href="/ProdFiltrados_DFS?id=2&amp;dptoID=2&amp;descripcion=ALMACEN%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">ALMACEN</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-none d-block">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col d-flex justify-content-center" style="display: inline-block;white-space: nowrap; position:center">
+                                            <a style="display:block;width:50px;height:50px;" href="/ProdFiltrados_DFS?id=2&amp;dptoID=2&amp;descripcion=ALMACEN%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="ALMACEN                                 " src="/Images/Departamentos/2.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col text-center text-wrap pr-1 pl-1">
+                                            <a style="text-decoration:none;" href="/ProdFiltrados_DFS?id=2&amp;dptoID=2&amp;descripcion=ALMACEN%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">ALMACEN</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-block d-none" style="min-width:140px">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col-xl-5 d-flex justify-content-center p-0" style="white-space: nowrap;">
+                                            <a style="display:block;width:50px;height:50px;cursor:pointer" href="/ProdFiltrados_DFS?id=3&amp;dptoID=3&amp;descripcion=BEBIDAS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="BEBIDAS                                 " src="/Images/Departamentos/3.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col-xl-7 d-flex justify-content-center p-0" style="align-items: center;white-space: normal;line-height: 0.5;">
+                                            <a style="text-decoration:none;cursor:pointer" href="/ProdFiltrados_DFS?id=3&amp;dptoID=3&amp;descripcion=BEBIDAS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">BEBIDAS</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-none d-block">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col d-flex justify-content-center" style="display: inline-block;white-space: nowrap; position:center">
+                                            <a style="display:block;width:50px;height:50px;" href="/ProdFiltrados_DFS?id=3&amp;dptoID=3&amp;descripcion=BEBIDAS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="BEBIDAS                                 " src="/Images/Departamentos/3.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col text-center text-wrap pr-1 pl-1">
+                                            <a style="text-decoration:none;" href="/ProdFiltrados_DFS?id=3&amp;dptoID=3&amp;descripcion=BEBIDAS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">BEBIDAS</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-block d-none" style="min-width:140px">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col-xl-5 d-flex justify-content-center p-0" style="white-space: nowrap;">
+                                            <a style="display:block;width:50px;height:50px;cursor:pointer" href="/ProdFiltrados_DFS?id=4&amp;dptoID=4&amp;descripcion=FRESCOS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="FRESCOS                                 " src="/Images/Departamentos/4.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col-xl-7 d-flex justify-content-center p-0" style="align-items: center;white-space: normal;line-height: 0.5;">
+                                            <a style="text-decoration:none;cursor:pointer" href="/ProdFiltrados_DFS?id=4&amp;dptoID=4&amp;descripcion=FRESCOS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">FRESCOS</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-none d-block">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col d-flex justify-content-center" style="display: inline-block;white-space: nowrap; position:center">
+                                            <a style="display:block;width:50px;height:50px;" href="/ProdFiltrados_DFS?id=4&amp;dptoID=4&amp;descripcion=FRESCOS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="FRESCOS                                 " src="/Images/Departamentos/4.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col text-center text-wrap pr-1 pl-1">
+                                            <a style="text-decoration:none;" href="/ProdFiltrados_DFS?id=4&amp;dptoID=4&amp;descripcion=FRESCOS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">FRESCOS</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-block d-none" style="min-width:140px">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col-xl-5 d-flex justify-content-center p-0" style="white-space: nowrap;">
+                                            <a style="display:block;width:50px;height:50px;cursor:pointer" href="/ProdFiltrados_DFS?id=5&amp;dptoID=5&amp;descripcion=CONGELADOS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="CONGELADOS                              " src="/Images/Departamentos/5.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col-xl-7 d-flex justify-content-center p-0" style="align-items: center;white-space: normal;line-height: 0.5;">
+                                            <a style="text-decoration:none;cursor:pointer" href="/ProdFiltrados_DFS?id=5&amp;dptoID=5&amp;descripcion=CONGELADOS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">CONGELADOS</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-none d-block">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col d-flex justify-content-center" style="display: inline-block;white-space: nowrap; position:center">
+                                            <a style="display:block;width:50px;height:50px;" href="/ProdFiltrados_DFS?id=5&amp;dptoID=5&amp;descripcion=CONGELADOS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="CONGELADOS                              " src="/Images/Departamentos/5.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col text-center text-wrap pr-1 pl-1">
+                                            <a style="text-decoration:none;" href="/ProdFiltrados_DFS?id=5&amp;dptoID=5&amp;descripcion=CONGELADOS%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">CONGELADOS</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-block d-none" style="min-width:140px">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col-xl-5 d-flex justify-content-center p-0" style="white-space: nowrap;">
+                                            <a style="display:block;width:50px;height:50px;cursor:pointer" href="/ProdFiltrados_DFS?id=6&amp;dptoID=6&amp;descripcion=LIMPIEZA%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="LIMPIEZA                                " src="/Images/Departamentos/6.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col-xl-7 d-flex justify-content-center p-0" style="align-items: center;white-space: normal;line-height: 0.5;">
+                                            <a style="text-decoration:none;cursor:pointer" href="/ProdFiltrados_DFS?id=6&amp;dptoID=6&amp;descripcion=LIMPIEZA%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">LIMPIEZA</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-none d-block">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col d-flex justify-content-center" style="display: inline-block;white-space: nowrap; position:center">
+                                            <a style="display:block;width:50px;height:50px;" href="/ProdFiltrados_DFS?id=6&amp;dptoID=6&amp;descripcion=LIMPIEZA%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="LIMPIEZA                                " src="/Images/Departamentos/6.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col text-center text-wrap pr-1 pl-1">
+                                            <a style="text-decoration:none;" href="/ProdFiltrados_DFS?id=6&amp;dptoID=6&amp;descripcion=LIMPIEZA%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">LIMPIEZA</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-block d-none" style="min-width:140px">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col-xl-5 d-flex justify-content-center p-0" style="white-space: nowrap;">
+                                            <a style="display:block;width:50px;height:50px;cursor:pointer" href="/ProdFiltrados_DFS?id=7&amp;dptoID=7&amp;descripcion=PERFUMERIA%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="PERFUMERIA                              " src="/Images/Departamentos/7.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col-xl-7 d-flex justify-content-center p-0" style="align-items: center;white-space: normal;line-height: 0.5;">
+                                            <a style="text-decoration:none;cursor:pointer" href="/ProdFiltrados_DFS?id=7&amp;dptoID=7&amp;descripcion=PERFUMERIA%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">PERFUMERIA</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-none d-block">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col d-flex justify-content-center" style="display: inline-block;white-space: nowrap; position:center">
+                                            <a style="display:block;width:50px;height:50px;" href="/ProdFiltrados_DFS?id=7&amp;dptoID=7&amp;descripcion=PERFUMERIA%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="PERFUMERIA                              " src="/Images/Departamentos/7.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col text-center text-wrap pr-1 pl-1">
+                                            <a style="text-decoration:none;" href="/ProdFiltrados_DFS?id=7&amp;dptoID=7&amp;descripcion=PERFUMERIA%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">PERFUMERIA</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-block d-none" style="min-width:140px">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col-xl-5 d-flex justify-content-center p-0" style="white-space: nowrap;">
+                                            <a style="display:block;width:50px;height:50px;cursor:pointer" href="/ProdFiltrados_DFS?id=8&amp;dptoID=8&amp;descripcion=BAZAR%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="BAZAR                                   " src="/Images/Departamentos/8.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col-xl-7 d-flex justify-content-center p-0" style="align-items: center;white-space: normal;line-height: 0.5;">
+                                            <a style="text-decoration:none;cursor:pointer" href="/ProdFiltrados_DFS?id=8&amp;dptoID=8&amp;descripcion=BAZAR%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">BAZAR</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-none d-block">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col d-flex justify-content-center" style="display: inline-block;white-space: nowrap; position:center">
+                                            <a style="display:block;width:50px;height:50px;" href="/ProdFiltrados_DFS?id=8&amp;dptoID=8&amp;descripcion=BAZAR%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="BAZAR                                   " src="/Images/Departamentos/8.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col text-center text-wrap pr-1 pl-1">
+                                            <a style="text-decoration:none;" href="/ProdFiltrados_DFS?id=8&amp;dptoID=8&amp;descripcion=BAZAR%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">BAZAR</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-block d-none" style="min-width:140px">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col-xl-5 d-flex justify-content-center p-0" style="white-space: nowrap;">
+                                            <a style="display:block;width:50px;height:50px;cursor:pointer" href="/ProdFiltrados_DFS?id=1016&amp;dptoID=1016&amp;descripcion=SIN%20TACC%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="SIN TACC                                " src="/Images/Departamentos/1016.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col-xl-7 d-flex justify-content-center p-0" style="align-items: center;white-space: normal;line-height: 0.5;">
+                                            <a style="text-decoration:none;cursor:pointer" href="/ProdFiltrados_DFS?id=1016&amp;dptoID=1016&amp;descripcion=SIN%20TACC%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">SIN TACC</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col d-xl-none d-block">
+                                    <div class="row d-flex flex-md-row">
+                                        <div class="col d-flex justify-content-center" style="display: inline-block;white-space: nowrap; position:center">
+                                            <a style="display:block;width:50px;height:50px;" href="/ProdFiltrados_DFS?id=1016&amp;dptoID=1016&amp;descripcion=SIN%20TACC%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <img class="icoHome" title="SIN TACC                                " src="/Images/Departamentos/1016.png?2025112817" style="display:block;height: 50px;width:50px;" />
+                                            </a>
+                                        </div>
+                                        <div class="col text-center text-wrap pr-1 pl-1">
+                                            <a style="text-decoration:none;" href="/ProdFiltrados_DFS?id=1016&amp;dptoID=1016&amp;descripcion=SIN%20TACC%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20">
+                                                <span class="fontSize descDepartamento">SIN TACC</span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                    </div>
+
+            </div>
+        <div id="ListBanners" class="row">
+            <div class="col-sm-12 col">
+                <div id="banners" style="border: thin; overflow-y: hidden; background: white; overflow-x: hidden; " class="text-center">
+
+
+                    <div class="container">
+                        <div class="row">
+
+                        </div>
+
+
+                    </div>
+
+
+                    <div class="carousel slide" data-ride="carousel">
+                        <div class="carousel-inner">
+
+                                <div class="carousel-item active">
+                                        <img src="/Images/Banners/banner_0.gif?2025112817" alt="First slide" style="max-width:100%" />
+
+                                </div>
+
+                        </div>
+                        <a class="carousel-control-prev" role="button" data-slide="prev" onclick="ChangeBanner('prev')">
+                            <span class="" aria-hidden="true" style=""><img src="/Imagenes/Icons/CarouselIzquierda.png" /></span>
+                            <span class="sr-only">Anterior</span>
+                        </a>
+                        <a class="carousel-control-next" role="button" data-slide="next" onclick="ChangeBanner('next')">
+                            <span class="" aria-hidden="true" style=""><img src="/Imagenes/Icons/CarouselDerecha.png" /></span>
+                            <span class="sr-only">Siguiente</span>
+                        </a>
+                    </div>
+                    &nbsp;
+                        <div class="container">
+                            <div class=" col-lg-12  " style="background-color:lightgray; vertical-align:middle; padding-top:5px;">
+                                <div class="row justify-content-center marginRowDpto">
+                                    <h1 style="font-size:1.5rem ">DEPARTAMENTOS</h1>
+                                </div>
+                            </div>
+                        </div>
+                        <div></div>
+                        <section id="facilities" class="justify-content-center">
+                            <div class="container ">
+                                <div class="row " style="background-color:white; overflow-x:hidden; overflow-y:hidden">
+
+                                        <div class="col-6 col-md-4 mt-1 justify-content-center" style="vertical-align:middle; text-align:center">
+                                            <div class="card text-center grilla-dptos" style="box-shadow: 0 6px 12px rgba(0,0,0,.09), 0 0 6px rgba(0,0,0,.05)">
+                                                <a href="/ProdFiltrados_DFS?id=2&amp;dptoID=2&amp;descripcion=ALMACEN">
+                                                    <img class="card-img-top img-responsive" src="/Images/Departamentos/ALMACEN.jpg?2025112817" alt="Card image cap">
+                                                    <div class="card-body">
+                                                        <a title="ALMACEN" style="color:black; font-size:1.2em;" href="/ProdFiltrados_DFS?id=2&amp;dptoID=2&amp;descripcion=ALMACEN"><b>ALMACEN</b></a>
+                                                    </div>
+                                                </a>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-md-4 mt-1 justify-content-center" style="vertical-align:middle; text-align:center">
+                                            <div class="card text-center grilla-dptos" style="box-shadow: 0 6px 12px rgba(0,0,0,.09), 0 0 6px rgba(0,0,0,.05)">
+                                                <a href="/ProdFiltrados_DFS?id=3&amp;dptoID=3&amp;descripcion=BEBIDAS">
+                                                    <img class="card-img-top img-responsive" src="/Images/Departamentos/BEBIDAS.jpg?2025112817" alt="Card image cap">
+                                                    <div class="card-body">
+                                                        <a title="BEBIDAS" style="color:black; font-size:1.2em;" href="/ProdFiltrados_DFS?id=3&amp;dptoID=3&amp;descripcion=BEBIDAS"><b>BEBIDAS</b></a>
+                                                    </div>
+                                                </a>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-md-4 mt-1 justify-content-center" style="vertical-align:middle; text-align:center">
+                                            <div class="card text-center grilla-dptos" style="box-shadow: 0 6px 12px rgba(0,0,0,.09), 0 0 6px rgba(0,0,0,.05)">
+                                                <a href="/ProdFiltrados_DFS?id=4&amp;dptoID=4&amp;descripcion=FRESCOS">
+                                                    <img class="card-img-top img-responsive" src="/Images/Departamentos/FRESCOS.jpg?2025112817" alt="Card image cap">
+                                                    <div class="card-body">
+                                                        <a title="FRESCOS" style="color:black; font-size:1.2em;" href="/ProdFiltrados_DFS?id=4&amp;dptoID=4&amp;descripcion=FRESCOS"><b>FRESCOS</b></a>
+                                                    </div>
+                                                </a>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-md-4 mt-1 justify-content-center" style="vertical-align:middle; text-align:center">
+                                            <div class="card text-center grilla-dptos" style="box-shadow: 0 6px 12px rgba(0,0,0,.09), 0 0 6px rgba(0,0,0,.05)">
+                                                <a href="/ProdFiltrados_DFS?id=6&amp;dptoID=6&amp;descripcion=LIMPIEZA">
+                                                    <img class="card-img-top img-responsive" src="/Images/Departamentos/LIMPIEZA.jpg?2025112817" alt="Card image cap">
+                                                    <div class="card-body">
+                                                        <a title="LIMPIEZA" style="color:black; font-size:1.2em;" href="/ProdFiltrados_DFS?id=6&amp;dptoID=6&amp;descripcion=LIMPIEZA"><b>LIMPIEZA</b></a>
+                                                    </div>
+                                                </a>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-md-4 mt-1 justify-content-center" style="vertical-align:middle; text-align:center">
+                                            <div class="card text-center grilla-dptos" style="box-shadow: 0 6px 12px rgba(0,0,0,.09), 0 0 6px rgba(0,0,0,.05)">
+                                                <a href="/ProdFiltrados_DFS?id=7&amp;dptoID=7&amp;descripcion=PERFUMERIA">
+                                                    <img class="card-img-top img-responsive" src="/Images/Departamentos/PERFUMERIA.jpg?2025112817" alt="Card image cap">
+                                                    <div class="card-body">
+                                                        <a title="PERFUMERIA" style="color:black; font-size:1.2em;" href="/ProdFiltrados_DFS?id=7&amp;dptoID=7&amp;descripcion=PERFUMERIA"><b>PERFUMERIA</b></a>
+                                                    </div>
+                                                </a>
+                                            </div>
+                                        </div>
+                                        <div class="col-6 col-md-4 mt-1 justify-content-center" style="vertical-align:middle; text-align:center">
+                                            <div class="card text-center grilla-dptos" style="box-shadow: 0 6px 12px rgba(0,0,0,.09), 0 0 6px rgba(0,0,0,.05)">
+                                                <a href="/ProdFiltrados_DFS?id=8&amp;dptoID=8&amp;descripcion=BAZAR">
+                                                    <img class="card-img-top img-responsive" src="/Images/Departamentos/BAZAR.jpg?2025112817" alt="Card image cap">
+                                                    <div class="card-body">
+                                                        <a title="BAZAR" style="color:black; font-size:1.2em;" href="/ProdFiltrados_DFS?id=8&amp;dptoID=8&amp;descripcion=BAZAR"><b>BAZAR</b></a>
+                                                    </div>
+                                                </a>
+                                            </div>
+                                        </div>
+                                    
+                                    &nbsp;
+                                    &nbsp;
+                                    &nbsp;
+                                    &nbsp;
+                                    &nbsp;
+                                    &nbsp;
+                                    &nbsp;
+                                    &nbsp;
+                                    &nbsp;
+                                    &nbsp;
+                                </div>
+                            </div>
+                        </section>
+
+                    &nbsp;
+
+
+                    &nbsp;
+
+
+                    &nbsp;
+
+
+
+                    &nbsp;
+
+                        <div>
+                            <img src="/Images/BannerDePieDePagina.png" alt="First slide" style="max-width:100%" />
+                        </div>
+
+                </div>
+            </div>
+        </div>
+    <div>
+    </div>
+</div>
+
+
+<!-- Modal -->
+<div class="modal fade" id="exampleModalLocalidad" role="dialog" aria-labelledby="exampleModalWarningTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header" data-dismiss="modal">
+                <h5 class="modal-title" id="exampleModalCenterTitle" aria-hidden="true">Introduzca un nuevo domicilio</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+
+                    <label class="form-text small">Zonas</label>
+                    <img src="/Images/ImagenZona.png" style="width:50%; height:50%;" />
+
+                <label class="form-text small">Domicilio</label>
+                <input id="inputDireccion" class="form-control" type="text" />
+                <label class="form-text small" for="Localidades" placeholder="Localidad">Localidades</label>
+                <select data-val="true" data-val-required="The LocalidadID field is required." id="mySelect2" name="LocalidadID" style="width:100%;"><option value="">Ejemplo: &quot;Zona sur/Rosario/Santa Fe&quot;</option>
+</select>
+
+                                    <div>
+                        <label class="form-text small" for="EntreCalles">Entre Calles</label>
+                        <input class="form-control" id="validarCalles" name="EntreCalles" placeholder="Ejemplo: &quot;Entre Gaboto y Amenabar&quot;" type="text" value="" />
+                        <span class="field-validation-valid form-text small text-danger" data-valmsg-for="EntreCalles" data-valmsg-replace="true"></span>
+                    </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn" id="btnWarningConfirmar" style="background-color: #D32033; color:#FFFFFF">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!--Modal-->
+
+<div class="modal fade" id="ModificarLocalidad" role="dialog" aria-labelledby="exampleModalWarningModificar" aria-hidden="true" data-toggle="modal">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header" data-dismiss="modal">
+                <h5 class="modal-title" id="exampleModalTitleModificar" aria-hidden="true">Modificar Domicilio</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                    <label class="form-text small">Zonas</label>
+                    <img src="/Images/ImagenZona.png" style="width:50%; height:50%;" />
+                <label class="form-text small">Domicilio</label>
+                <input id="inputDireccion3" class="form-control" type="text" />
+                <label class="form-text small" for="Localidades" placeholder="Localidad">Localidades</label>
+                <select id="mySelect3" name="LocalidadID" style="width:100%;"></select>
+
+
+                    <div>
+                        <label class="form-text small" for="EntreCalles">Entre Calles</label>
+                        <input class="form-control" id="validarModificacion" name="EntreCalles" type="text" value="Ejemplo: &quot;Entre Gaboto y Amenabar&quot;" />
+                        <span class="field-validation-valid form-text small text-danger" data-valmsg-for="EntreCalles" data-valmsg-replace="true"></span>
+                    </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn" id="btnWarningGuardarModificar" style="background-color: #2F658C">Confirmar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+<!--Modal-->
+<div class="modal fade" id="EliminarLocalidad" tabindex="-2" style="z-index:5000" role="dialog" aria-labelledby="exampleModalWarningEliminar" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exampleModalTitle">Atención</h5>
+            </div>
+            <div class="modal-body">
+                ¿Está seguro que desea eliminar este domicilio?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" id="btnSiEliminarLocalidad" style="background-color:#2F658C">Si</button>
+                <button type="button" class="btn" id="btnNoEliminarLocalidad" style="background-color:#2F658C" data-dismiss="modal">No</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<div id="smallModalDone" class="modal fade bd-example-modal-sm" tabindex="-1" role="dialog" aria-labelledby="mySmallModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="container text-center m-auto">
+                <div class="row">
+                    <div id="imgContainer" class="text-center col mt-3  bounceIn ">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="text-center col mt-3  fadeIn">
+                        <span id="spanModalDone" class="h5"></span>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="text-center col mt-3 mb-3  fadeIn ">
+                        <button type="button" class="btn btn-block btnCarrito" style="background-color:#2F658C;margin: auto;max-width: 350px;" data-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<!--Modal-->
+<div class="modal fade" data-backdrop="static" id="ModalMainMessage" tabindex="-2" style="z-index:5000" role="dialog" aria-labelledby="exampleModalMainMessage" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exampleModalTitle">Aviso</h5>
+                <button type="button" id="CloseMainMessage" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body setHTML">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!--Modal-->
+<div class="modal fade" data-backdrop="static" id="ModalSeleccionSucursal" tabindex="-2" style="z-index:5000" role="dialog" aria-labelledby="exampleModalSeleccionSucursal" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header" style="background-color:#2F658C; color:white">
+                <h5 class="modal-title" id="exampleSeleccionSucursal">SUCURSALES</h5>
+            </div>
+            <h6 style="padding-left: 20px;padding-top: 20px;padding-bottom: 10px;text-align: left;">
+                ¡Elige la sucursal con la que deseas navegar!
+            </h6>
+
+            <div class="row justify-content-md-center selectSucursales" style="padding-bottom: 15px">
+                <div class="col col-lg-10">
+
+                    <select id="selectSucursales" class="custom-select" style="width:100%">
+                    </select>
+
+                </div>
+
+            </div>
+
+            <span id="sucursalesError" style="padding-left: 20px;padding-bottom: 10px;text-align: left;" class="form-text small text-danger field-validation-error"></span>
+
+            <div class="modal-footer">
+                <button type="button" class="btn" id="btnConfirmarSucursal" style="background-color: #2F658C; color:white">Confirmar</button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
+
+        </main>
+    </div>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => {
+                        console.log('Registration succeeded. Scope is ' + reg.scope);
+                    })
+                    .catch(registrationError => {
+                        console.log('SW registration failed: ', registrationError);
+                    });
+            });
+        }
+    </script>
+
+
+    <script type="text/javascript">
+        $(document).ready(function () {
+            /*Cada 3 minutos hace la peticion y mantiene la sesion viva.*/
+            setInterval(refreshSession, 120000);
+        });
+
+
+        function refreshSession() {
+            $.ajax({
+                method: "GET",
+                url: 'Home/?handler=RefreshSession',
+                beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                timeout: 10000,
+                success: function () { }
+            });
+        }
+    </script>
+
+
+
+    
+    <script>
+
+        var idDomicilioSeleccionado = undefined;
+
+        //Funcion que ajusta el tamaño del contenedor de banners
+        $(window).resize(function () {
+            resizeScroll();
+        });
+
+        function resizeScroll() {
+
+            var iconosGrandes = parseInt(0)
+
+            if (iconosGrandes == 1) {
+
+                if ($('.scrollNavGrande')[0] != null) {
+                    /*
+                    var alturaScroll = $('body')[0].clientHeight - $('header')[0].clientHeight - $('.scrollNavGrande')[0].clientHeight - 8; //8
+                    $('#banners').css("height", alturaScroll);*/
+                    $('#bodyHome').css("height", $('body')[0].clientHeight + $('header')[0].clientHeight + $('.scrollNavGrande')[0].clientHeight);
+
+                    if (0 == 0 && ($('#headerDomiciliosPedidos').length > 0 && $('#buttonDomiciliosPedidos').length > 0 && $('#listDomiciliosPedidos').length > 0)) {
+                        var alturaListDomiciliosPedidos = $('body')[0].clientHeight - $('header')[0].clientHeight - $('.scrollNavGrande')[0].clientHeight - $('#headerDomiciliosPedidos')[0].clientHeight - $('#headTitleTop')[0].clientHeight - $('#buttonDomiciliosPedidos')[0].clientHeight - 50;//50
+                        $('#listDomiciliosPedidos').css("height", alturaListDomiciliosPedidos);
+                    }
+                }
+
+            }
+            else {
+
+                if ($('.scrollNav')[0] != null) {
+                    /*
+                    var alturaScroll = $('body')[0].clientHeight - $('header')[0].clientHeight - $('.scrollNav')[0].clientHeight - 8; //8
+                    $('#banners').css("height", alturaScroll);*/
+                    $('#bodyHome').css("height", $('body')[0].clientHeight + $('header')[0].clientHeight + $('.scrollNav')[0].clientHeight);
+
+                    if (0 == 0 && ($('#headerDomiciliosPedidos').length > 0 && $('#buttonDomiciliosPedidos').length > 0 && $('#listDomiciliosPedidos').length > 0)) {
+                        var alturaListDomiciliosPedidos = $('body')[0].clientHeight - $('header')[0].clientHeight - $('.scrollNav')[0].clientHeight - $('#headerDomiciliosPedidos')[0].clientHeight - $('#headTitleTop')[0].clientHeight - $('#buttonDomiciliosPedidos')[0].clientHeight - 50;//50
+                        $('#listDomiciliosPedidos').css("height", alturaListDomiciliosPedidos);
+                    }
+                }
+            }
+
+
+         }
+
+        $(document).ready(function () {
+
+            var tiempo = parseInt(8)
+            if ( tiempo == 0) {
+                $('.carousel').carousel({ interval: false });
+                $('.carousel').carousel('pause');
+            }
+            else {
+
+                $('.carousel').carousel({
+                    interval: tiempo * 1000
+
+                });
+            }
+
+            resizeScroll();
+
+            $(document).on('click', '.domicilio', function () {
+                var domID = $(this).attr("id");
+                $.ajax({
+                    url: 'Home/?handler=SetDom',
+                    beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                    method: "post",
+                    data: {
+                        "IDDom": domID,
+                    },
+                    success(data) {
+                        $('#HomeDesck').toggleClass('d-none');
+                        $('.domSection').toggleClass('d-none');
+                        $('.homeSection').toggleClass('d-none');
+                        $('#HomMobile').toggleClass('d-none');
+
+                        let currentpageinvitado = null;
+
+                        if (data != "") {
+                            if (currentpageinvitado != null && currentpageinvitado != "") {
+                                $(document).on('click', '#CloseMainMessage', () => {
+                                    location.href = currentpageinvitado;
+                                });
+                            }
+
+                        }
+                        else if(currentpageinvitado != null && currentpageinvitado != "")
+                        {
+
+                                $(document).on('click', '#CloseMainMessage', () => {
+                                    location.href = currentpageinvitado;
+                                });
+
+                        }
+                        resizeScroll();
+                        location.reload();
+                    },
+            });
+
+        });
+
+        $(document).on('click', '.ModificarLocalidad', function () {
+
+            idLocalidadSeleccionado = $(this).data('iddom');
+
+            $.ajax({
+                url: 'Home/?handler=BuscarInformacionDomicilio',
+                beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                method: "GET",
+                data: {
+                    "IDDom": idLocalidadSeleccionado
+                },
+                success(data) {
+
+                    $('#ModificarLocalidad').modal('hide');
+                    resizeScroll();
+                    if (data.rta == -1) {
+                        idLocalidadSeleccionado = undefined;
+                        $('#imgContainer').html('<img src="Imagenes/Icons/Cross.svg" style="width:30%;max-width:200px;max-height:200px"/>');
+                        $('#spanModalDone').text(data.rtatxt);
+                        $('#smallModalDone').modal('show');
+                    }
+                    else if (data.rta === undefined)
+                    {
+                        $('#inputDireccion3').val(data.clienteDireccion);
+                        $('#validarModificacion').val(data.entreCalles);
+
+                        var data = {
+                            id: data.localidadesID,
+                            text: data.localidadesDescripcion
+                        };
+
+                        var newOption = new Option(data.text, data.id, false, false);
+                        $('#mySelect3').append(newOption).trigger('change');
+                        $('#ModificarLocalidad').modal('show');
+                    }
+
+                },
+            });
+
+
+
+        });
+
+        $(document).on('click', '.EliminarLocalidad', function () {
+            $('#EliminarLocalidad').modal('show');
+            idLocalidadSeleccionado = $(this).data('iddom');
+        });
+
+        $(document).on('click', '#btnWarningGuardarModificar', function () {
+
+            $.ajax({
+                url: 'Home/?handler=ModificarDomicilio',
+                beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                method: "post",
+                data: {
+                    "IDDom": idLocalidadSeleccionado,
+                    "ClienteDireccion": $('#inputDireccion3').val(),
+                    "LocalidadID": $('#mySelect3').val(),
+                    "EntreCalles": $('#validarModificacion').val()
+                },
+                success(data) {
+                    $('#ModificarLocalidad').modal('hide');
+                    resizeScroll();
+                    if (data.rta == 1) {
+
+                        //$("#" + idLocalidadSeleccionado + "Domicilio").remove();
+                        $('#imgContainer').html('<img src="/Imagenes/Icons/checkmark.svg" style="width:30%;max-width:2000px;"/>')
+                        $('#spanModalDone').text(data.rtatxt);
+                        $('#smallModalDone').modal('show');
+
+                        //Modificar el domicilio con los nuevos parametros
+                        window.location.href = window.location.href;
+                        location.href = location.href;
+                        window.location.reload(true);
+                    }
+                    if (data.rta == -1) {
+                        $('#imgContainer').html('<img src="Imagenes/Icons/Cross.svg" style="width:30%;max-width:200px;max-height:200px"/>');
+                        $('#spanModalDone').text(data.rtatxt);
+                        $('#smallModalDone').modal('show');
+                    }
+
+                },
+            });
+
+        });
+
+
+        $(document).on('click', '#btnConfirmarSucursal', function () {
+            $.ajax({
+                url: 'Home/?handler=EliminarDomicilio',
+                beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                method: "post",
+                data: {
+                    "IDDom": idLocalidadSeleccionado,
+                },
+                success(data) {
+                    $('#EliminarLocalidad').modal('hide');
+                    resizeScroll();
+                    if (data.rta == 1) {
+
+                        $("#" + idLocalidadSeleccionado + "Domicilio").remove();
+                        $('#imgContainer').html('<img src="/Imagenes/Icons/checkmark.svg" style="width:30%;max-width:2000px;"/>')
+                        $('#spanModalDone').text(data.rtatxt);
+                        $('#smallModalDone').modal('show');
+                        $('#textcomentario').val("");
+                    }
+                    if (data.rta == -1) {
+
+                        $('#imgContainer').html('<img src="Imagenes/Icons/Cross.svg" style="width:30%;max-width:200px;max-height:200px"/>');
+                        $('#spanModalDone').text(data.rtatxt);
+                        $('#smallModalDone').modal('show');
+                    }
+
+                },
+            });
+        });
+
+
+
+        history.pushState(null, null, location.href);
+        window.onpopstate = function () { location.href = 'HomeVendedor' }
+        $('.icoHome').css("background-color", "#2F658C"); //"viewdata.model.colorIconos"
+
+
+        if (1 == 1 && 1 == 1) {
+            GetAviso();
+        }
+
+        if (0 == 1) {
+            GetSeleccionSucursales();
+        }
+
+        $('#btnConfirmarSucursal').on('click', function () {
+
+            var select = $('#selectSucursales').val()
+
+            if (!select)
+            {
+                $('#sucursalesError').text("Por favor seleccione una sucursal para continuar.");
+            }
+            else
+            {
+                $.ajax({
+                    url: 'Home/?handler=SeleccionarSucursal',
+                    beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                    method: "post",
+                    data: {
+                        "IDZona": $('#selectSucursales').val()
+                    },
+                    success(data) {
+
+                        if (data.rta == 1) {
+                            location.reload();
+                        }
+                        else
+                        {
+                            $('#sucursalesError').text(data.rtatxt);
+                        }
+
+                    },
+                });
+            }
+            
+        });
+
+    });
+
+
+        $("#mySelect3").select2({
+            theme: 'bootstrap',
+            containerCssClass: ':all:',
+            dropdownCssClass: 'no-search',
+            placeholder: { id: '-1' },
+            language: {
+                noResults: function () { return "No hay resultados"; },
+                searching: function () { return "Buscando.."; },
+                inputTooShort: function (args) {
+                    var remainingChars = args.minimum - args.input.length;
+                    var message = 'Por favor, ingrese más de ' + remainingChars + ' caracteres.';
+                    return message;
+                },
+                loadingMore: function () { return 'Cargando mas resultados'; },
+            },
+            allowClear: false,
+            closeOnSelect: true,
+            selectOnClose: true,
+            ajax: {
+                url: 'Register/?handler=ObtenerLocalidades',
+                beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                method: "post",
+                dataType: 'json',
+                data: function (params) {
+                    return {
+                        q: params.term.replace(/\W_/g, ""),
+                        page: params.page
+                    };
+                },
+                processResults: function (data, params) {
+                    var data = $.map(data, function (obj) {
+                        obj.id = obj.id || obj.localidadID;
+                        obj.text = obj.text || obj.nombre;
+                        return obj;
+                    });
+                    return {
+                        results: data, pagination: { more: (params.page * 30) < data.total_count }
+                    };
+                },
+                cache: true
+            },
+            escapeMarkup: function (markup) { return markup; },
+            minimumInputLength: 3,
+            templateResult: formatRepo,
+            templateSelection: formatRepoSelection
+        });
+
+        $("#mySelect3").change(function () {
+            var theID = $("#mySelect3").val();
+            $('#localidadID3').val(theID);
+        });
+
+        $("#mySelect2").select2({
+            theme: 'bootstrap',
+            containerCssClass: ':all:',
+            dropdownCssClass: 'no-search',
+            placeholder: { id: '-1' },
+            language: {
+                noResults: function () { return "No hay resultados"; },
+                searching: function () { return "Buscando.."; },
+                inputTooShort: function (args) {
+                    var remainingChars = args.minimum - args.input.length;
+                    var message = 'Por favor, ingrese más de ' + remainingChars + ' caracteres.';
+                    return message;
+                },
+                loadingMore: function () { return 'Cargando mas resultados'; },
+            },
+            allowClear: false,
+            closeOnSelect: true,
+            selectOnClose: true,
+            ajax: {
+                url: 'Register/?handler=ObtenerLocalidades',
+                beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                method: "post",
+                dataType: 'json',
+                data: function (params) {
+                    return {
+                        q: params.term.replace(/\W_/g, ""),
+                        page: params.page
+                    };
+                },
+                processResults: function (data, params) {
+                    var data = $.map(data, function (obj) {
+                        obj.id = obj.id || obj.localidadID;
+                        obj.text = obj.text || obj.nombre;
+                        return obj;
+                    });
+                    return {
+                        results: data, pagination: { more: (params.page * 30) < data.total_count }
+                    };
+                },
+                cache: true
+            },
+            escapeMarkup: function (markup) { return markup; },
+            minimumInputLength: 3,
+            templateResult: formatRepo,
+            templateSelection: formatRepoSelection
+        });
+        $("#mySelect2").change(function () {
+            var theID = $("#mySelect2").val();
+            $('#localidadID').val(theID);
+        });
+
+        function formatRepo(repo) {
+            if (repo.loading) {
+                return repo.text;
+            }
+            return "<div id=" + repo.id + ">" + repo.text + "</div>";
+        }
+
+        function formatRepoSelection(repo) {
+            return repo.nombre || repo.text;
+        }
+
+        function GetAviso() {
+            $.ajax({
+                url: 'Home/?handler=Aviso',
+                beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                method: "get",
+                success(data) {
+
+                    if (data != "") {
+                        $('.setHTML').html(data.codHtml);
+                        $('#ModalMainMessage').modal('show');
+                    }
+
+                },
+            });
+        }
+
+        function GetSeleccionSucursales() {
+            $.ajax({
+                url: 'Home/?handler=SeleccionSucursales',
+                beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                method: "get",
+                success(data) {
+
+                    if (data != "") {
+                        $('#ModalSeleccionSucursal').modal('show');
+
+                        $('#selectSucursales').empty();
+
+                        $('#selectSucursales').append(`<option value="" disabled selected>Seleccione Sucursal</option>`);
+
+                        $.each(data, function (item) {
+                            $('#selectSucursales').append(`<option value="${data[item].idZona}"> ${data[item].descripcion} </option>`);
+                        });
+                    }
+
+                },
+            });
+        }
+
+        $('#btnWarningConfirmar').on('click', function () {
+            $.ajax({
+                url: 'Home/?handler=AgregarDomicilio',
+                beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+                method: "post",
+                data: {
+                    "ClienteDireccion": $('#inputDireccion').val(),
+                    "LocalidadID": $('#mySelect2').val(),
+                    "EntreCalles": $('#validarCalles').val()
+                },
+
+                success(data) {
+                    if (data.rta == -1) {
+                        $('#listadoDomicilios').html(data)
+                        $('#textModalBody').text(data.rtatxt);
+                        $('#exampleModalWarning').modal('show');
+                        $('#mySelect2').text('');
+                        $('#validarCalles').val('');
+                        $('#inputDireccion').val('');
+                        $('#exampleModalLocalidad').modal('hide');
+                    } else {
+                        $('#listadoDomicilios').html(data)
+                        $('#mySelect2').text('');
+                        $('#validarCalles').val('');
+                        $('#inputDireccion').val('');
+                        $('#exampleModalLocalidad').modal('hide');
+                    }
+                },
+            });
+        });
+
+
+    </script>
+
+    <script>
+        function ChangeBanner(action) {
+
+            $('.carousel').carousel(action);
+        }
+    </script>
+
+    
+
+
+
+    <script src="/lib/jquery-validation/dist/jquery.validate.min.js">
+    </script>
+<script>(window.jQuery && window.jQuery.validator||document.write("\u003Cscript src=\u0022\/lib\/jquery-validation\/dist\/jquery.validate.js\u0022\u003E\u003C\/script\u003E"));</script>
+    <script src="/lib/jquery-validation/dist/additional-methods.min.js"></script>
+
+    <script src="/lib/jquery-validation-unobtrusive/jquery.validate.unobtrusive.min.js">
+    </script>
+<script>(window.jQuery && window.jQuery.validator && window.jQuery.validator.unobtrusive||document.write("\u003Cscript src=\u0022\/lib\/jquery-validation-unobtrusive\/jquery.validate.unobtrusive.min.js\u0022\u003E\u003C\/script\u003E"));</script>
+
+
+
+<div class="modal" tabindex="-1" role="dialog" id="loginInvitado">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Ingresar Datos</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body d-flex justify-content-center">
+
+                <div class="col-10">
+                    <div class="row">
+                        <div class="col-12">
+                            <input type="text" name="UserName" id="UserName" class="form-control col-12" placeholder="Usuario">
+                            <span class="text-danger col-12" id="validationUserName"></span>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-12">
+                            <input type="password" name="Password" id="Password" class="form-control col-12" placeholder="Contraseña">
+                            <span class="text-danger col-12" id="validationPassword"></span>
+                        </div>
+                        <span class="col-12 text-danger mb-4" id="msgerror"></span>
+                    </div>
+                    <div class="row">
+                        <div class="col-7">
+                            <a style="color:black;" class="float-left" href="/ResetPassword">¿Olvidaste tu contraseña?</a>
+                        </div>
+                        <div class="col-5">
+                            <button type="button" style="background-color:#2F658C;color:#FFFFFF" class="btn btn-warning float-right" id="btnLogin">Ingresar</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer">
+                <div class="d-flex justify-content-center col-12">
+                    <div class="col-6 d-flex align-items-center justify-content-end">
+                        <span class="float-right">¿Nuevo Cliente?</span>
+                    </div>
+                    <div class="col-6 d-flex align-items-center justify-content-start">
+                        <a type="button" style="background-color:#2F658C;color:#FFFFFF" class="btn btn-warning" href="/Register">Registrarse</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    $('.openModalInvitado').click(function () {
+        $('#loginInvitado').modal("show");
+    });
+
+    $('#loginInvitado').on('keypress', function (e) {
+        
+        let keycode = (e.keyCode ? e.keyCode : e.which);
+        if (keycode == 13) 
+        {
+            $('#btnLogin').click(); 
+        }
+        
+    });
+
+    $('#btnLogin').click(function () {
+        $(this).prop('disabled', true);
+        $(this).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Cargando');
+        let userName = $('#UserName').val();
+        let password = $('#Password').val();
+        let isValid = true;
+        $('#validationUserName').text('');
+        $('#validationPassword').text('');
+        $('#msgerror').text('');
+
+        if (!userName || userName.length == 0) {
+            $('#validationUserName').text('Ingrese el usuario.');
+            isValid = false;
+        }
+        if (!password || password.length == 0) {
+            $('#validationPassword').text('Ingrese la clave.');
+            isValid = false;
+        }
+
+        if (!isValid) {
+            $(this).html('Ingresar');
+            $(this).prop('disabled', false);
+            return;
+        }
+        login(userName, password);
+
+    });
+
+    function login(usr, pass) {
+
+        $.ajax({
+            data: { "user": usr, "pass": pass, "currentpage": location.href },
+            type: "POST",
+            dataType: "json",
+            beforeSend: function (xhr) { xhr.setRequestHeader("XSRF-TOKEN", $('input:hidden[name="__RequestVerificationToken"]').val()); },
+            url: "Login/?handler=LoginModal",
+            timeout: 10000,
+            success(data) {
+                $('#btnLogin').html('Ingresar');
+                $('#btnLogin').prop('disabled', false);
+                if (data.status == 0 || data.status == 1) {
+                    location.href = data.page;
+                } else {
+                    $('#msgerror').text(data.msg);
+                }
+            },
+            error(data) {
+                $('#btnLogin').html('Ingresar');
+                $('#btnLogin').prop('disabled', false);
+                $('#msgerror').text('Ocurrió un error.Intente nuevamente.');
+            }
+        });
+    }
+</script></body>
+</html>

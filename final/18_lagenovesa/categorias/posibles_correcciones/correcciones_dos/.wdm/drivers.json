@@ -1,0 +1,10 @@
+{
+    "win64_chromedriver_142.0.7444.175_for_142.0.7444": {
+        "timestamp": "06/12/2025",
+        "binary_path": "C:\\Users\\David\\PycharmProjects\\scrapingTiendas\\final\\18_lagenovesa\\categorias\\posibles_correcciones\\correcciones_dos\\.wdm\\drivers\\chromedriver\\win64\\142.0.7444.175\\chromedriver-win32/chromedriver.exe"
+    },
+    "win64_chromedriver_143.0.7499.42_for_143.0.7499": {
+        "timestamp": "16/12/2025",
+        "binary_path": "C:\\Users\\David\\PycharmProjects\\scrapingTiendas\\final\\18_lagenovesa\\categorias\\posibles_correcciones\\correcciones_dos\\.wdm\\drivers\\chromedriver\\win64\\143.0.7499.42\\chromedriver-win32/chromedriver.exe"
+    }
+}
