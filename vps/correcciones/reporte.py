@@ -6,6 +6,7 @@
 def iniciaReporte():
     import io
     import os
+    from datetime import date
     import re
     import unicodedata
     from datetime import datetime, timedelta
@@ -534,8 +535,11 @@ def iniciaReporte():
         date_range = st.sidebar.date_input(
             "Rango de fechas (capturado_en UTC)",
             value=(default_start, max_d),
-            min_value=min_d, max_value=max_d
+            min_value=datetime(2000, 1, 1).date(),
+            max_value=datetime(2100, 12, 31).date(),
+            key="rango_fechas_v2"
         )
+
         if isinstance(date_range, tuple):
             start_date, end_date = date_range
         else:
