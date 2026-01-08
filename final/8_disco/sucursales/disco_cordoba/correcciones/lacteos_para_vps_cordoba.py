@@ -12,6 +12,15 @@ import numpy as np
 import pandas as pd
 from mysql.connector import Error as MySQLError
 import socket
+import logging
+from logging.handlers import RotatingFileHandler
+
+# ====== (Opcional) webdriver_manager si no hay CHROMEDRIVER_BIN ======
+try:
+    from webdriver_manager.chrome import ChromeDriverManager  # type: ignore
+    HAVE_WDM = True
+except Exception:
+    HAVE_WDM = False
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -19,70 +28,133 @@ from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver import ActionChains
 from selenium.common.exceptions import SessionNotCreatedException, WebDriverException, TimeoutException
-from selenium.webdriver.chrome.service import Service  # <-- necesario para usar un chromedriver explícito
+from selenium.webdriver.chrome.service import Service
 
 # añade la carpeta raíz (2 niveles más arriba) al sys.path
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )
 
-# --- Tu helper de conexión ---
 from base_datos import get_conn
 
-# =========================
-# Ctrl+C / ENTER para corte ordenado
-# =========================
 STOP_EVENT = threading.Event()
 
+# =========================
+# Logging robusto
+# =========================
+def setup_logging():
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    logs_dir = os.path.join(base_dir, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    log_path = os.path.join(logs_dir, "disco_scrape.log")
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Evitar duplicados si se reinvoca
+    if logger.handlers:
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+
+    fh = RotatingFileHandler(log_path, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+    fh.setLevel(logging.INFO)
+    fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(fh)
+
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setLevel(logging.INFO)
+    sh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(sh)
+
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
+    logging.info("📝 Logging inicializado en %s", log_path)
+
+# =========================
+# Entorno cron (solo si no hay TTY)
+# =========================
+def setup_cron_environment():
+    is_tty = False
+    try:
+        is_tty = sys.stdin.isatty()
+    except Exception:
+        is_tty = False
+
+    if not is_tty:
+        os.environ.setdefault("HOME", "/tmp")
+        os.environ.setdefault("TMPDIR", "/tmp")
+        os.environ.setdefault("XDG_RUNTIME_DIR", "/tmp")
+        os.environ.pop("DISPLAY", None)
+        os.environ.setdefault("LANG", "C.UTF-8")
+        os.environ.setdefault("LC_ALL", "C.UTF-8")
+
+        default_path = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin"
+        os.environ["PATH"] = os.environ.get("PATH") or default_path
+        if default_path not in os.environ["PATH"]:
+            os.environ["PATH"] = os.environ["PATH"] + ":" + default_path
+
+        logging.info("🧩 Entorno cron aplicado: HOME=%s PATH=%s", os.environ["HOME"], os.environ["PATH"])
 
 def _pick_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
 def _enter_listener():
     try:
         input("🔴 Presioná ENTER para terminar y guardar lo recolectado hasta ahora...\n")
+        STOP_EVENT.set()
     except EOFError:
+        return
+
+def start_enter_listener_if_tty():
+    try:
+        if sys.stdin and sys.stdin.isatty():
+            t_listener = threading.Thread(target=_enter_listener, daemon=True)
+            t_listener.start()
+        else:
+            logging.info("ℹ️  stdin no interactivo (cron). No se inicia listener ENTER.")
+    except Exception:
         pass
-    STOP_EVENT.set()
 
 # =========================
-# Parámetros de negocio (ENV primero, con default)
+# Parámetros (ENV primero)
 # =========================
 BASE        = "https://www.disco.com.ar"
 
-# credenciales: export DISCO_USER=... ; export DISCO_PASS=...
 DISCO_USER  = os.getenv("DISCO_USER", "comercial@factory-blue.com")
 DISCO_PASS  = os.getenv("DISCO_PASS", "Compras2025")
 
 PROVINCIA     = os.getenv("DISCO_PROVINCIA", "CORDOBA").strip()
 TIENDA_NOM    = os.getenv("DISCO_TIENDA", "Disco Alta Córdoba Cabrera 493").strip()
-CATEGORIA_URL = os.getenv("DISCO_CATEGORIA_URL", "/hogar-y-textil").strip()  # punto de entrada de scraping
-MAX_EMPTY     = int(os.getenv("DISCO_MAX_EMPTY", "1"))  # páginas vacías toleradas
+CATEGORIA_URL = os.getenv("DISCO_CATEGORIA_URL", "/lacteos").strip()
+MAX_EMPTY     = int(os.getenv("DISCO_MAX_EMPTY", "1"))
 SLEEP_PDP     = float(os.getenv("DISCO_SLEEP_PDP", "0.6"))
 SLEEP_PAGE    = float(os.getenv("DISCO_SLEEP_PAGE", "1.0"))
-# --- RUTAS EMBEBIDAS (editá estas si tu VPS usa otras) ---
-EMBEDDED_CHROME_BIN = "/usr/bin/chromium-browser"          # o "/usr/bin/chromium"
-EMBEDDED_CHROMEDRIVER_BIN = "/usr/lib/chromium-browser/chromedriver"  # o "/usr/lib/chromium/chromedriver"
 
-TIENDA_CODIGO = "disco_cordoba_alto_cordoba_cabrera_493"
-TIENDA_NOMBRE = "Disco_cordoba_alto_cordoba_cabrera_493"
+EMBEDDED_CHROME_BIN = os.getenv("EMBEDDED_CHROME_BIN", "/usr/bin/google-chrome-stable")
+EMBEDDED_CHROMEDRIVER_BIN = os.getenv("EMBEDDED_CHROMEDRIVER_BIN", "")  # dejalo vacío si no estás seguro
+
+TIENDA_CODIGO = "Disco Cordoba"
+TIENDA_NOMBRE = "Disco Cordoba"
 TIENDA_REF    = os.getenv("DISCO_REF_TIENDA", "disco_cordoba_cabrera_493")
 
-# Opcional: matar huérfanos Chrome lanzados por perfiles temporales previos (0/1)
-KILL_STALE_CHROME=0
+KILL_STALE_CHROME = int(os.getenv("KILL_STALE_CHROME", "0"))
 
 # =========================
 # Utilidades
 # =========================
 def _safe_get(driver, url, tries=4, base_sleep=1.0):
-    """driver.get con reintentos/backoff."""
     for i in range(1, tries+1):
         try:
             driver.get(url)
             return True
-        except (TimeoutException, WebDriverException):
-            time.sleep(base_sleep * i)  # backoff lineal
+        except (TimeoutException, WebDriverException) as e:
+            logging.warning("get(%s) fallo intento %d/%d: %s", url, i, tries, e)
+            time.sleep(base_sleep * i)
             if i == tries:
                 raise
     return False
@@ -102,59 +174,29 @@ def _clip(s: Optional[str], maxlen: int) -> Optional[str]:
     return s[:maxlen]
 
 def _parse_price(text: str):
-    """
-    Normaliza precios en formatos AR/ES:
-    - "$13.098,75" -> 13098.75
-    - "$17.465"    -> 17465.00
-    - "$1,234.56"  -> 1234.56
-    - "$1.234"     -> 1234.00
-    Devuelve (float_or_nan, raw)
-    """
     raw = (text or "").strip()
     if not raw:
         return np.nan, raw
-
-    # deja solo dígitos, comas y puntos
     s = re.sub(r"[^\d,\.]", "", raw)
     if not s:
         return np.nan, raw
-
     has_comma = "," in s
     has_dot   = "." in s
-
     try:
         if has_comma and has_dot:
-            # Ambos separadores: decide por el último símbolo
-            last_comma = s.rfind(",")
-            last_dot   = s.rfind(".")
-            if last_comma > last_dot:
-                # Formato 13.098,75 -> coma decimal
+            if s.rfind(",") > s.rfind("."):
                 s = s.replace(".", "").replace(",", ".")
             else:
-                # Formato 1,234.56 -> punto decimal
                 s = s.replace(",", "")
         elif has_comma and not has_dot:
-            # Solo coma: asume coma decimal (13,50 -> 13.50 ; 13, -> 13.0)
-            # Si es miles con coma (poco común), igual queda bien al reemplazar por punto
             s = s.replace(",", ".")
         elif has_dot and not has_comma:
-            # Solo punto: ¿decimal o miles?
-            # Heurística: si hay exactamente 3 dígitos tras el ÚLTIMO punto y no hay otros separadores de decimal,
-            # lo tomamos como separador de miles (17.465 -> 17465).
             parts = s.split(".")
             if len(parts[-1]) == 3 and all(p.isdigit() for p in parts):
                 s = s.replace(".", "")
-            else:
-                # si parece decimal (p.ej. 13.50) lo dejamos como está
-                pass
-        else:
-            # solo dígitos
-            pass
-
         return float(s), raw
     except Exception:
         return np.nan, raw
-
 
 def _click_with_retry(driver, wait, xpath: str, retries: int = 3) -> None:
     last_exc = None
@@ -200,7 +242,7 @@ def _select_by_text_case_insensitive(driver, wait, select_xpath: str, target_tex
         try:
             sel = wait.until(EC.presence_of_element_located((By.XPATH, select_xpath)))
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sel)
-            wait.until(lambda d: len(sel.find_elements(By.TAG_NAME, "option")) > 1)
+            WebDriverWait(driver, 10).until(lambda d: len(sel.find_elements(By.TAG_NAME, "option")) > 1)
             try:
                 Select(sel).select_by_visible_text(target_text)
                 return
@@ -230,7 +272,6 @@ def _select_by_text_case_insensitive(driver, wait, select_xpath: str, target_tex
     raise last_exc
 
 def _collect_product_links_on_page(driver, timeout=12):
-    """Devuelve hrefs relativos '/.../p'."""
     t0 = time.time()
     links = set()
     while time.time() - t0 < timeout:
@@ -250,7 +291,6 @@ def _collect_product_links_on_page(driver, timeout=12):
     return list(links)
 
 def _load_all_products_on_list(driver, wait, max_wait: float = 20, max_clicks: int = 20) -> None:
-    """Fuerza a cargar todos los productos de la lista (scroll + 'Mostrar más')."""
     try:
         wait.until(EC.presence_of_element_located((
             By.XPATH,
@@ -273,7 +313,6 @@ def _load_all_products_on_list(driver, wait, max_wait: float = 20, max_clicks: i
             last_count = count
             stable_since = time.time()
 
-        # 1) Botón "Mostrar más" / "Ver más"
         show_more_btns = driver.find_elements(
             By.XPATH,
             "//button[contains(@class,'vtex-search-result-3-x-buttonShowMore') or contains(.,'Mostrar más') or contains(.,'Ver más')]"
@@ -292,13 +331,11 @@ def _load_all_products_on_list(driver, wait, max_wait: float = 20, max_clicks: i
             except Exception:
                 pass
 
-        # 2) Scroll para lazy-load
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(0.8)
         driver.execute_script("window.scrollBy(0,-150);")
         time.sleep(0.2)
 
-        # salidas
         if (time.time() - stable_since) > 2.5 and not show_more_btns:
             break
         if (time.time() - stable_since) > max_wait:
@@ -309,7 +346,6 @@ def _load_all_products_on_list(driver, wait, max_wait: float = 20, max_clicks: i
             break
 
 def _extract_jsonld_ean(driver) -> Optional[str]:
-    """Intenta leer EAN/GTIN desde JSON-LD."""
     try:
         scripts = driver.find_elements(By.XPATH, "//script[@type='application/ld+json']")
         for s in scripts:
@@ -329,11 +365,11 @@ def _extract_jsonld_ean(driver) -> Optional[str]:
                             return vs
     except Exception:
         pass
-    # fallback visible
     try:
         ean_el = driver.find_element(
             By.XPATH,
-            "//span[contains(@class,'product-identifier__label') and (contains(.,'EAN') or contains(.,'Gtin'))]/following-sibling::span[contains(@class,'product-identifier__value')]"
+            "//span[contains(@class,'product-identifier__label') and (contains(.,'EAN') or contains(.,'Gtin'))]"
+            "/following-sibling::span[contains(@class,'product-identifier__value')]"
         )
         v = ean_el.text.strip()
         if re.fullmatch(r"\d{8,14}", v):
@@ -350,24 +386,22 @@ def _scrape_pdp(driver, wait, pdp_url_rel: str) -> dict:
     except Exception:
         time.sleep(0.8)
 
-    # Nombre
     try:
         name = driver.find_element(By.XPATH, "//h1[contains(@class,'productNameContainer')]//span").text.strip()
     except Exception:
         name = ""
 
-    # Marca
     try:
         brand = driver.find_element(By.XPATH, "//*[contains(@class,'productBrandName')]").text.strip()
     except Exception:
         brand = ""
 
-    # SKU
     sku = ""
     try:
         sku = driver.find_element(
             By.XPATH,
-            "//span[contains(@class,'product-identifier__label') and normalize-space()='SKU']/following-sibling::span[contains(@class,'product-identifier__value')]"
+            "//span[contains(@class,'product-identifier__label') and normalize-space()='SKU']"
+            "/following-sibling::span[contains(@class,'product-identifier__value')]"
         ).text.strip()
     except Exception:
         try:
@@ -376,25 +410,33 @@ def _scrape_pdp(driver, wait, pdp_url_rel: str) -> dict:
         except Exception:
             sku = ""
 
-    # EAN
     ean = _extract_jsonld_ean(driver)
 
-    # Precios
-    try:
-        price_now_text = driver.find_element(By.XPATH, "//*[@id='priceContainer']").text
-    except Exception:
+    price_now_text = ""
+    for xp in [
+        "//*[@id='priceContainer']",
+        "//*[contains(@class,'vtex-product-price-1-x-sellingPrice')]",
+        "(//*[contains(@class,'store-theme')][contains(.,'$')])[1]"
+    ]:
         try:
-            price_now_text = driver.find_element(By.XPATH, "(//*[contains(@class,'store-theme')][contains(.,'$')])[1]").text
+            price_now_text = driver.find_element(By.XPATH, xp).text
+            if price_now_text.strip():
+                break
         except Exception:
-            price_now_text = ""
+            continue
     price_now, price_now_raw = _parse_price(price_now_text)
 
-    try:
-        price_reg_text = driver.find_element(
-            By.XPATH, "(//div[contains(@class,'store-theme')][contains(text(),'$')])[2]"
-        ).text
-    except Exception:
-        price_reg_text = ""
+    price_reg_text = ""
+    for xp in [
+        "//*[contains(@class,'vtex-product-price-1-x-listPrice')]",
+        "(//div[contains(@class,'store-theme')][contains(text(),'$')])[2]"
+    ]:
+        try:
+            price_reg_text = driver.find_element(By.XPATH, xp).text
+            if price_reg_text.strip():
+                break
+        except Exception:
+            continue
     price_reg, price_reg_raw = _parse_price(price_reg_text)
 
     try:
@@ -441,7 +483,6 @@ def clean(val):
     return None if s.lower() in {"", "null", "none", "nan", "na"} else s
 
 def parse_price_text(val) -> Optional[str]:
-    """Convierte a float y lo devuelve como texto con 2 decimales, o None."""
     if val is None:
         return None
     try:
@@ -581,7 +622,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
     ))
 
 # =========================
-# Driver para VPS (headless) con perfil único + retries + cleanup
+# Driver VPS: arregla mismatch Chrome vs Chromedriver
 # =========================
 def _best_effort_kill_stale_chrome():
     if not KILL_STALE_CHROME:
@@ -596,87 +637,131 @@ def _best_effort_kill_stale_chrome():
     except Exception:
         pass
 
+def _run_version(cmd: List[str]) -> str:
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+        s = (out.stdout or out.stderr or "").strip()
+        return s
+    except Exception:
+        return ""
+
+def _major_version_from_text(s: str) -> Optional[int]:
+    # Chrome: "Google Chrome 120.0.6099.129"
+    # Driver: "ChromeDriver 120.0.6099.109 ..."
+    m = re.search(r"(\d+)\.", s or "")
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except Exception:
+        return None
+
+def _probe_exe(path: str) -> bool:
+    return bool(path and os.path.exists(path) and os.access(path, os.X_OK))
+
 def _resolve_browser_and_driver_paths() -> Tuple[Optional[str], Optional[str]]:
     """
-    Devuelve (chrome_binary, chromedriver_path) priorizando:
-      1) variables de entorno (CHROME_BIN / CHROMEDRIVER_BIN),
-      2) rutas embebidas en el script (EMBEDDED_*),
-      3) rutas típicas del sistema.
+    Devuelve (chrome_binary, chromedriver_path) pero:
+    - Si driver existe y su major NO coincide con el major de Chrome => lo ignora (None)
+    - Si no hay driver usable => None (Selenium Manager resuelve)
     """
+    chrome_bin = os.getenv("CHROME_BIN") or ""
+    driver_bin = os.getenv("CHROMEDRIVER_BIN") or ""
 
-    def _probe(bin_path: str) -> bool:
-        try:
-            if not (bin_path and os.path.exists(bin_path) and os.access(bin_path, os.X_OK)):
-                return False
-            out = subprocess.run([bin_path, "--version"], capture_output=True, text=True, timeout=3)
-            return out.returncode == 0 and bool(out.stdout.strip())
-        except Exception:
-            return False
-
-    # 1) Variables de entorno (si están y sirven, quedan)
-    chrome_bin = os.getenv("CHROME_BIN")
-    driver_bin = os.getenv("CHROMEDRIVER_BIN")
-
-    if chrome_bin and not _probe(chrome_bin):
-        print(f"⚠️  CHROME_BIN apunta a {chrome_bin} pero no es ejecutable o no responde --version; lo ignoro.")
-        chrome_bin = None
-
-    # 2) Rutas embebidas en el script (si no hubo env o no sirvió)
-    if not chrome_bin and EMBEDDED_CHROME_BIN and _probe(EMBEDDED_CHROME_BIN):
-        chrome_bin = EMBEDDED_CHROME_BIN
-        # opcional: dejar seteada la env para librerías hijas
-        os.environ["CHROME_BIN"] = chrome_bin
-
-    if not driver_bin and EMBEDDED_CHROMEDRIVER_BIN and os.path.exists(EMBEDDED_CHROMEDRIVER_BIN):
-        driver_bin = EMBEDDED_CHROMEDRIVER_BIN
-        os.environ["CHROMEDRIVER_BIN"] = driver_bin
-
-    # 3) Rutas típicas del sistema como último fallback
-    if not chrome_bin:
-        for cand in ("/usr/bin/chromium-browser", "/usr/bin/chromium",
-                     "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome",
-                     "/snap/bin/chromium"):
-            if _probe(cand):
-                chrome_bin = cand
-                break
-
-    if not driver_bin:
-        for cand in ("/usr/lib/chromium-browser/chromedriver",
-                     "/usr/lib/chromium/chromedriver",
-                     "/snap/bin/chromium.chromedriver"):
-            if os.path.exists(cand) and os.access(cand, os.X_OK):
-                driver_bin = cand
-                break
-
-    # Evitar el chromedriver conflictivo del PATH (p.ej. /usr/bin/chromedriver)
-    if os.path.exists("/usr/bin/chromedriver"):
-        path_parts = [p for p in os.environ.get("PATH", "").split(":") if p != "/usr/bin"]
-        os.environ["PATH"] = ":".join(path_parts)
-
-    # Logs útiles
+    # Chrome candidates
+    chrome_candidates = []
     if chrome_bin:
-        print(f"🧭 Usando navegador: {chrome_bin}")
-    else:
-        print("🧭 No encontré un navegador válido (Chromium/Chrome).")
+        chrome_candidates.append(chrome_bin)
+    if EMBEDDED_CHROME_BIN:
+        chrome_candidates.append(EMBEDDED_CHROME_BIN)
+    chrome_candidates += [
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/google-chrome",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+        "/snap/bin/chromium",
+    ]
 
+    chrome_bin_ok = None
+    for c in chrome_candidates:
+        if _probe_exe(c):
+            vtxt = _run_version([c, "--version"])
+            if vtxt:
+                chrome_bin_ok = c
+                break
+
+    # Driver candidates
+    driver_candidates = []
     if driver_bin:
-        print(f"🧭 Usando chromedriver: {driver_bin}")
+        driver_candidates.append(driver_bin)
+    if EMBEDDED_CHROMEDRIVER_BIN:
+        driver_candidates.append(EMBEDDED_CHROMEDRIVER_BIN)
+    driver_candidates += [
+        "/usr/bin/chromedriver",
+        "/usr/lib/chromium-browser/chromedriver",
+        "/usr/lib/chromium/chromedriver",
+        "/snap/bin/chromium.chromedriver",
+    ]
+
+    driver_bin_ok = None
+    for d in driver_candidates:
+        if _probe_exe(d):
+            driver_bin_ok = d
+            break
+
+    # Log versions
+    chrome_major = None
+    if chrome_bin_ok:
+        vchrome = _run_version([chrome_bin_ok, "--version"])
+        chrome_major = _major_version_from_text(vchrome)
+        logging.info("🧭 Navegador detectado: %s (%s)", chrome_bin_ok, vchrome or "sin versión")
     else:
-        print("🧭 Sin CHROMEDRIVER_BIN explícito; Selenium Manager intentará resolverlo si hay Chrome.")
+        logging.warning("🧭 No detecté Chrome/Chromium por ruta. Selenium Manager intentará resolver.")
 
-    return chrome_bin, driver_bin
+    if driver_bin_ok:
+        vdrv = _run_version([driver_bin_ok, "--version"])
+        drv_major = _major_version_from_text(vdrv)
+        logging.info("🧭 Chromedriver detectado: %s (%s)", driver_bin_ok, vdrv or "sin versión")
 
+        # Si hay Chrome y mismatch -> IGNORAR driver (esto arregla tu crash)
+        if chrome_major is not None and drv_major is not None and chrome_major != drv_major:
+            logging.warning(
+                "⚠️  MISMATCH: Chrome major=%s vs Chromedriver major=%s. "
+                "Ignorando %s y usando Selenium Manager.",
+                chrome_major, drv_major, driver_bin_ok
+            )
+            driver_bin_ok = None
+    else:
+        logging.info("🧭 Sin chromedriver explícito detectado; usando Selenium Manager.")
 
-def _make_driver_once() -> Tuple[webdriver.Chrome, str]:
-    prof_dir = tempfile.mkdtemp(prefix="chrome-prof-")
+    # Si no hay driver y está webdriver_manager, dejarlo como plan B (pero SOLO si hay Chrome detectado)
+    if not driver_bin_ok and HAVE_WDM and chrome_bin_ok:
+        try:
+            # webdriver_manager suele descargar “algo” compatible,
+            # pero si falla, igual Selenium Manager a veces es mejor.
+            dpath = ChromeDriverManager().install()
+            if _probe_exe(dpath):
+                # validar mismatch también
+                vdrv = _run_version([dpath, "--version"])
+                drv_major = _major_version_from_text(vdrv)
+                if chrome_major is None or drv_major is None or chrome_major == drv_major:
+                    driver_bin_ok = dpath
+                    logging.info("⬇️ webdriver_manager instaló chromedriver en: %s (%s)", dpath, vdrv or "sin versión")
+                else:
+                    logging.warning("⚠️ webdriver_manager descargó driver major=%s != Chrome major=%s. Se ignora.", drv_major, chrome_major)
+        except Exception as e:
+            logging.warning("No se pudo instalar chromedriver con webdriver_manager: %s", e)
+
+    return chrome_bin_ok, driver_bin_ok
+
+def _make_driver_once() -> webdriver.Chrome:
+    prof_dir = tempfile.mkdtemp(prefix="chrome-prof-", dir="/tmp")
     cache_dir = os.path.join(prof_dir, "cache")
     os.makedirs(cache_dir, exist_ok=True)
 
     def _cleanup():
-        try:
+        with contextlib.suppress(Exception):
             shutil.rmtree(prof_dir, ignore_errors=True)
-        except Exception:
-            pass
     atexit.register(_cleanup)
 
     os.environ.setdefault("XDG_RUNTIME_DIR", prof_dir)
@@ -687,9 +772,10 @@ def _make_driver_once() -> Tuple[webdriver.Chrome, str]:
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1280,2000")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
+
+    options.add_argument("--lang=es-AR")
+    options.add_argument("--accept-lang=es-AR,es;q=0.9,en;q=0.8")
+    options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
     options.add_argument(f"--user-data-dir={prof_dir}")
     options.add_argument("--profile-directory=Default")
@@ -697,68 +783,65 @@ def _make_driver_once() -> Tuple[webdriver.Chrome, str]:
     options.add_argument("--no-first-run")
     options.add_argument("--no-default-browser-check")
     options.add_argument("--disable-extensions")
-    options.add_argument("--disable-crash-reporter")
-    options.add_argument("--disable-features=Translate,BackForwardCache")
-    options.add_argument("--hide-scrollbars")
 
     dbg_port = _pick_free_port()
     options.add_argument(f"--remote-debugging-port={dbg_port}")
 
-    options.add_argument(f"--homedir={prof_dir}")
-    options.add_argument(f"--data-path={prof_dir}")
-
-    # --- NUEVO: resolvemos binarios en el VPS ---
     chrome_bin, driver_bin = _resolve_browser_and_driver_paths()
-    if chrome_bin and os.path.exists(chrome_bin):
+    if chrome_bin:
         options.binary_location = chrome_bin
-        print(f"🧭 Usando navegador: {chrome_bin}")
-    else:
-        print("🧭 No se especificó CHROME_BIN; Selenium intentará encontrar Chrome/Chromium.")
 
-    # Crear driver
-    if driver_bin and os.path.exists(driver_bin):
-        print(f"🧭 Usando chromedriver: {driver_bin}")
-        service = Service(executable_path=driver_bin)
-        driver = webdriver.Chrome(service=service, options=options)
-    else:
-        # Selenium Manager resolverá el driver compatible (recomendado si tienes Google Chrome).
-        print("🧭 Sin CHROMEDRIVER_BIN explícito; usando Selenium Manager para resolver el driver.")
-        driver = webdriver.Chrome(options=options)
+    # 🔑 Estrategia:
+    # 1) Si hay driver_bin validado => intentar con Service
+    # 2) Si crashea => fallback inmediato a Selenium Manager (sin Service)
+    if driver_bin:
+        try:
+            service = Service(executable_path=driver_bin)
+            driver = webdriver.Chrome(service=service, options=options)
+            driver.set_page_load_timeout(60)
+            return driver
+        except WebDriverException as e:
+            logging.warning("⚠️ Falló iniciar con chromedriver explícito (%s): %s", driver_bin, e)
+            logging.info("↩️ Fallback: creando driver con Selenium Manager (sin Service)...")
 
+    driver = webdriver.Chrome(options=options)  # Selenium Manager
     driver.set_page_load_timeout(60)
-    return driver, prof_dir
+    return driver
 
 def _make_driver(max_retries: int = 3) -> webdriver.Chrome:
     _best_effort_kill_stale_chrome()
     last_err = None
-    for _ in range(1, max_retries + 1):
+    for intento in range(1, max_retries + 1):
         try:
-            driver, _ = _make_driver_once()
+            driver = _make_driver_once()
+
             def _sigterm_handler(signum, frame):
+                logging.info("📴 SIGTERM recibido. Cerrando driver…")
                 with contextlib.suppress(Exception):
                     driver.quit()
                 os._exit(0)
+
             signal.signal(signal.SIGTERM, _sigterm_handler)
             return driver
+
         except SessionNotCreatedException as e:
             last_err = e
             msg = str(e)
-            if "user data directory is already in use" in msg or "DevToolsActivePort" in msg:
-                time.sleep(0.8)
-                continue
-            if "no chrome binary" in msg.lower():
-                raise RuntimeError(
-                    "No se encontró el binario de Chrome/Chromium. "
-                    "Instala Google Chrome o Chromium y/o exporta CHROME_BIN con su ruta."
-                ) from e
-            break
+            logging.error("SessionNotCreatedException (intento %d/%d): %s", intento, max_retries, msg)
+            time.sleep(1.0 * intento)
+            continue
+
         except WebDriverException as e:
             last_err = e
-            time.sleep(0.8)
+            logging.warning("WebDriverException creando driver (intento %d/%d): %s", intento, max_retries, e)
+            time.sleep(1.0 * intento)
             continue
+
         except Exception as e:
             last_err = e
+            logging.error("Error creando driver: %s", e)
             break
+
     raise last_err if last_err else RuntimeError("No se pudo crear el driver")
 
 def _dismiss_cookies(driver, wait):
@@ -775,19 +858,14 @@ def login_and_select_store(driver, wait):
     _safe_get(driver, BASE)
     _dismiss_cookies(driver, wait)
 
-    # Mi cuenta
     _click_with_retry(driver, wait, "//span[normalize-space()='Mi Cuenta']")
     time.sleep(1)
 
-    # 2) Entrar con e-mail y contraseña (actualizado)
     try:
-        wait.until(EC.presence_of_element_located(
-            (By.XPATH, "//div[contains(@class,'vtex-login-2-x-button')]")
-        ))
+        wait.until(EC.presence_of_element_located((By.XPATH, "//div[contains(@class,'vtex-login-2-x-button')]")))
     except Exception:
         pass
 
-    # Botón principal + fallbacks
     try:
         _click_with_retry(driver, wait, "//div[contains(@class,'vtex-login-2-x-emailPasswordOptionBtn')]//button")
     except Exception:
@@ -796,126 +874,152 @@ def login_and_select_store(driver, wait):
         except Exception:
             _click_with_retry(driver, wait, "//button[.//span[contains(normalize-space(),'Entrar con e-mail')]]")
 
-    # 3) Email (actualizado)
-    try:
-        _type_with_retry(driver, wait, "//input[@placeholder='Email' and @type='text']", DISCO_USER)
-    except Exception:
+    for xp in [
+        "//input[@placeholder='Email' and @type='text']",
+        "//input[contains(@class,'vtex-styleguide-9-x-input') and not(@type='password')]",
+        "(//input[not(@type='password') and not(@type='hidden')])[1]",
+    ]:
         try:
-            _type_with_retry(driver, wait, "//input[contains(@class,'vtex-styleguide-9-x-input') and not(@type='password')]", DISCO_USER)
+            _type_with_retry(driver, wait, xp, DISCO_USER)
+            break
         except Exception:
-            _type_with_retry(driver, wait, "(//input[not(@type='password') and not(@type='hidden')])[1]", DISCO_USER)
+            continue
 
-    # Password
-    try:
-        _type_with_retry(driver, wait, "//input[@type='password' and contains(@class,'vtex-styleguide-9-x-input')]", DISCO_PASS)
-    except Exception:
-        _type_with_retry(driver, wait, "//input[@type='password' or contains(@placeholder,'●')]", DISCO_PASS)
+    for xp in [
+        "//input[@type='password' and contains(@class,'vtex-styleguide-9-x-input')]",
+        "//input[@type='password' or contains(@placeholder,'●')]",
+    ]:
+        try:
+            _type_with_retry(driver, wait, xp, DISCO_PASS)
+            break
+        except Exception:
+            continue
 
-    # Entrar
-    try:
-        _click_with_retry(driver, wait, "//span[normalize-space()='Entrar']/ancestor::button[@type='submit'][1]")
-    except Exception:
-        _click_with_retry(driver, wait, "//div[contains(@class,'vtex-login-2-x-sendButton')]//button[@type='submit']")
+    for xp in [
+        "//span[normalize-space()='Entrar']/ancestor::button[@type='submit'][1]",
+        "//div[contains(@class,'vtex-login-2-x-sendButton')]//button[@type='submit']",
+    ]:
+        try:
+            _click_with_retry(driver, wait, xp)
+            break
+        except Exception:
+            continue
     time.sleep(2)
 
-    # Selector método de entrega
-    try:
-        _click_with_retry(driver, wait, "//span[contains(normalize-space(),'Seleccioná') and contains(.,'método de entrega')]/ancestor::*[@role='button'][1]")
-    except Exception:
-        _click_with_retry(driver, wait, "//div[contains(@class,'discoargentina-delivery-modal-1-x-containerTrigger')]/ancestor::div[@role='button'][1]")
+    for xp in [
+        "//span[contains(normalize-space(),'Seleccioná') and contains(.,'método de entrega')]/ancestor::*[@role='button'][1]",
+        "//div[contains(@class,'discoargentina-delivery-modal-1-x-containerTrigger')]/ancestor::div[@role='button'][1]",
+    ]:
+        try:
+            _click_with_retry(driver, wait, xp)
+            break
+        except Exception:
+            continue
     time.sleep(1)
 
-    # Retirar en una tienda
-    try:
-        _click_with_retry(driver, wait, "//div[contains(@class,'pickUpSelectionContainer')]//button[.//p[contains(normalize-space(),'Retirar en una tienda')]]")
-    except Exception:
-        _click_with_retry(driver, wait, "//button[.//p[contains(normalize-space(),'Retirar en una tienda')]]")
+    for xp in [
+        "//div[contains(@class,'pickUpSelectionContainer')]//button[.//p[contains(normalize-space(),'Retirar en una tienda')]]",
+        "//button[.//p[contains(normalize-space(),'Retirar en una tienda')]]",
+    ]:
+        try:
+            _click_with_retry(driver, wait, xp)
+            break
+        except Exception:
+            continue
 
-    # Provincia
     try:
-        _click_with_retry(driver, wait, "//div[contains(@class,'vtex-dropdown__container')][.//div[contains(.,'Seleccionar Provincia')]]//div[contains(@class,'vtex-dropdown__button')]")
+        _click_with_retry(driver, wait,
+            "//div[contains(@class,'vtex-dropdown__container')][.//div[contains(.,'Seleccionar Provincia')]]"
+            "//div[contains(@class,'vtex-dropdown__button')]"
+        )
     except Exception:
         pass
+
     _select_by_text_case_insensitive(driver, wait,
         "//div[contains(@class,'vtex-dropdown__container')][.//div[contains(.,'Seleccionar Provincia')]]//select",
         PROVINCIA
     )
     time.sleep(1.2)
 
-    # Tienda
     try:
-        _click_with_retry(driver, wait, "//div[contains(@class,'vtex-dropdown__container')][.//div[contains(.,'Seleccionar tienda')]]//div[contains(@class,'vtex-dropdown__button')]")
+        _click_with_retry(driver, wait,
+            "//div[contains(@class,'vtex-dropdown__container')][.//div[contains(.,'Seleccionar tienda')]]"
+            "//div[contains(@class,'vtex-dropdown__button')]"
+        )
     except Exception:
         pass
+
     store_select_xpath = "//div[contains(@class,'vtex-dropdown__container')][.//div[contains(.,'Seleccionar tienda')]]//select"
-    wait.until(EC.presence_of_element_located(
-        (By.XPATH, f"{store_select_xpath}/option[contains(., '{TIENDA_NOM}') or contains(., '{TIENDA_NOM.replace('ó','o')}')]")
-    ))
+    try:
+        wait.until(EC.presence_of_element_located((By.XPATH, f"{store_select_xpath}/option[contains(., '{TIENDA_NOM}')]")))
+    except Exception:
+        pass
+
     _select_by_text_case_insensitive(driver, wait, store_select_xpath, TIENDA_NOM)
 
-    # Confirmar
-    try:
-        _click_with_retry(driver, wait, "//div[contains(@class,'discoargentina-delivery-modal-1-x-buttonStyle')]//button[.//div[normalize-space()='Confirmar']]")
-    except Exception:
-        _click_with_retry(driver, wait, "//div[@role='dialog']//button[.//div[normalize-space()='Confirmar'] or normalize-space()='Confirmar']")
+    for xp in [
+        "//div[contains(@class,'discoargentina-delivery-modal-1-x-buttonStyle')]//button[.//div[normalize-space()='Confirmar']]",
+        "//div[@role='dialog']//button[.//div[normalize-space()='Confirmar'] or normalize-space()='Confirmar']",
+    ]:
+        try:
+            _click_with_retry(driver, wait, xp)
+            break
+        except Exception:
+            continue
     time.sleep(1.2)
 
 def run_scrape_and_persist():
-    # Listener de ENTER en paralelo
-    t_listener = threading.Thread(target=_enter_listener, daemon=True)
-    t_listener.start()
+    start_enter_listener_if_tty()
 
     driver = _make_driver(max_retries=3)
     wait = WebDriverWait(driver, 30)
 
     data: List[Dict[str, Any]] = []
     try:
-        # 1) login + tienda
+        logging.info("🔐 Iniciando login y selección de tienda…")
         login_and_select_store(driver, wait)
+        logging.info("✅ Login/tienda OK")
 
-        # 2) Crawl por páginas
         page = 1
         empty_pages = 0
         while True:
             if STOP_EVENT.is_set():
-                print("🛑 Corte solicitado por usuario (ENTER). Saliendo del bucle de páginas…")
+                logging.info("🛑 Corte solicitado. Fin de páginas.")
                 break
 
             list_url = f"{BASE}{CATEGORIA_URL}?page={page}"
-            print(f"\n📄 Página: {page} -> {list_url}")
+            logging.info("📄 Página: %d -> %s", page, list_url)
             _safe_get(driver, list_url)
             time.sleep(SLEEP_PAGE)
 
-            # cargar todos los productos renderizados de la página
             _load_all_products_on_list(driver, wait, max_wait=20, max_clicks=20)
-
             links = _collect_product_links_on_page(driver, timeout=14)
+
             if not links:
-                print("⚠️  Sin items en la página.")
+                logging.warning("⚠️  Sin items en la página %d.", page)
                 empty_pages += 1
                 if empty_pages > MAX_EMPTY:
-                    print("⛔ Fin: no hay más productos.")
+                    logging.info("⛔ Fin: no hay más productos.")
                     break
-                else:
-                    page += 1
-                    continue
+                page += 1
+                continue
 
             empty_pages = 0
-            print(f"🔗 Productos encontrados: {len(links)}")
+            logging.info("🔗 Productos encontrados: %d", len(links))
 
             for i, rel in enumerate(links, 1):
                 if STOP_EVENT.is_set():
-                    print("🛑 Corte solicitado por usuario (ENTER). Deteniendo productos restantes en esta página…")
+                    logging.info("🛑 Corte solicitado. Deteniendo restantes en esta página…")
                     break
                 try:
-                    print(f"  → [{i}/{len(links)}] {rel}")
+                    logging.info("  → [%d/%d] %s", i, len(links), rel)
                     item = _scrape_pdp(driver, wait, rel)
                     data.append(item)
                 except Exception as e:
-                    print(f"    × Error en {rel}: {e}")
+                    logging.error("    × Error en %s: %s", rel, e)
                 finally:
-                    # volver a la lista para mantener el contexto/cookies
-                    _safe_get(driver, list_url)
+                    with contextlib.suppress(Exception):
+                        _safe_get(driver, list_url)
                     time.sleep(SLEEP_PDP)
 
             if STOP_EVENT.is_set():
@@ -924,10 +1028,9 @@ def run_scrape_and_persist():
             page += 1
 
         if not data:
-            print("⚠️ No se capturaron productos; no se escribe MySQL.")
+            logging.warning("⚠️ No se capturaron productos; no se escribe MySQL.")
             return
 
-        # 3) Persistencia MySQL (commits por bloques para resiliencia)
         capturado_en = datetime.now()
         conn = None
         try:
@@ -943,7 +1046,7 @@ def run_scrape_and_persist():
                                       TIENDA_NOM)
 
             insertados = 0
-            for idx, p in enumerate(data, 1):
+            for p in data:
                 producto_id = find_or_create_producto(cur, p)
                 pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, p)
                 insert_historico(cur, tienda_id, pt_id, p, capturado_en)
@@ -951,21 +1054,29 @@ def run_scrape_and_persist():
 
                 if insertados % 50 == 0:
                     conn.commit()
-                    print(f"💾 Commit intermedio: {insertados} filas…")
+                    logging.info("💾 Commit intermedio: %d filas…", insertados)
 
             conn.commit()
-            print(f"✅ Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOM} ({capturado_en})")
+            logging.info("✅ Guardado en MySQL: %d filas de histórico para %s (%s)", insertados, TIENDA_NOM, capturado_en)
 
         except MySQLError as e:
-            if conn: conn.rollback()
-            print(f"❌ Error MySQL: {e}")
+            if conn:
+                conn.rollback()
+            logging.error("❌ Error MySQL: %s", e)
         finally:
             with contextlib.suppress(Exception):
-                if conn: conn.close()
+                if conn:
+                    conn.close()
 
     finally:
         with contextlib.suppress(Exception):
             driver.quit()
+        logging.info("🧹 Driver cerrado.")
+
+def main():
+    setup_logging()
+    setup_cron_environment()
+    run_scrape_and_persist()
 
 if __name__ == "__main__":
-    run_scrape_and_persist()
+    main()

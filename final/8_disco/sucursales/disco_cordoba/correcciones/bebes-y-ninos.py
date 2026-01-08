@@ -143,8 +143,8 @@ SLEEP_PAGE    = float(os.getenv("DISCO_SLEEP_PAGE", "1.0"))
 EMBEDDED_CHROME_BIN = os.getenv("EMBEDDED_CHROME_BIN", "/usr/bin/chromium-browser")          # o "/usr/bin/chromium"
 EMBEDDED_CHROMEDRIVER_BIN = os.getenv("EMBEDDED_CHROMEDRIVER_BIN", "/usr/lib/chromium-browser/chromedriver")  # o "/usr/lib/chromium/chromedriver"
 
-TIENDA_CODIGO = "disco_cordoba_alto_cordoba_cabrera_493"
-TIENDA_NOMBRE = "Disco_cordoba_alto_cordoba_cabrera_493"
+TIENDA_CODIGO = "Disco Cordoba"
+TIENDA_NOMBRE = "Disco Cordoba"
 TIENDA_REF    = os.getenv("DISCO_REF_TIENDA", "disco_cordoba_cabrera_493")
 
 # Opcional: matar huérfanos Chrome lanzados por perfiles temporales previos (0/1)

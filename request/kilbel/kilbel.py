@@ -191,6 +191,7 @@ def parse_listing_products(soup: BeautifulSoup) -> List[Dict[str, Any]]:
         href = a.get("href") if a else None
         url_detalle = urljoin(BASE, href) if href else None
 
+
         img = prod.select_one(".ant_imagen img")
         img_url = img.get("data-src") or (img.get("src") if img else None)
 

@@ -2,24 +2,18 @@
 # -*- coding: utf-8 -*-
 
 """
-Kilbel (kilbelonline.com) – Almacén n1_1 → MySQL (modo súper respetuoso) [CORREGIDO A TU ESQUEMA]
+Kilbel (kilbelonline.com) – Almacén n1_1 (modo súper respetuoso) + MySQL (lógica Coto)
 
-✅ Corrección clave (tu esquema anterior):
-1) Si existe SKU en producto_tienda para esa tienda:
-   - NO crea producto nuevo
-   - Reutiliza el producto_id ya asociado
-2) En upsert_producto_tienda con SKU:
-   - NO actualiza producto_id en ON DUPLICATE KEY UPDATE (se mantiene)
-
-Extras de robustez MySQL (alineado a tus scripts):
-- Retries ante 1205/1213 (lock wait / deadlock)
-- READ COMMITTED + lock_wait_timeout
-- commits en batch (cada 25 items) y rollback seguro
-
-Scraping respetuoso:
-- Respeta robots.txt (Crawl-delay), RPS, jitter, siestas largas, backoff.
-- Ventana horaria opcional.
-- Auto-guardado periódico y reanudación desde XLSX previo (opcional).
+- Recorre /almacen/n1_1/pag/1/, /2/, ... hasta que no haya productos.
+- Extrae desde el listado y completa en el detalle.
+- Persiste en MySQL siguiendo tu patrón:
+  upsert_tienda -> (reuso por SKU) -> find_or_create_producto -> upsert_producto_tienda -> insert_historico
+- Regla especial Kilbel:
+  ✅ Si ya existe producto_tienda con (tienda_id, sku_tienda):
+     - NO crea producto nuevo
+     - Reusa el producto_id asociado
+  ✅ En upsert_producto_tienda con SKU:
+     - NO actualizar producto_id en ON DUPLICATE KEY UPDATE
 """
 
 import re
@@ -32,31 +26,30 @@ from typing import List, Dict, Optional, Tuple, Any
 from urllib.parse import urljoin
 from datetime import datetime, time as dtime
 
+import numpy as np
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 import pandas as pd
 import urllib.robotparser as robotparser
-import numpy as np
-import mysql.connector
-from mysql.connector import errors as myerr
 
-# ======== Conexión MySQL =========
-# Debe existir un módulo base_datos.py con get_conn() que devuelva mysql.connector.connect(...)
+from mysql.connector import Error as MySQLError
+
+# añade la carpeta raíz (2 niveles más arriba) al sys.path
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )
-from base_datos import get_conn  # noqa
+from base_datos import get_conn  # <- tu conexión MySQL
 
-# ======== Identidad tienda / Config sitio ========
-TIENDA_CODIGO = "kilbel"
-TIENDA_NOMBRE = "Kilbel"
-
+# ================== Config sitio ==================
 BASE = "https://www.kilbelonline.com"
 LISTING_FMT = "/lacteos/n1_994/pag/{page}/"
 
-# ======== Headers / Rotación ========
+TIENDA_CODIGO = "kilbel"
+TIENDA_NOMBRE = "Kilbel Online"
+
+# ================== Headers / Rotación ==================
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -78,46 +71,19 @@ HEADERS_BASE = {
     "Upgrade-Insecure-Requests": "1",
 }
 
-# ======== Límites de columnas (ajustá a tu schema) ========
-MAXLEN_TIPO_OFERTA = 190
-MAXLEN_PROMO_COMENTARIOS = 480
-MAXLEN_URL = 512
-MAXLEN_NOMBRE_TIENDA = 255
-MAXLEN_MARCA = 128
-MAXLEN_FABRICANTE = 128
-MAXLEN_CATEGORIA = 128
-MAXLEN_SUBCATEGORIA = 128
-MAXLEN_NOMBRE = 255
-
-def _truncate(val: Optional[Any], maxlen: int) -> Optional[str]:
-    if val is None:
-        return None
-    s = str(val)
-    return s if len(s) <= maxlen else s[:maxlen]
-
 RE_CARD = re.compile(r"^prod_(\d+)$")
 
-# ======== Robustez MySQL (locks/deadlocks) ========
-LOCK_ERRNOS = {1205, 1213}
+# ================== Utils texto/precio ==================
+_NULLLIKE = {"", "null", "none", "nan", "na"}
 
-def exec_retry(cur, sql: str, params: tuple = (), max_retries: int = 5, base_sleep: float = 0.4):
-    att = 0
-    while True:
-        try:
-            cur.execute(sql, params)
-            return
-        except myerr.DatabaseError as e:
-            code = getattr(e, "errno", None)
-            if code in LOCK_ERRNOS and att < max_retries:
-                wait = base_sleep * (2 ** att)
-                print(f"[LOCK] errno={code} retry {att+1}/{max_retries} in {wait:.2f}s")
-                time.sleep(wait)
-                att += 1
-                continue
-            raise
+def clean(val) -> Optional[str]:
+    if val is None:
+        return None
+    s = str(val).strip()
+    s = re.sub(r"\s+", " ", s)
+    return None if s.lower() in _NULLLIKE else s
 
-# ======== Utilidades ========
-def clean(text: str) -> str:
+def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
 
 def parse_price(s: Optional[str]) -> Optional[float]:
@@ -130,6 +96,20 @@ def parse_price(s: Optional[str]) -> Optional[float]:
     except Exception:
         return None
 
+def price_to_varchar_2dec(x) -> Optional[str]:
+    if x is None:
+        return None
+    if isinstance(x, (int, float)):
+        try:
+            return f"{float(x):.2f}"
+        except Exception:
+            return None
+    v = parse_price(str(x))
+    if v is None:
+        return None
+    return f"{float(v):.2f}"
+
+# ================== Sesión HTTP respetuosa ==================
 def build_session(timeout_connect=10, timeout_read=25) -> Tuple[requests.Session, Tuple[int, int]]:
     s = requests.Session()
     retry = Retry(
@@ -153,7 +133,6 @@ def pick_headers() -> Dict[str, str]:
     }
 
 def now_in_window(start: Optional[str], end: Optional[str]) -> bool:
-    """True si hora local actual está dentro de [start, end] HH:MM (admite cruce de medianoche)."""
     if not start and not end:
         return True
 
@@ -164,7 +143,9 @@ def now_in_window(start: Optional[str], end: Optional[str]) -> bool:
     now = datetime.now().time()
     if start and end:
         t1, t2 = to_time(start), to_time(end)
-        return (t1 <= now <= t2) if t1 <= t2 else (now >= t1 or now <= t2)
+        if t1 <= t2:
+            return t1 <= now <= t2
+        return now >= t1 or now <= t2
     if start:
         return now >= to_time(start)
     if end:
@@ -176,7 +157,7 @@ def respect_robots_crawl_delay() -> Optional[float]:
     rp.set_url(urljoin(BASE, "/robots.txt"))
     try:
         rp.read()
-        return rp.crawl_delay(USER_AGENTS[0])  # puede ser None
+        return rp.crawl_delay(USER_AGENTS[0])
     except Exception:
         return None
 
@@ -193,7 +174,6 @@ def polite_get(session: requests.Session, url: str, timeouts: Tuple[int, int],
                base_sleep: float, jitter: float,
                adaptive_state: Dict[str, Any],
                tries: int = 5) -> Optional[requests.Response]:
-    """GET con rotación de UA/idioma y backoff adaptativo."""
     last_exc = None
     for attempt in range(1, tries + 1):
         session.headers.update(pick_headers())
@@ -222,7 +202,7 @@ def polite_get(session: requests.Session, url: str, timeouts: Tuple[int, int],
     sys.stderr.write(f"[ERROR] GET falló: {url}; último error: {last_exc}\n")
     return None
 
-# ======== Parse listado ========
+# ================== Parse listado ==================
 def parse_listing_products(soup: BeautifulSoup) -> List[Dict[str, Any]]:
     productos = []
     cards = soup.select("div.producto[id^=prod_]")
@@ -234,7 +214,7 @@ def parse_listing_products(soup: BeautifulSoup) -> List[Dict[str, Any]]:
         codigo_interno = m.group(1) if m else None
 
         a = prod.select_one(".col1_listado .titulo02 a")
-        nombre_list = clean(a.get_text()) if a else None
+        nombre_list = clean_text(a.get_text()) if a else None
         href = a.get("href") if a else None
         url_detalle = urljoin(BASE, href) if href else None
 
@@ -271,13 +251,14 @@ def parse_listing_products(soup: BeautifulSoup) -> List[Dict[str, Any]]:
                 sin_imp_list = parse_price(txt)
 
         print(f"    [{idx:03}] LISTADO  CODINT={codigo_interno}  SKU_TIENDA={sku_tienda}  NOMBRE='{nombre_list}'  URL={url_detalle}")
+
         productos.append({
             "CodigoInterno_list": codigo_interno,
             "NombreProducto_list": nombre_list,
             "URL": url_detalle,
             "Imagen": img_url,
             "SKU_Tienda": sku_tienda,
-            "RecordId_Tienda": sku_tienda,
+            "RecordId_Tienda": sku_tienda,  # en Kilbel suele coincidir
             "PrecioLista_list": precio_lista_list,
             "PrecioOferta_list": precio_oferta_list,
             "TipoOferta": promo,
@@ -286,7 +267,7 @@ def parse_listing_products(soup: BeautifulSoup) -> List[Dict[str, Any]]:
         })
     return productos
 
-# ======== Parse detalle ========
+# ================== Parse detalle ==================
 def parse_detail(session: requests.Session, url: str, timeouts: Tuple[int, int],
                  base_sleep: float, jitter: float, adaptive_state: Dict[str, Any]) -> Dict[str, Any]:
     res = {
@@ -303,7 +284,7 @@ def parse_detail(session: requests.Session, url: str, timeouts: Tuple[int, int],
 
     h1 = soup.select_one("#detalle_producto h1.titulo_producto")
     if h1:
-        res["NombreProducto"] = clean(h1.get_text())
+        res["NombreProducto"] = clean_text(h1.get_text())
 
     cod_box = soup.find(string=re.compile(r"COD\.\s*\d+"))
     if cod_box:
@@ -331,158 +312,148 @@ def parse_detail(session: requests.Session, url: str, timeouts: Tuple[int, int],
         on = onclick_node.get("onclick", "")
         mm = re.search(r"agregarLista_dataLayerPush\('([^']+)'", on)
         if mm:
-            ruta = clean(mm.group(1).replace("&gt;", ">"))
-            partes = [clean(p) for p in ruta.split(">") if p.strip()]
+            ruta = clean_text(mm.group(1).replace("&gt;", ">"))
+            partes = [clean_text(p) for p in ruta.split(">") if p.strip()]
             if partes:
                 res["Categoria"] = partes[0] if len(partes) > 0 else None
                 res["Subcategoria"] = partes[1] if len(partes) > 1 else None
                 res["Subsubcategoria"] = partes[2] if len(partes) > 2 else None
 
+    # EAN: si aparece en texto
     m_ean = re.search(r"\b(\d{13})\b", soup.get_text(" ", strip=True))
     if m_ean:
         res["EAN"] = m_ean.group(1)
 
     return res
 
-# ======== Helpers MySQL ========
-def _parse_price_num(val) -> Optional[str]:
-    if val is None:
-        return None
-    try:
-        f = float(val)
-        if np.isnan(f):
-            return None
-        return f"{round(f, 2)}"
-    except Exception:
-        return None
-
+# ================== MySQL helpers (lógica Coto + regla Kilbel) ==================
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
-    exec_retry(cur,
+    cur.execute(
         "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
         "ON DUPLICATE KEY UPDATE nombre=VALUES(nombre)",
         (codigo, nombre)
     )
-    exec_retry(cur, "SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
+    cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
     return cur.fetchone()[0]
 
-def get_producto_id_by_sku(cur, tienda_id: int, sku: str) -> Optional[int]:
-    """Regla estándar: si existe SKU, reutiliza producto_id y NO crees producto nuevo."""
-    if not sku:
-        return None
-    exec_retry(cur,
-        "SELECT producto_id FROM producto_tienda WHERE tienda_id=%s AND sku_tienda=%s LIMIT 1",
-        (tienda_id, sku)
-    )
+def get_producto_id_from_producto_tienda_by_sku(cur, tienda_id: int, sku: str) -> Optional[int]:
+    """
+    ✅ Regla Kilbel:
+    Si ya existe producto_tienda para (tienda_id, sku_tienda),
+    devolvemos su producto_id y NO creamos producto nuevo.
+    """
+    cur.execute("""
+        SELECT producto_id
+        FROM producto_tienda
+        WHERE tienda_id=%s AND sku_tienda=%s
+        LIMIT 1
+    """, (tienda_id, sku))
     row = cur.fetchone()
-    return row[0] if row else None
+    return int(row[0]) if row and row[0] else None
 
-def get_producto_id_by_record(cur, tienda_id: int, record_id: str) -> Optional[int]:
-    """Fallback: si no hay SKU, intentar por record_id_tienda para evitar productos huérfanos."""
-    if not record_id:
-        return None
-    exec_retry(cur,
-        "SELECT producto_id FROM producto_tienda WHERE tienda_id=%s AND record_id_tienda=%s LIMIT 1",
-        (tienda_id, record_id)
-    )
-    row = cur.fetchone()
-    return row[0] if row else None
-
-def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
-    ean = (r.get("EAN") or None)
-    nombre = _truncate((r.get("NombreProducto") or ""), MAXLEN_NOMBRE)
-    marca = _truncate((r.get("Marca") or None), MAXLEN_MARCA)
-    fabricante = _truncate((r.get("Fabricante") or None), MAXLEN_FABRICANTE)
-    categoria = _truncate((r.get("Categoria") or None), MAXLEN_CATEGORIA)
-    subcategoria = _truncate((r.get("Subcategoria") or None), MAXLEN_SUBCATEGORIA)
-
-    # 1) Por EAN
+def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
+    ean = clean(p.get("EAN"))
     if ean:
-        exec_retry(cur, "SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
+        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
         row = cur.fetchone()
         if row:
             pid = row[0]
-            exec_retry(cur, """
+            cur.execute("""
                 UPDATE productos SET
                   nombre = COALESCE(NULLIF(%s,''), nombre),
-                  marca = COALESCE(%s, marca),
-                  fabricante = COALESCE(%s, fabricante),
-                  categoria = COALESCE(%s, categoria),
-                  subcategoria = COALESCE(%s, subcategoria)
+                  marca = COALESCE(NULLIF(%s,''), marca),
+                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
+                  categoria = COALESCE(NULLIF(%s,''), categoria),
+                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
                 WHERE id=%s
-            """, (nombre, marca, fabricante, categoria, subcategoria, pid))
+            """, (
+                (p.get("NombreProducto") or ""),
+                (p.get("Marca") or ""),
+                (p.get("Fabricante") or ""),
+                (p.get("Categoria") or ""),
+                (p.get("Subcategoria") or ""),
+                pid
+            ))
             return pid
 
-    # 2) Por (nombre, marca)
+    nombre = clean(p.get("NombreProducto")) or ""
+    marca  = clean(p.get("Marca")) or ""
     if nombre and marca:
-        exec_retry(cur,
-            "SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1",
-            (nombre, marca or "")
-        )
+        cur.execute("SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1", (nombre, marca))
         row = cur.fetchone()
         if row:
             pid = row[0]
-            exec_retry(cur, """
+            cur.execute("""
                 UPDATE productos SET
-                  ean = COALESCE(%s, ean),
-                  fabricante = COALESCE(%s, fabricante),
-                  categoria = COALESCE(%s, categoria),
-                  subcategoria = COALESCE(%s, subcategoria)
+                  ean = COALESCE(NULLIF(%s,''), ean),
+                  fabricante = COALESCE(NULLIF(%s,''), fabricante),
+                  categoria = COALESCE(NULLIF(%s,''), categoria),
+                  subcategoria = COALESCE(NULLIF(%s,''), subcategoria)
                 WHERE id=%s
-            """, (ean, fabricante, categoria, subcategoria, pid))
+            """, (
+                (p.get("EAN") or ""),
+                (p.get("Fabricante") or ""),
+                (p.get("Categoria") or ""),
+                (p.get("Subcategoria") or ""),
+                pid
+            ))
             return pid
 
-    # 3) Insert nuevo
-    exec_retry(cur, """
+    cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
-        VALUES (%s, NULLIF(%s,''), %s, %s, %s, %s)
-    """, (ean, nombre, marca, fabricante, categoria, subcategoria))
+        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
+    """, (
+        (p.get("EAN") or ""),
+        nombre,
+        marca,
+        (p.get("Fabricante") or ""),
+        (p.get("Categoria") or ""),
+        (p.get("Subcategoria") or "")
+    ))
     return cur.lastrowid
 
-def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
-    sku = (r.get("SKU_Tienda") or None)
-    url = _truncate((r.get("URL") or None), MAXLEN_URL)
-    nombre_tienda = _truncate((r.get("NombreProducto") or None), MAXLEN_NOMBRE_TIENDA)
-    record_id = (r.get("RecordId_Tienda") or None)
+def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
+    """
+    Upsert estilo Coto con LAST_INSERT_ID(id).
+    ✅ Regla Kilbel: si hay SKU, NO actualizar producto_id en el DUPLICATE.
+    """
+    sku = clean(p.get("SKU_Tienda"))
+    rec = clean(p.get("RecordId_Tienda"))
+    url = (p.get("URL") or "")
+    nombre_tienda = (p.get("NombreProducto") or "")
 
     if sku:
-        exec_retry(cur, """
+        cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
-              -- OJO: NO tocamos producto_id cuando ya existe el SKU
               record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
+        """, (tienda_id, producto_id, sku, rec, url, nombre_tienda))
         return cur.lastrowid
 
-    if record_id:
-        exec_retry(cur, """
+    if rec:
+        cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, NULL, %s, %s, %s)
+            VALUES (%s, %s, NULL, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
               producto_id = VALUES(producto_id),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, record_id, url, nombre_tienda))
+        """, (tienda_id, producto_id, rec, url, nombre_tienda))
         return cur.lastrowid
 
-    exec_retry(cur, """
+    cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
-        VALUES (%s, %s, %s, %s)
+        VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
     """, (tienda_id, producto_id, url, nombre_tienda))
     return cur.lastrowid
 
-def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en: datetime):
-    precio_lista = _parse_price_num(r.get("PrecioLista"))
-    precio_oferta = _parse_price_num(r.get("PrecioOferta"))
-    tipo_oferta = _truncate((r.get("TipoOferta") or None), MAXLEN_TIPO_OFERTA)
-
-    promo_comentarios = _truncate(f"pagina={r.get('Pagina', '')}", MAXLEN_PROMO_COMENTARIOS)
-
-    exec_retry(cur, """
+def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
+    cur.execute("""
         INSERT INTO historico_precios
           (tienda_id, producto_tienda_id, capturado_en,
            precio_lista, precio_oferta, tipo_oferta,
@@ -498,16 +469,18 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
           promo_comentarios = VALUES(promo_comentarios)
     """, (
         tienda_id, producto_tienda_id, capturado_en,
-        precio_lista, precio_oferta, tipo_oferta,
-        tipo_oferta, None, None, promo_comentarios
+        price_to_varchar_2dec(p.get("PrecioLista")),
+        price_to_varchar_2dec(p.get("PrecioOferta")),
+        (p.get("TipoOferta") or None),
+        None, None, None, None
     ))
 
-# ======== Runner (scrape + MySQL) ========
+# ================== Runner ==================
 def run(max_pages: int,
         start_page: int,
-        outfile: Optional[str],
+        outfile: str,
         csv: Optional[str],
-        rps: Optional[float],
+        rps: float,
         sleep_item: Tuple[float, float],
         sleep_page: Tuple[float, float],
         long_nap_every_items: int,
@@ -518,11 +491,10 @@ def run(max_pages: int,
         autosave_every: int,
         window_start: Optional[str],
         window_end: Optional[str],
-        max_consecutive_errors: int,
-        mysql_enabled: bool):
+        max_consecutive_errors: int):
 
     if not now_in_window(window_start, window_end):
-        print(f"⏳ Fuera de la ventana horaria permitida ({window_start or '-'}–{window_end or '-'})")
+        print(f"⏳ Fuera de ventana horaria permitida ({window_start or '-'}–{window_end or '-'})")
         return
 
     session, timeouts = build_session()
@@ -533,7 +505,7 @@ def run(max_pages: int,
     if crawl_delay:
         sys.stderr.write(f"[INFO] robots.txt Crawl-delay: {crawl_delay}s\n")
 
-    # Reanudación (para evitar repetir URLs)
+    # Reanudación Excel (solo para evitar repetir URLs)
     resultados: List[Dict[str, Any]] = []
     vistos = set()
     if resume_file and os.path.exists(resume_file):
@@ -550,32 +522,18 @@ def run(max_pages: int,
     total_items = 0
     consecutive_errors = 0
 
-    # Conexión MySQL (si está activada) y tienda
+    # ====== MySQL: una corrida = un capturado_en ======
+    capturado_en = datetime.now()
     conn = None
     cur = None
-    tienda_id = None
-    capturado_en = datetime.now()
-
-    if mysql_enabled:
-        conn = get_conn()
-        conn.autocommit = False
-        # buffered=True para poder fetchone consistente tras execs
-        cur = conn.cursor(buffered=True)
-
-        # Afinar sesión (como tus scripts)
-        try:
-            with conn.cursor() as cset:
-                cset.execute("SET SESSION innodb_lock_wait_timeout = 5")
-                cset.execute("SET SESSION transaction_isolation = 'READ-COMMITTED'")
-                cset.execute("SET SESSION sql_safe_updates = 0")
-        except Exception:
-            pass
-
-        tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
-        conn.commit()
-        print(f"🗃 Tienda registrada: {TIENDA_CODIGO} -> id {tienda_id}")
 
     try:
+        conn = get_conn()
+        conn.autocommit = False
+        cur = conn.cursor()
+
+        tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
+
         for page in range(start_page, max_pages + 1):
             if not now_in_window(window_start, window_end):
                 print(f"⏳ Fuera de ventana horaria ({window_start or '-'}–{window_end or '-'}) — pausa 60s")
@@ -599,16 +557,14 @@ def run(max_pages: int,
 
             for rprod in rows:
                 if not now_in_window(window_start, window_end):
-                    print("⏳ Fuera de ventana horaria — pausa 60s")
+                    print(f"⏳ Fuera de ventana horaria — pausa 60s")
                     time.sleep(60)
                     continue
 
                 url = rprod.get("URL")
                 if not url:
-                    print("    - Card sin URL de detalle, salto.")
                     continue
                 if url in vistos:
-                    print(f"    - Ya visitado: {url}")
                     continue
 
                 base_sleep = random.uniform(*sleep_item)
@@ -640,47 +596,30 @@ def run(max_pages: int,
                     "Pagina": page,
                 }
 
+                # ========= Persistencia MySQL (lógica Coto + regla Kilbel) =========
+                sku = clean(merged.get("SKU_Tienda"))
+                producto_id = None
+
+                if sku:
+                    producto_id = get_producto_id_from_producto_tienda_by_sku(cur, tienda_id, sku)
+
+                if not producto_id:
+                    producto_id = find_or_create_producto(cur, merged)
+
+                pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, merged)
+                insert_historico(cur, tienda_id, pt_id, merged, capturado_en)
+
+                # ========= salida local =========
                 resultados.append(merged)
                 vistos.add(url)
                 total_items += 1
 
-                # Ingesta inmediata (fila por fila) — CORREGIDA a tu lógica
-                if mysql_enabled and cur and tienda_id:
-                    try:
-                        sku = merged.get("SKU_Tienda") or None
-                        record_id = merged.get("RecordId_Tienda") or None
-
-                        # 1) Si existe SKU en producto_tienda -> reutiliza producto_id y NO crees producto nuevo
-                        producto_id = None
-                        if sku:
-                            producto_id = get_producto_id_by_sku(cur, tienda_id, sku)
-
-                        # 2) Si no hay SKU o no existe aún, intentar por record_id (evita huérfanos)
-                        if producto_id is None and record_id:
-                            producto_id = get_producto_id_by_record(cur, tienda_id, record_id)
-
-                        # 3) Si no existe vínculo previo, recién ahí crear/buscar producto
-                        if producto_id is None:
-                            producto_id = find_or_create_producto(cur, merged)
-
-                        pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, merged)
-                        insert_historico(cur, tienda_id, pt_id, merged, capturado_en)
-
-                        if total_items % 25 == 0:
-                            conn.commit()
-
-                    except Exception:
-                        conn.rollback()
-                        raise
-
-                # Siesta larga por items
                 if long_nap_every_items and total_items % long_nap_every_items == 0:
                     nap = long_nap_seconds + random.uniform(0, 2)
                     sys.stderr.write(f"[INFO] Siesta larga por items: {nap:.1f}s\n")
                     time.sleep(nap)
 
-                # Auto-save XLSX opcional
-                if outfile and autosave_every and total_items % autosave_every == 0:
+                if autosave_every and total_items % autosave_every == 0:
                     try:
                         pd.DataFrame(resultados).to_excel(outfile, index=False)
                         sys.stderr.write(f"[INFO] Autosave -> {outfile} ({len(resultados)} filas)\n")
@@ -691,35 +630,37 @@ def run(max_pages: int,
                     sys.stderr.write(f"[ERROR] Demasiados errores consecutivos ({consecutive_errors}). Abortando para respetar el sitio.\n")
                     break
 
-            # Siesta larga por páginas
             if long_nap_every_pages and page % long_nap_every_pages == 0:
                 nap = long_nap_seconds + random.uniform(0, 2)
                 sys.stderr.write(f"[INFO] Siesta larga por páginas: {nap:.1f}s\n")
                 time.sleep(nap)
 
-            # Sleep entre páginas
             time.sleep(random.uniform(*sleep_page))
 
             if max_consecutive_errors and consecutive_errors >= max_consecutive_errors:
                 break
 
-        # Commit final MySQL
-        if mysql_enabled and conn:
-            conn.commit()
-            print(f"\n✅ Ingesta MySQL completada. Filas procesadas: {total_items}")
+        if not resultados:
+            print("\n⚠ No se obtuvieron productos. No se generará Excel.")
+            conn.rollback()
+            return
+
+        conn.commit()
+        print(f"💾 Guardado en MySQL: {total_items} históricos para {TIENDA_NOMBRE} ({capturado_en})")
+
+    except MySQLError as e:
+        if conn:
+            conn.rollback()
+        print(f"❌ Error MySQL: {e}")
 
     finally:
-        if mysql_enabled and conn:
-            try:
+        try:
+            if conn:
                 conn.close()
-            except Exception:
-                pass
+        except Exception:
+            pass
 
-    if not resultados:
-        print("\n⚠ No se obtuvieron productos.")
-        return
-
-    # Salidas opcionales a archivo
+    # ====== Excel/CSV final ======
     df = pd.DataFrame(resultados)
     cols = [
         "EAN", "CodigoInterno", "NombreProducto",
@@ -732,25 +673,20 @@ def run(max_pages: int,
         if c not in df.columns:
             df[c] = None
     df = df[cols]
-
-    if outfile:
-        df.to_excel(outfile, index=False)
+    df.to_excel(outfile, index=False)
     if csv:
         df.to_csv(csv, index=False, encoding="utf-8-sig")
-    if outfile or csv:
-        print(f"\n📄 Guardado local: "
-              f"{outfile if outfile else ''} "
-              f"{'| ' + csv if csv else ''}  (filas: {len(df)})")
 
-# ======== CLI ========
+    print(f"\n✔ Guardado: {outfile} (filas: {len(df)})" + (f" | CSV: {csv}" if csv else ""))
+
+# ================== CLI ==================
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="Kilbel Almacén n1_1 → MySQL (modo respetuoso). [CORREGIDO]")
+    ap = argparse.ArgumentParser(description="Scraper Kilbel Almacén n1_1 (modo respetuoso) + MySQL (lógica Coto).")
     ap.add_argument("--max-pages", type=int, default=300)
     ap.add_argument("--start-page", type=int, default=1)
-    ap.add_argument("--outfile", type=str, default=None, help="XLSX opcional")
-    ap.add_argument("--csv", type=str, default=None, help="CSV opcional")
+    ap.add_argument("--outfile", type=str, default="kilbel_almacen_n1_1.xlsx")
+    ap.add_argument("--csv", type=str, default=None)
 
-    # ritmo y pausas
     ap.add_argument("--rps", type=float, default=0.33, help="Requests por segundo (0 = sin tope).")
     ap.add_argument("--sleep-item-min", type=float, default=0.5)
     ap.add_argument("--sleep-item-max", type=float, default=1.2)
@@ -760,18 +696,13 @@ if __name__ == "__main__":
     ap.add_argument("--long-nap-every-pages", type=int, default=8)
     ap.add_argument("--long-nap-seconds", type=float, default=10.0)
 
-    # operación
-    ap.add_argument("--proxy", type=str, default=None, help="socks5://user:pass@host:1080 o http://host:puerto")
-    ap.add_argument("--resume", type=str, default=None, help="xlsx previo para reanudar (lee columna URL)")
-    ap.add_argument("--autosave-every", type=int, default=50, help="Guardar cada N filas")
+    ap.add_argument("--proxy", type=str, default=None)
+    ap.add_argument("--resume", type=str, default=None)
+    ap.add_argument("--autosave-every", type=int, default=50)
 
-    # ventana horaria y presupuesto de errores
-    ap.add_argument("--window-start", type=str, default=None, help="HH:MM local (ej 01:00)")
-    ap.add_argument("--window-end", type=str, default=None, help="HH:MM local (ej 06:00)")
+    ap.add_argument("--window-start", type=str, default=None)
+    ap.add_argument("--window-end", type=str, default=None)
     ap.add_argument("--max-consecutive-errors", type=int, default=12)
-
-    # mysql
-    ap.add_argument("--no-mysql", action="store_true", help="No insertar en MySQL (solo archivos locales)")
 
     args = ap.parse_args()
 
@@ -792,5 +723,4 @@ if __name__ == "__main__":
         window_start=args.window_start,
         window_end=args.window_end,
         max_consecutive_errors=args.max_consecutive_errors,
-        mysql_enabled=(not args.no_mysql),
     )
