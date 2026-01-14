@@ -29,6 +29,7 @@ import pandas as pd
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 from mysql.connector import Error as MySQLError
 
+
 BASE = "https://www.exito.com"
 
 # añade la carpeta raíz (2 niveles más arriba) al sys.path
@@ -37,7 +38,7 @@ sys.path.append(
 )
 from base_datos_local import get_conn  # <- tu conexión MySQL
 
-TIENDA_CODIGO = "exito"
+TIENDA_CODIGO = "https://www.exito.com"
 TIENDA_NOMBRE = "Exito"
 
 # -------------------------

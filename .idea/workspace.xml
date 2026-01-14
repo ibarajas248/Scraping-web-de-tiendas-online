@@ -4,68 +4,43 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="2 enero_2026">
-      <change afterPath="$PROJECT_DIR$/base_datos_local.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/base_de_datos_final.sql" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/colombia/alkosto/alkosto_excel.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/colombia/exito/exito_excel_tecnologia.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/colombia/exito/exito_tecnologia_mysql.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/colombia/exito/exito_tecnologia_mysql_ejecuta_desde_vps.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/colombia/exito/lacteos_huevos_refrigerados_mysql.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/frescos_proxy.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/correccion_de_la_corregidera/delacorregidera_de_la_corregidera/lacteos.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/categorias/frescos_proxy.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/2_alvear/correccion/alvearTunnel.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/2_alvear/correccion/alvear_selenium.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/portugal/continente_intento_menos_agresivo_para_que_no_bloquee_extendido.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/portugal/continente_intento_menos_agresivo_para_que_no_bloquee_extendido_proxy.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/portugal/continente_intento_menos_agresivo_para_que_no_bloquee_extendido_proxy_sin_imagenes.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/portugal/continente_intento_menos_agresivo_para_que_no_bloquee_extendido_proxy_vps.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/portugal/continente_mysql.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlist_para_correr_local/app.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlist_para_correr_local/cron_manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlist_para_correr_local/eanconfig.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlist_para_correr_local/ftp.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlist_para_correr_local/login.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlist_para_correr_local/prueba.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlist_para_correr_local/reporte.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/streamlist_para_correr_local/tiendas.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/vps/correcciones/DCORRECCION_CONSULTA/reporte.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/scrapingTiendas.iml" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="8 enero_2026">
+      <change afterPath="$PROJECT_DIR$/colombia/0_documentacion/apis" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/1_1_ANALITICA/TABLAPIVOT.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/1_1_ANALITICA/estudios_morrales.xlsx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/1_1_ANALITICA/formato.xlsx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/1_1_ANALITICA/formato_1.xlsx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/1_1_ANALITICA/img.png" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/1_1_ANALITICA/informe_mercado.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/1_panamericana/panamericana.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/1_panamericana/panamericana_MySQL.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/2_olimpica/olimpicaBase.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/2_olimpica/olimpica_mysql_vtex.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/3_carulla/carulla.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/3_carulla/carulla_mysql_vtex.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/4_jumbo/jumbo_colombia_excel.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/4_jumbo/jumbo_mysql_vtex.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/alkosto/alkosto_celular_mysql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/alkosto/alkosto_computadores_mysql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/alkosto/alkosto_excel_correcciones.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/exito/exito_excel.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/exito/vtex/exito_excel.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/exito/vtex/exito_mysql_vtex.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/exito/vtex/exito_mysql_vtex_dos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/falabella/falabella_excel_computadores.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/katronix/katronix.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/katronix/ktronix_mysql_celulares.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/colombia/katronix/ktronix_mysql_computador.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/disco/debug_disco_0.html" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/disco/debug_disco_0.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/disco/disco aux.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/disco/disco aux.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/disco/disco_aux_vieres_actualizado.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/disco/disco_aux_vieres_actualizado.xlsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/kilbel/kilbel_con_precios.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/kilbel/kilbel_con_precios.xlsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/colombia/exito/exito_tecnologia_mysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/colombia/exito/exito_tecnologia_mysql.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/congelados.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/congelados.xlsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/lacteos.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/lacteos.xlsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/correccion_de_la_corregidera/lacteos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/correciones/correccion_de_la_corregidera/lacteos.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/categorias/Productos_Pinguino_Lacteos.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/categorias/Productos_Pinguino_Lacteos.xlsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/CABA.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/bebes-y-ninos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/correcciones/lacteos_para_vps_CABA.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/carnes.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/comidas-preparadas.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/congelados.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/correcciones/bebes-y-ninos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/correcciones/bebes-y-ninos.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/disco_cordoba_alto_cordoba_cabrera_493_myslq_almacen.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/disco_cordoba_alto_cordoba_cabrera_493_myslq_bebidas.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/electro.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/frutasverduras.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/hogar-y-textil.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/lacteos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/correcciones/lacteos_para_vps_cordoba.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/limpieza.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/mascotas.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/panaderia-y-reposteria.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/pastas-frescas.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/pastasfrescas.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/perfumeria.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/quesos.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba/tiempolibre.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba_alto_cordoba_cabrera_493.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/disco_cordoba_alto_cordoba_cabrera_493_myslq.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/pruebavps.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/sucursales_prueba dos/CABA.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/8_disco/sucursales/sucursales_prueba dos/disco_cordoba_alto_cordoba_cabrera_493_myslq.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/portugal/prueba.py" beforeDir="false" afterPath="$PROJECT_DIR$/portugal/prueba.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/request/kilbel/kilbel.py" beforeDir="false" afterPath="$PROJECT_DIR$/request/kilbel/kilbel.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/streamlist_para_correr_local/reporte.py" beforeDir="false" afterPath="$PROJECT_DIR$/streamlist_para_correr_local/reporte.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -113,6 +88,7 @@
     "Python.GENOVESAaUX.executor": "Run",
     "Python.PRUEBA.executor": "Run",
     "Python.REINA_AUX.executor": "Run",
+    "Python.TABLAPIVOT.executor": "Run",
     "Python.ToledoMySQL.executor": "Run",
     "Python.abastecedor.executor": "Run",
     "Python.abastecedor_aux_viernes.executor": "Run",
@@ -121,6 +97,8 @@
     "Python.abastecedor_mysql.executor": "Run",
     "Python.abastecedor_mysql_vtex.executor": "Run",
     "Python.abastecedor_vtex.executor": "Run",
+    "Python.alkosto_celular_mysql.executor": "Run",
+    "Python.alkosto_computadores_mysql.executor": "Run",
     "Python.alkosto_excel.executor": "Run",
     "Python.almacen.executor": "Run",
     "Python.almacenProxy.executor": "Run",
@@ -146,6 +124,8 @@
     "Python.carrefour.executor": "Run",
     "Python.carrefour_MySQL.executor": "Run",
     "Python.carrefour_aux.executor": "Run",
+    "Python.carulla.executor": "Run",
+    "Python.carulla_mysql_vtex.executor": "Run",
     "Python.comodin.executor": "Run",
     "Python.comodinMySQL.executor": "Run",
     "Python.comodin_aux_miercoles.executor": "Run",
@@ -205,6 +185,8 @@
     "Python.estructura_coto.executor": "Run",
     "Python.exito_excel.executor": "Run",
     "Python.exito_excel_tecnologia.executor": "Run",
+    "Python.exito_mysql_vtex.executor": "Run",
+    "Python.exito_mysql_vtex_dos.executor": "Run",
     "Python.exito_tecnologia_mysql.executor": "Run",
     "Python.frescos.executor": "Run",
     "Python.frescos_proxy.executor": "Run",
@@ -214,6 +196,8 @@
     "Python.genovesamysql.executor": "Run",
     "Python.hiperlibertad.executor": "Run",
     "Python.hiperlibertad_Mysql.executor": "Run",
+    "Python.informe_mercado.executor": "Run",
+    "Python.informe_mercado_marcas.executor": "Run",
     "Python.input.executor": "Run",
     "Python.josimar.executor": "Run",
     "Python.josimar_viernes_aux.executor": "Run",
@@ -224,9 +208,13 @@
     "Python.jumbo_aux_viernes.executor": "Run",
     "Python.jumbo_correcion.executor": "Run",
     "Python.jumbo_excel.executor": "Run",
+    "Python.jumbo_mysql_vtex.executor": "Run",
+    "Python.katronix.executor": "Run",
     "Python.kilbel.executor": "Run",
     "Python.kilbel_aux.executor": "Run",
     "Python.kilbeldb.executor": "Run",
+    "Python.ktronix_mysql_celulares.executor": "Run",
+    "Python.ktronix_mysql_computador.executor": "Run",
     "Python.laAnonima.executor": "Run",
     "Python.laAnonima_MySQL.executor": "Run",
     "Python.laGallega.executor": "Run",
@@ -255,6 +243,10 @@
     "Python.modo_aux_viernes.executor": "Run",
     "Python.mysqlanonima_este_funciona.executor": "Run",
     "Python.oferta_fin_de.executor": "Run",
+    "Python.olimpicaBase.executor": "Run",
+    "Python.olimpica_mysql_vtex.executor": "Run",
+    "Python.panamericana.executor": "Run",
+    "Python.panamericana_MySQL.executor": "Run",
     "Python.pinguino.executor": "Run",
     "Python.proxy_almacen.executor": "Run",
     "Python.prueba dos.executor": "Run",
@@ -292,7 +284,7 @@
     "RunOnceActivity.git.unshallow": "true",
     "git-widget-placeholder": "master",
     "ignore.virus.scanning.warn.message": "true",
-    "last_opened_file_path": "C:/Users/David/PycharmProjects/scrapingTiendas",
+    "last_opened_file_path": "C:/Users/David/PycharmProjects/scrapingTiendas/colombia/1_1_ANALITICA",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -303,18 +295,18 @@
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\colombia\exito" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\streamlist_para_correr_local" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\8_disco\sucursales\disco_cordoba\correcciones" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\2_alvear\correccion" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\colombia\1_1_ANALITICA" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\colombia\katronix" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\colombia\exito\vtex" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\colombia\alkosto" />
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\colombia\4_jumbo" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\colombia\1_1_ANALITICA" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\portugal\firefox_profile_pt\startupCache" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\6_dia" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\15_atomo\con_maestro" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\15_atomo\categorias" />
     </key>
   </component>
   <component name="RunManager">
@@ -770,7 +762,15 @@
       <option name="project" value="LOCAL" />
       <updated>1767370397439</updated>
     </task>
-    <option name="localTasksCounter" value="48" />
+    <task id="LOCAL-00048" summary="8 enero_2026">
+      <option name="closed" value="true" />
+      <created>1767901748105</created>
+      <option name="number" value="00048" />
+      <option name="presentableId" value="LOCAL-00048" />
+      <option name="project" value="LOCAL" />
+      <updated>1767901748105</updated>
+    </task>
+    <option name="localTasksCounter" value="49" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -788,7 +788,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="parcial UI" />
     <MESSAGE value="tiendas" />
     <MESSAGE value="tiendas_1" />
     <MESSAGE value="2_9_2025 ok" />
@@ -813,7 +812,8 @@
     <MESSAGE value="24_12" />
     <MESSAGE value="30/12_2025" />
     <MESSAGE value="2 enero_2026" />
-    <option name="LAST_COMMIT_MESSAGE" value="2 enero_2026" />
+    <MESSAGE value="8 enero_2026" />
+    <option name="LAST_COMMIT_MESSAGE" value="8 enero_2026" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$abastecedor_captcha_myslq.coverage" NAME="abastecedor_captcha_myslq Coverage Results" MODIFIED="1759003919584" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/elAbastecedor" />

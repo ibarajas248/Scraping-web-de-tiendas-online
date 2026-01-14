@@ -1,0 +1,8 @@
+panamericana: https://www.panamericana.com.co/api/catalog_system/pub/products/search?ft=mouse&_from=0&_to=9
+
+exito: https://www.exito.com/io/api/catalog_system/pub/products/search?ft=mouse
+carulla: https://www.carulla.com/io/api/catalog_system/pub/products/search?ft=leche
+jumbo: https://www.jumbocolombia.com/api/catalog_system/pub/products/search?ft=mouse
+olimpica: https://www.olimpica.com/api/catalog_system/pub/products/search?ft=arroz
+larebaja: https://www.larebajavirtual.com/api/catalog_system/pub/products/search?ft=acetaminofen
+tugo: https://www.tugo.co/api/catalog_system/pub/products/search?ft=mesa

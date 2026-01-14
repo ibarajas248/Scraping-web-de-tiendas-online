@@ -25,7 +25,7 @@ def iniciaReporte():
     DB_PORT = 3310
     DB_USER = "root"
     DB_PASS = ""
-    DB_NAME = "analisis_retail"
+    DB_NAME = "scrap"
 
     # ---------- Conexión SQLAlchemy (directa, sin túnel) ----------
     @st.cache_resource(show_spinner=False)
