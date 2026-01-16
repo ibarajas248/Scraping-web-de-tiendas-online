@@ -20,7 +20,7 @@ OUT_DIR = os.path.join(os.getcwd(), "salida_estudio_ultra_pro")
 CHARTS_DIR = os.path.join(OUT_DIR, "charts_ultra_pro")
 os.makedirs(CHARTS_DIR, exist_ok=True)
 
-EXCEL_OUT = os.path.join(OUT_DIR, "ESTUDIO_MERCADO_MORRALES_ULTRA_PRO.xlsx")
+EXCEL_OUT = os.path.join(OUT_DIR, "ESTUDIO_MERCADO_MORRALES.xlsx")
 WORD_OUT  = os.path.join(OUT_DIR, "ESTUDIO_MERCADO_MORRALES_ULTRA_PRO.docx")
 
 # =========================

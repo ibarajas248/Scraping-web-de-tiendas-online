@@ -112,7 +112,7 @@ for i, url in enumerate(df["URLs"]):
         except NoSuchElementException:
             df.at[i, "nombre_en_tienda"] = None
             print("   [INFO] No se encontró h1.titulo_producto.principal")
-
+        
         # Esperar al menos el precio principal (aux1)
         wait.until(
             EC.presence_of_element_located(

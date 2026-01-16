@@ -2,983 +2,398 @@
 # -*- coding: utf-8 -*-
 
 """
-Scraper Supermercado Pingüino (solo LÁCTEOS) → MySQL y/o Excel/CSV (con túnel SSH al VPS)
+Kilbel Online (AR) — Scraper PLP -> PDP con rotación de proxy (DataImpulse).
 
-✅ MISMO funcionamiento que tu script original.
-✅ Ahora agrega:
-  1) Proxy DataImpulse para TODO el scraping HTTP (requests).
-  2) (Opcional) Intento de usar proxy también para el túnel SSH (si tu sistema tiene `connect-proxy` o `nc` compatible).
-  3) Cálculo de datos consumidos (aprox): bytes subidos + bajados, y total en MB.
+Lógica de precios:
+- Si hay oferta (div.precio.anterior.codigo): base=anterior, oferta=actual
+- Si NO hay oferta: base=actual (span/div.precio.aux1), oferta=None
+- "Precio por ..." se guarda aparte como precio_por_unidad (NO afecta precio_base)
 
-Uso:
-  python pinguino_lacteos_mysql_ssh_proxy.py --out Productos_Pinguino_Lacteos.xlsx
-  python pinguino_lacteos_mysql_ssh_proxy.py --no-mysql --out out.xlsx --csv out.csv
+Rotación de proxy:
+- Usa DataImpulse como proxy principal.
+- Si una página no carga / devuelve HTML inválido, rota “identidad” del proxy
+  agregando un sufijo a username (muchos proxies residenciales soportan esto).
+  Si tu plan no soporta username dinámico, igual reintenta con el mismo.
 """
 
+import os
 import re
 import time
+import random
 import argparse
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-import os
-import sys
-import shutil
+import threading
+from urllib.parse import urljoin
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
-from bs4 import BeautifulSoup
 import pandas as pd
+from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import numpy as np
-
-# ====== imports para MySQL + túnel SSH ======
-import mysql.connector
-from mysql.connector import errors as mysql_errors
-from sshtunnel import SSHTunnelForwarder
-
-# ====== (opcional) proxy para paramiko/ssh ======
-try:
-    from paramiko.proxy import ProxyCommand
-except Exception:
-    ProxyCommand = None
 
 
-# ===================================================
-#            CONFIG PROXY (DataImpulse)
-# ===================================================
+BASE = "https://www.kilbelonline.com"
+START_PATTERN = "/lacteos/n1_994/pag/{page}/"
 
+# -------------------------
+# Proxy DataImpulse (HTTP)
+# -------------------------
 PROXY_HOST = "gw.dataimpulse.com"
 PROXY_PORT = 823
 PROXY_USER = "2cf8063dbace06f69df4"
 PROXY_PASS = "61425d26fb3c7287"
 
-PROXY_URL = f"http://{PROXY_USER}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}"
-REQUESTS_PROXIES = {
-    "http": PROXY_URL,
-    "https": PROXY_URL,
-}
+# Cuántas identidades distintas probar al “rotar” en caso de HTML inválido
+PROXY_ID_POOL_SIZE = 30
 
-# ===================================================
-#            MEDICIÓN DE DATOS (APROX)
-# ===================================================
-
-_BYTES_DOWN = 0
-_BYTES_UP = 0
-
-def _approx_headers_size(headers: Dict[str, Any]) -> int:
-    # aproximación: "Key: Value\r\n"
-    n = 0
-    try:
-        for k, v in (headers or {}).items():
-            n += len(str(k)) + 2 + len(str(v)) + 2
-        n += 2  # \r\n final
-    except Exception:
-        pass
-    return n
-
-def _track_response(resp: requests.Response):
-    global _BYTES_DOWN, _BYTES_UP
-    try:
-        # DOWN: headers + body
-        _BYTES_DOWN += _approx_headers_size(dict(resp.headers))
-        _BYTES_DOWN += len(resp.content or b"")
-    except Exception:
-        pass
-    try:
-        # UP: request headers + body (si hay)
-        req = resp.request
-        if req is not None:
-            _BYTES_UP += _approx_headers_size(dict(getattr(req, "headers", {}) or {}))
-            body = getattr(req, "body", None)
-            if body is None:
-                pass
-            elif isinstance(body, (bytes, bytearray)):
-                _BYTES_UP += len(body)
-            else:
-                _BYTES_UP += len(str(body).encode("utf-8", errors="ignore"))
-    except Exception:
-        pass
-
-def _fmt_mb(n: int) -> str:
-    return f"{(n / (1024*1024)):.2f} MB"
+# Thread-local: sesiones por thread y por proxy_url
+_tls = threading.local()
 
 
-# ===================================================
-#            CONFIG SSH + BASE DE DATOS
-# ===================================================
-
-# Datos del VPS (SSH)
-SSH_HOST = "scrap.intelligenceblue.com.ar"
-SSH_PORT = 22
-SSH_USER = "scrap-ssh"
-SSH_PASS = "gLqqVHswm42QjbdvitJ0"
-
-# Datos de la base de datos en el VPS
-DB_HOST = "127.0.0.1"
-DB_PORT = 3306
-DB_USER = "userscrap"
-DB_PASS = "UY8rMSGcHUunSsyJE4c7"
-DB_NAME = "scrap"
-
-MAXLEN_SKU_TIENDA = 80  # tu columna sku_tienda es VARCHAR(80)
-
-# Túnel global (se reutiliza en todo el proceso)
-_tunnel = None
-
-
-def _build_ssh_proxy_command() -> Optional[str]:
-    """
-    Intenta construir un ProxyCommand para SSH por proxy HTTP.
-    Esto depende del sistema.
-
-    Prioridad:
-      1) connect-proxy (Linux/Mac común): connect-proxy -H host:port -a user:pass %h %p
-      2) nc/ncat (si soporta proxy con auth) -> MUY variable, por eso va como fallback.
-    Si no hay herramienta, devuelve None (se conecta SSH directo como siempre).
-    """
-    # connect-proxy
-    cp = shutil.which("connect-proxy")
-    if cp:
-        # -H proxy http, -a auth "user:pass"
-        return f'{cp} -H {PROXY_HOST}:{PROXY_PORT} -a {PROXY_USER}:{PROXY_PASS} %h %p'
-
-    # nc/ncat (no garantizado con auth en todos)
-    nc = shutil.which("nc") or shutil.which("ncat")
-    if nc:
-        # Nota: algunos nc soportan "-x host:port -X connect" pero auth varía.
-        # Dejamos sin auth; si tu nc soporta auth, ajusta aquí.
-        return f'{nc} -x {PROXY_HOST}:{PROXY_PORT} -X connect %h %p'
-
-    return None
-
-
-def _ensure_tunnel(use_ssh_proxy: bool) -> int:
-    """
-    Crea (o reutiliza) un SSHTunnelForwarder global hacia el VPS
-    y devuelve el puerto local al que está ligado.
-    """
-    global _tunnel
-
-    if _tunnel is None or not _tunnel.is_active:
-        ssh_proxy = None
-
-        if use_ssh_proxy and ProxyCommand is not None:
-            cmd = _build_ssh_proxy_command()
-            if cmd:
-                try:
-                    ssh_proxy = ProxyCommand(cmd)
-                    print(f"🧩 SSH ProxyCommand activo: {cmd}")
-                except Exception as e:
-                    print(f"⚠️ No se pudo activar ProxyCommand para SSH ({e}). SSH irá directo.")
-
-        # Importante: el proxy NO afecta al bind remoto; solo al canal SSH.
-        _tunnel = SSHTunnelForwarder(
-            (SSH_HOST, SSH_PORT),
-            ssh_username=SSH_USER,
-            ssh_password=SSH_PASS,
-            remote_bind_address=(DB_HOST, DB_PORT),
-            ssh_proxy=ssh_proxy,  # <- si None, igual que antes
-        )
-        _tunnel.start()
-
-    return _tunnel.local_bind_port
-
-
-def get_conn(use_ssh_proxy: bool):
-    """
-    Devuelve un mysql.connector.connect() apuntando al puerto local
-    del túnel SSH. El resto del código no necesita enterarse del túnel.
-    """
-    local_port = _ensure_tunnel(use_ssh_proxy=use_ssh_proxy)
-    conn = mysql.connector.connect(
-        host="127.0.0.1",
-        port=local_port,
-        user=DB_USER,
-        password=DB_PASS,
-        database=DB_NAME,
-    )
-    return conn
-
-
-def open_db(use_ssh_proxy: bool):
-    """
-    Abre conexión y cursor con autocommit desactivado.
-    """
-    conn = get_conn(use_ssh_proxy=use_ssh_proxy)
-    conn.autocommit = False
-    cur = conn.cursor()
-    return conn, cur
-
-
-# ===================================================
-#            IDENTIDAD TIENDA + WEB
-# ===================================================
-
-TIENDA_CODIGO = "pinguino"
-TIENDA_NOMBRE = "Supermercado Pingüino"
-
-BASE = "https://www.pinguino.com.ar"
-INDEX = f"{BASE}/web/index.r"
-MENU_CAT = f"{BASE}/web/menuCat.r"
-PROD = f"{BASE}/web/productos.r"
-
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-
-# ===== Límites de columnas (ajusta a tu schema si difiere) =====
-MAXLEN_NOMBRE = 255
-MAXLEN_MARCA = 128
-MAXLEN_FABRICANTE = 128
-MAXLEN_CATEGORIA = 128
-MAXLEN_SUBCATEGORIA = 128
-MAXLEN_SUBSUBCATEGORIA = 128
-MAXLEN_URL = 512
-MAXLEN_NOMBRE_TIENDA = 255
-MAXLEN_TIPO_OFERTA = 190
-MAXLEN_PROMO_COMENTARIOS = 480
-
-
-def _truncate(val: Optional[Any], maxlen: int) -> Optional[str]:
-    if val is None:
+# -------------------------
+# Utils texto / precio
+# -------------------------
+def clean_text(s: str):
+    if not s:
         return None
-    s = str(val)
-    return s if len(s) <= maxlen else s[:maxlen]
+    s = s.replace("\xa0", " ").strip()
+    s = re.sub(r"\s+", " ", s)
+    return s or None
 
 
-def _session_get(session: requests.Session, url: str, **kwargs) -> requests.Response:
+def parse_price_ar(text: str):
     """
-    Wrapper único para trackear datos consumidos en TODAS las requests.
+    Convierte:
+      "$ 2.220,00" -> 2220.00
+      "Precio por 1 Lt: $ 1.690,00" -> 1690.00
+      "$ 790,00" -> 790.00
     """
-    resp = session.get(url, **kwargs)
-    _track_response(resp)
-    return resp
+    if not text:
+        return None
+    t = text.strip()
+    t = re.sub(r"[^\d\.,]", "", t)
+    if not t:
+        return None
+    t = t.replace(".", "").replace(",", ".")
+    try:
+        return float(t)
+    except Exception:
+        return None
 
 
-def new_session() -> requests.Session:
+# -------------------------
+# Sesiones + proxy url builder
+# -------------------------
+def build_proxy_url(identity: str | None = None) -> str:
+    """
+    Construye la URL del proxy.
+
+    Nota:
+    - Algunos servicios permiten “rotar” cambiando el username (ej: user-session-xxx).
+    - Si DataImpulse NO soporta esto en tu plan, igual funcionará como reintento.
+
+    identity: string corta que cambia el username (ej "s1234")
+    """
+    user = PROXY_USER
+    if identity:
+        # intento de “sticky/rotación” por username; si no aplica, no rompe nada
+        user = f"{PROXY_USER}-session-{identity}"
+
+    return f"http://{user}:{PROXY_PASS}@{PROXY_HOST}:{PROXY_PORT}"
+
+
+def make_session(proxy_url: str):
     s = requests.Session()
     s.headers.update({
-        "User-Agent": UA,
-        "Accept": "text/html,application/xhtml+xml",
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": INDEX,
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+        "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Connection": "keep-alive",
     })
 
-    # ✅ Proxy DataImpulse para scraping HTTP
-    s.proxies.update(REQUESTS_PROXIES)
+    retry = Retry(
+        total=4,
+        connect=4,
+        read=4,
+        backoff_factor=0.7,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=("GET", "HEAD"),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=50, pool_maxsize=50)
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
 
-    retry = Retry(total=5, backoff_factor=0.5,
-                  status_forcelist=[429, 500, 502, 503, 504])
-    s.mount("https://", HTTPAdapter(max_retries=retry))
-    s.mount("http://", HTTPAdapter(max_retries=retry))
+    s.proxies = {"http": proxy_url, "https": proxy_url}
 
-    # Cookies mínimas para ver productos (ajusta si cambia)
-    s.cookies.set("ciudad", "1", domain="www.pinguino.com.ar", path="/")
-    s.cookies.set("sucursal", "4", domain="www.pinguino.com.ar", path="/")
-
-    try:
-        r = _session_get(s, INDEX, timeout=20)
-        # no hace falta raise aquí, era "best effort"
-        _ = r.text
-    except requests.RequestException:
-        pass
     return s
 
 
-def tidy_space(txt: str) -> str:
-    return re.sub(r"\s+", " ", txt or "").strip()
+def get_thread_session(proxy_url: str):
+    """
+    1 sesión por thread y por proxy_url (no mezclar conexiones entre identidades)
+    """
+    if not hasattr(_tls, "sessions"):
+        _tls.sessions = {}
+
+    if proxy_url not in _tls.sessions:
+        _tls.sessions[proxy_url] = make_session(proxy_url)
+
+    return _tls.sessions[proxy_url]
 
 
-def parse_price_value(val: Any) -> Optional[float]:
-    if val is None:
-        return None
+# -------------------------
+# Validadores HTML “bueno”
+# -------------------------
+def validator_listing(html: str) -> bool:
+    if not html:
+        return False
+    return ("/art_" in html) and ("producto" in html)
 
-    # Normalizamos espacios raros y separadores finos
-    s = str(val).strip().replace("\u202f", "").replace(" ", "")
-    if not s:
-        return None
 
-    comma_count = s.count(',')
-    dot_count = s.count('.')
+def validator_pdp(html: str) -> bool:
+    if not html:
+        return False
+    if "titulo_producto" not in html:
+        return False
+    if ("precio aux1" in html) or ("COD." in html) or ("COD" in html):
+        return True
+    return False
 
-    # Caso con separadores (coma o punto)
-    if comma_count or dot_count:
-        dec_sep = thou_sep = None
 
-        if comma_count and dot_count:
-            # Elegimos el último como separador decimal
-            if s.rfind(',') > s.rfind('.'):
-                dec_sep, thou_sep = ',', '.'
-            else:
-                dec_sep, thou_sep = '.', ','
-        elif comma_count:
-            parts = s.split(',')
-            if comma_count == 1 and len(parts[-1]) <= 2:
-                dec_sep, thou_sep = ',', '.'
-            else:
-                dec_sep, thou_sep = ',', ','
-        elif dot_count:
-            parts = s.split('.')
-            if dot_count == 1 and len(parts[-1]) <= 2:
-                dec_sep, thou_sep = '.', ','
-            else:
-                dec_sep, thou_sep = '.', '.'
+# -------------------------
+# GET con rotación de identidad proxy
+# -------------------------
+def get_html_with_proxy_rotation(url: str, timeout=25, validator=None, max_identities=None):
+    """
+    Intenta cargar url con DataImpulse.
+    Si falla (HTTP>=400 / excepción) o validator(html)==False, rota identidad.
+    """
+    max_identities = max_identities if max_identities is not None else PROXY_ID_POOL_SIZE
 
-        normalized = s
+    # genera identidades distintas
+    # (incluye un primer intento sin identity para usar el username base)
+    identities = [None] + [str(random.randint(100000, 999999)) for _ in range(max_identities - 1)]
 
-        # Quitamos separador de miles
-        if thou_sep and thou_sep != dec_sep:
-            normalized = normalized.replace(thou_sep, '')
-
-        # Reemplazamos separador decimal por punto
-        if dec_sep:
-            normalized = normalized.replace(dec_sep, '.')
-
-        # Caso raro: mismo símbolo para miles y decimales (por seguridad)
-        if dec_sep and dec_sep == thou_sep:
-            last = normalized.rfind('.')
-            if last != -1:
-                normalized = normalized.replace('.', '')
-                normalized = normalized[:last] + '.' + normalized[last:]
+    for ident in identities:
+        proxy_url = build_proxy_url(ident)
+        s = get_thread_session(proxy_url)
 
         try:
-            return round(float(normalized), 2)
-        except ValueError:
-            return None
+            r = s.get(url, timeout=timeout)
+            if r.status_code >= 400:
+                raise RuntimeError(f"HTTP {r.status_code}")
 
-    # ✅ Si NO hay puntos ni comas y son solo dígitos,
-    # lo tratamos como pesos tal cual (no como centavos).
-    if s.isdigit():
-        try:
-            return round(float(s), 2)   # "2750" -> 2750.00
-        except ValueError:
-            return None
+            html = r.text or ""
+            if validator is not None and not validator(html):
+                raise RuntimeError("HTML inválido (validator)")
+
+            return html
+
+        except Exception:
+            time.sleep(0.35 + random.random() * 0.8)
 
     return None
 
 
-def parse_price(text: str) -> Optional[float]:
-    if not text:
-        return None
-    money_re = re.compile(
-        r"(?:\$|\bARS\b|\bAR\$?\b)?\s*([0-9]{1,3}(?:[.\s][0-9]{3})*(?:,[0-9]{1,2})|[0-9]+(?:\.[0-9]{1,2})?|[0-9]+)"
-    )
-    m = money_re.search(text.replace("\xa0", " "))
-    if not m:
-        return None
-    num = m.group(1)
-    val = parse_price_value(num)
-    if val is not None:
-        return val
-    cleaned = num.replace(" ", "").replace("\u202f", "")
-    cleaned = cleaned.replace(".", "").replace(",", ".")
-    try:
-        return round(float(cleaned), 2)
-    except ValueError:
-        return None
+# -------------------------
+# Scrape listado
+# -------------------------
+def listing_page_url(page: int):
+    return urljoin(BASE, START_PATTERN.format(page=page))
 
 
-def parse_product_cards_enriched(
-    html: str,
-    dep_id: int,
-    cat_id: Optional[int] = None,
-    dep_name: Optional[str] = None,
-    cat_name: Optional[str] = None,
-    scat_id: Optional[int] = None,
-    scat_name: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+def extract_product_links_from_listing(html: str):
+    if not html:
+        return []
     soup = BeautifulSoup(html, "html.parser")
-    cards = list(soup.select('[id^="prod-"]'))
-    if not cards:
-        cards = soup.select(".item-prod, .producto, .prod, .card, .item, .row .col-12")
-    for node in soup.select('[data-pre]'):
-        if node not in cards:
-            cards.append(node)
 
-    products: List[Dict[str, Any]] = []
-    for node in cards:
-        plu = None
-        node_id = node.get("id")
-        if node_id and node_id.startswith("prod-"):
-            plu = node_id.split("-", 1)[-1].strip()
+    links = []
+    for a in soup.select("div.producto.item a[href*='/art_']"):
+        href = a.get("href")
+        if href:
+            links.append(urljoin(BASE, href))
 
-        ean = None
-        for key in ["data-ean", "data-ean13", "data-barcode", "data-bar"]:
-            val = node.get(key)
-            if val:
-                ean = val.strip()
-                break
-
-        data_prelista = node.get("data-prelista") or node.get("data-precio")
-        data_preofe = node.get("data-preofe") or node.get("data-oferta")
-        data_pre = node.get("data-pre")
-        precio = None
-        for raw_val in [data_preofe, data_pre, data_prelista]:
-            p = parse_price_value(raw_val)
-            if p is not None:
-                precio = p
-                break
-        if precio is None:
-            for sel in ['[class*="precio"]', '[class*="price"]', 'span', 'div']:
-                price_node = node.select_one(sel)
-                if price_node:
-                    candidate = parse_price(price_node.get_text(" "))
-                    if candidate is not None:
-                        precio = candidate
-                        break
-        if precio is None:
-            precio = parse_price(node.get_text(" "))
-
-        precio = round(float(precio), 2) if precio is not None else None
-        precio_texto = f"{precio:.2f}" if precio is not None else ""
-
-        img = None
-        data_img = node.get("data-img")
-        if data_img:
-            img = data_img if data_img.startswith("http") else (BASE + data_img if data_img.startswith("/") else data_img)
-        img_node = node.select_one("img[src]")
-        title_candidates: List[str] = []
-        if not img and img_node:
-            alt = img_node.get("alt")
-            if alt:
-                title_candidates.append(tidy_space(alt))
-            src = img_node.get("src")
-            if src:
-                img = src if not src.startswith("/") else (BASE + src)
-
-        data_des = node.get("data-des") or node.get("data-name")
-        if data_des:
-            title_candidates.append(tidy_space(str(data_des)))
-        for a_tag in node.select("a[title]"):
-            t = a_tag.get("title")
-            if t:
-                title_candidates.append(tidy_space(t))
-        for sel in ['h1', 'h2', 'h3', 'h4', 'h5', '[class*="tit"][class!="precio"]', '[class*="desc"]']:
-            tag = node.select_one(sel)
-            if tag:
-                text = tidy_space(tag.get_text(strip=True))
-                if text:
-                    title_candidates.append(text)
-
-        title = None
-        price_pattern = re.compile(r"\$\s*\d")
-        for cand in title_candidates:
-            if price_pattern.search(cand):
-                continue
-            lower = cand.lower()
-            if "carrito" in lower or "agreg" in lower:
-                continue
-            title = cand
-            break
-        if not title:
-            raw_text = tidy_space(node.get_text(" "))
-            if precio_texto:
-                raw_text = raw_text.replace(precio_texto, "")
-            raw_text = re.sub(r"\$\s*[0-9]+(?:[.,][0-9]+)*(?:\s*[a-zA-Z]|)", "", raw_text)
-            raw_text = re.sub(r"agregaste.*", "", raw_text, flags=re.IGNORECASE)
-            raw_text = re.sub(r"agregar.*", "", raw_text, flags=re.IGNORECASE)
-            raw_text = re.sub(r"\+\s*-", "", raw_text)
-            cleaned = tidy_space(raw_text)
-            if len(cleaned) > 180:
-                cleaned = cleaned[:177] + "..."
-            title = cleaned
-
-        url = None
-        data_href = node.get("data-href")
-        if data_href:
-            url = data_href if data_href.startswith("http") else (BASE + data_href if data_href.startswith("/") else data_href)
-        if not url:
-            for a_tag in node.select("a[href]"):
-                href = a_tag.get("href")
-                if not href:
-                    continue
-                href_l = href.lower()
-                if href_l == "#" or "javascript" in href_l:
-                    continue
-                if any(tok in href_l for tok in ["agregar", "addcart", "accioncarrito", "ticket"]):
-                    continue
-                url = href if href.startswith("http") else (BASE + href if href.startswith("/") else href)
-                break
-
-        tipo_descuento = None
-        if precio is not None:
-            texto_inf = node.get_text(" ").lower()
-            if "x" in texto_inf and "%" not in texto_inf:
-                m = re.search(r"(\d+)\s*x\s*(\d+)", texto_inf)
-                if m:
-                    tipo_descuento = f"{m.group(1)}x{m.group(2)}"
-            elif "%" in texto_inf:
-                m = re.search(r"(\d+)%", texto_inf)
-                if m:
-                    tipo_descuento = f"{m.group(1)}%"
-
-        products.append({
-            "ean": ean,
-            "titulo": title or "",
-            "precio_lista": precio,
-            "precio_oferta": precio,  # lista = oferta
-            "tipo_descuento": tipo_descuento,
-            "categoria_id": dep_id,
-            "categoria_nombre": dep_name,
-            "subcategoria_id": cat_id,
-            "subcategoria_nombre": cat_name,
-            "subsubcategoria_id": scat_id,
-            "subsubcategoria_nombre": scat_name,
-            "url": url,
-            "imagen": img,
-            "plu": plu,
-            "precio_texto": precio_texto,
-        })
-    return [p for p in products if p["titulo"] or (p["precio_oferta"] is not None or p["precio_lista"] is not None)]
-
-
-def fetch_products_html(
-    session: requests.Session,
-    dep_id: int,
-    cat_id: Optional[int] = None,
-    scat_id: Optional[int] = None,
-    params_extra: Optional[Dict[str, Any]] = None,
-    save_debug: Optional[Path] = None,
-) -> str:
-    """
-    Devuelve el HTML crudo de /web/productos.r?dep=...&cat=...&scat=...
-    """
-    params = {"dep": str(dep_id)}
-    if cat_id is not None:
-        params["cat"] = str(cat_id)
-    if scat_id is not None:
-        params["scat"] = str(scat_id)
-    if params_extra:
-        params.update(params_extra)
-    r = _session_get(session, PROD, params=params, timeout=40)
-    r.raise_for_status()
-    html = r.text
-    if save_debug:
-        save_debug.write_text(html, encoding="utf-8")
-    return html
-
-
-def parse_subsubcategorias_from_html(
-    html: str,
-    dep_id: int,
-    cat_id: int,
-) -> List[Dict[str, Any]]:
-    """
-    Busca dentro del HTML enlaces de sub-subcategoría: <div id="sCat" ...>
-    con <a ... data-s="..."><span>Nombre</span></a>
-    """
-    soup = BeautifulSoup(html, "html.parser")
-    scats: List[Dict[str, Any]] = []
-    for a in soup.select("#sCat a[data-s], .scat a[data-s]"):
-        s_id = a.get("data-s")
-        if not s_id:
-            continue
-        try:
-            s_id_int = int(s_id)
-        except (TypeError, ValueError):
-            continue
-        name = a.get_text(strip=True) or str(s_id_int)
-        scats.append({
-            "dep_id": dep_id,
-            "cat_id": cat_id,
-            "id": s_id_int,
-            "nombre": tidy_space(name),
-        })
-    # dedupe por id
+    # dedupe preservando orden
     seen = set()
-    uniq = []
-    for s in scats:
-        if s["id"] not in seen:
-            seen.add(s["id"])
-            uniq.append(s)
-    return uniq
+    out = []
+    for u in links:
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
 
 
-# ====== Helpers MySQL ======
-def _parse_price_num(val) -> Optional[str]:
-    if val is None:
+# -------------------------
+# Scrape PDP
+# -------------------------
+def extract_image_url_from_pdp(soup: BeautifulSoup):
+    og = soup.select_one("meta[property='og:image']")
+    if og and og.get("content"):
+        return og["content"].strip()
+
+    img = soup.select_one("img#img_01, img[src*='cdn1.kilbelonline.com/web/images/productos']")
+    if img and img.get("src"):
+        return img["src"].strip()
+
+    lens = soup.select_one(".zoomLens")
+    if lens:
+        style = lens.get("style", "") or ""
+        m = re.search(r'background-image:\s*url\(["\']?([^"\')]+)', style)
+        if m:
+            return m.group(1).strip()
+
+    return None
+
+
+def extract_sku_from_pdp(soup: BeautifulSoup):
+    el = soup.select_one("div.der.precio.semibold.aux3")
+    if not el:
         return None
-    try:
-        f = float(val)
-        if np.isnan(f):
-            return None
-        return f"{round(f, 2)}"
-    except Exception:
+    txt = clean_text(el.get_text(" ", strip=True)) or ""
+    m = re.search(r"(\d+)", txt)
+    return m.group(1) if m else txt
+
+
+def extract_precio_por_unidad(soup: BeautifulSoup):
+    for el in soup.select("div.codigo.aux1"):
+        txt = clean_text(el.get_text(" ", strip=True)) or ""
+        if "precio por" in txt.lower() and "$" in txt:
+            val = parse_price_ar(txt)
+            if val is not None:
+                return val
+    return None
+
+
+def extract_prices_from_pdp(soup: BeautifulSoup):
+    """
+    - Oferta: base=anterior, oferta=actual
+    - No oferta: base=actual, oferta=None
+    """
+    anterior_el = soup.select_one("div.precio.anterior.codigo")
+    actual_el = soup.select_one("span.precio.aux1, div.precio.aux1")
+
+    anterior = parse_price_ar(anterior_el.get_text(" ", strip=True)) if anterior_el else None
+    actual = parse_price_ar(actual_el.get_text(" ", strip=True)) if actual_el else None
+
+    if anterior is not None:
+        return anterior, actual
+
+    if actual is not None:
+        return actual, None
+
+    return None, None
+
+
+def scrape_pdp(url: str, listado_url: str):
+    html = get_html_with_proxy_rotation(url, timeout=25, validator=validator_pdp)
+    if not html:
         return None
 
+    soup = BeautifulSoup(html, "html.parser")
 
-def upsert_tienda(cur, codigo: str, nombre: str) -> int:
-    cur.execute(
-        "INSERT INTO tiendas (codigo, nombre) VALUES (%s, %s) "
-        "ON DUPLICATE KEY UPDATE nombre=VALUES(nombre)",
-        (codigo, nombre)
-    )
-    cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
-    return cur.fetchone()[0]
+    name_el = soup.select_one("h1.titulo_producto.principal")
+    producto = clean_text(name_el.get_text(" ", strip=True)) if name_el else None
 
+    sku = extract_sku_from_pdp(soup)
+    imagen_url = extract_image_url_from_pdp(soup)
+    precio_base, precio_oferta = extract_prices_from_pdp(soup)
+    precio_por_unidad = extract_precio_por_unidad(soup)
 
-def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
-    ean = (r.get("ean") or None)
-    nombre = _truncate((r.get("titulo") or ""), MAXLEN_NOMBRE)
-    marca = _truncate((r.get("marca") or None), MAXLEN_MARCA)  # Pingüino no provee marca: quedará None
-    fabricante = _truncate((r.get("fabricante") or None), MAXLEN_FABRICANTE)
-    categoria = _truncate((r.get("categoria_nombre") or None), MAXLEN_CATEGORIA)
-    subcategoria = _truncate((r.get("subcategoria_nombre") or None), MAXLEN_SUBCATEGORIA)
+    # protección extra por HTML “raro”
+    if (precio_base is None and precio_oferta is None) and not producto:
+        return None
 
-    # 1) EAN
-    if ean:
-        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
-        row = cur.fetchone()
-        if row:
-            pid = row[0]
-            cur.execute("""
-                UPDATE productos SET
-                  nombre = COALESCE(NULLIF(%s,''), nombre),
-                  marca = COALESCE(%s, marca),
-                  fabricante = COALESCE(%s, fabricante),
-                  categoria = COALESCE(%s, categoria),
-                  subcategoria = COALESCE(%s, subcategoria)
-                WHERE id=%s
-            """, (nombre, marca, fabricante, categoria, subcategoria, pid))
-            return pid
-
-    # 2) Reusar por (nombre, marca) o (nombre, marca IS NULL)
-    if nombre:
-        if marca:
-            cur.execute(
-                """SELECT id FROM productos WHERE nombre=%s AND IFNULL(marca,'')=%s LIMIT 1""",
-                (nombre, marca or "")
-            )
-        else:
-            cur.execute(
-                """SELECT id FROM productos WHERE nombre=%s AND marca IS NULL LIMIT 1""",
-                (nombre,)
-            )
-        row = cur.fetchone()
-        if row:
-            pid = row[0]
-            cur.execute("""
-                UPDATE productos SET
-                  ean = COALESCE(%s, ean),
-                  fabricante = COALESCE(%s, fabricante),
-                  categoria = COALESCE(%s, categoria),
-                  subcategoria = COALESCE(%s, subcategoria)
-                WHERE id=%s
-            """, (ean, fabricante, categoria, subcategoria, pid))
-            return pid
-
-    # 3) Insert nuevo producto
-    cur.execute("""
-        INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
-        VALUES (%s, NULLIF(%s,''), %s, %s, %s, %s)
-    """, (ean, nombre, marca, fabricante, categoria, subcategoria))
-    return cur.lastrowid
+    return {
+        "sku": sku,
+        "producto": producto,
+        "url": url,
+        "imagen_url": imagen_url,
+        "precio_base": precio_base,
+        "precio_oferta": precio_oferta,
+        "precio_por_unidad": precio_por_unidad,
+        "pagina_listado": listado_url,
+    }
 
 
-def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
-    # 1) Intentar usar PLU como SKU
-    sku = (r.get("plu") or None)
-
-    # 2) Si NO hay PLU, usar el nombre del producto como SKU (truncado a 80 chars)
-    if not sku:
-        titulo = (r.get("titulo") or "").strip()
-        if titulo:
-            sku = _truncate(titulo, MAXLEN_SKU_TIENDA)
-
-    # 3) Usar el mismo valor como record_id de respaldo
-    record_id = sku
-
-    url = _truncate((r.get("url") or None), MAXLEN_URL)
-    nombre_tienda = _truncate((r.get("titulo") or None), MAXLEN_NOMBRE_TIENDA)
-
-    if sku:
-        cur.execute("""
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-              id = LAST_INSERT_ID(id),
-              -- producto_id NO se actualiza
-              record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
-              url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
-              nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
-        """, (tienda_id, producto_id, sku, record_id, url, nombre_tienda))
-        return cur.lastrowid
-
-    # Último recurso: sin SKU ni record_id, solo URL + nombre
-    cur.execute("""
-        INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
-        VALUES (%s, %s, %s, %s)
-    """, (tienda_id, producto_id, url, nombre_tienda))
-    return cur.lastrowid
-
-
-def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en: datetime):
-    precio_lista = _parse_price_num(r.get("precio_lista"))
-    precio_oferta = _parse_price_num(r.get("precio_oferta"))
-    tipo_oferta = _truncate((r.get("tipo_descuento") or None), MAXLEN_TIPO_OFERTA)
-    # Guardamos IDs/nombres de cat/subcat/subsubcat como comentario auditable
-    promo_comentarios = _truncate(
-        f"cat_id={r.get('categoria_id')}; cat_nombre={r.get('categoria_nombre') or ''}; "
-        f"subcat_id={r.get('subcategoria_id')}; subcat_nombre={r.get('subcategoria_nombre') or ''}; "
-        f"subsubcat_id={r.get('subsubcategoria_id')}; subsubcat_nombre={r.get('subsubcategoria_nombre') or ''}",
-        MAXLEN_PROMO_COMENTARIOS
-    )
-
-    cur.execute("""
-        INSERT INTO historico_precios
-          (tienda_id, producto_tienda_id, capturado_en,
-           precio_lista, precio_oferta, tipo_oferta,
-           promo_tipo, promo_texto_regular, promo_texto_descuento, promo_comentarios)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-          precio_lista = VALUES(precio_lista),
-          precio_oferta = VALUES(precio_oferta),
-          tipo_oferta = VALUES(tipo_oferta),
-          promo_tipo = VALUES(promo_tipo),
-          promo_texto_regular = VALUES(promo_texto_regular),
-          promo_texto_descuento = VALUES(promo_texto_descuento),
-          promo_comentarios = VALUES(promo_comentarios)
-    """, (
-        tienda_id, producto_tienda_id, capturado_en,
-        precio_lista, precio_oferta, tipo_oferta,
-        tipo_oferta, None, None, promo_comentarios
-    ))
-
-
-# ===== Runner (scrape + ingest) =====
-
-# Departamento LÁCTEOS
-DEP_LACTEOS_ID = 4
-DEP_LACTEOS_NOMBRE = "Lácteos"
-
-# Solo estas categorías dentro de LÁCTEOS
-CATS_LACTEOS = {
-    10: "CREMA",
-    9:  "DULCE DE LECHE",
-    1:  "LECHES",
-    4:  "MANTECA",
-    5:  "MARGARINA",
-    3:  "POSTRES",
-    7:  "QUESOS",
-    2:  "YOGURES",
-}
-
-
+# -------------------------
+# Main
+# -------------------------
 def main():
-    ap = argparse.ArgumentParser(description="Pingüino LÁCTEOS → MySQL / Excel / CSV (con proxy DataImpulse)")
-    ap.add_argument("--out", default="Productos_Pinguino_Lacteos.xlsx", help="Archivo XLSX de salida (opcional)")
-    ap.add_argument("--csv", default=None, help="CSV adicional (opcional)")
-    ap.add_argument("--sleep", type=float, default=1.2, help="Espera (seg) entre requests")
-    ap.add_argument("--only-ofertas", action="store_true", help="Solo ofertas globales (ofe=1)")
-    ap.add_argument("--debug-html", action="store_true", help="Guardar HTML en ./_html")
-    ap.add_argument("--no-mysql", action="store_true", help="No insertar en MySQL; solo archivos")
-
-    # ✅ Nuevo: intentar proxy también para el canal SSH (si hay ProxyCommand utilizable)
-    ap.add_argument("--ssh-proxy", action="store_true", help="Intentar SSH al VPS pasando por el proxy (requiere herramienta local tipo connect-proxy)")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--start-page", type=int, default=1)
+    ap.add_argument("--max-pages", type=int, default=0, help="0 = sin límite (hasta página vacía)")
+    ap.add_argument("--workers", type=int, default=12)
+    ap.add_argument("--sleep", type=float, default=0.25)
+    ap.add_argument("--out", default="kilbel_lacteos.xlsx")
+    ap.add_argument("--max-empty-pages", type=int, default=1,
+                    help="Corta si encuentra N páginas seguidas sin productos (default 1).")
+    ap.add_argument("--proxy-identities", type=int, default=PROXY_ID_POOL_SIZE,
+                    help="Cantidad de identidades (rotaciones) a probar por URL cuando falla.")
     args = ap.parse_args()
 
-    print(f"🧠 Proxy HTTP activo (requests): {PROXY_HOST}:{PROXY_PORT} user={PROXY_USER}")
+    global PROXY_ID_POOL_SIZE
+    PROXY_ID_POOL_SIZE = max(3, int(args.proxy_identities))
 
-    s = new_session()
+    print(f"[INFO] Proxy: {PROXY_HOST}:{PROXY_PORT} (DataImpulse)")
+    print(f"[INFO] Rotación de identidades por URL: {PROXY_ID_POOL_SIZE}")
 
-    rows: List[Dict[str, Any]] = []
-    html_dir = Path("_html")
-    if args.debug_html:
-        html_dir.mkdir(exist_ok=True)
+    all_rows = []
+    page = args.start_page
+    pages_done = 0
+    empty_pages = 0
 
-    if args.only_ofertas:
-        # Comportamiento original: ofertas globales
-        r = _session_get(s, PROD, params={"ofe": "1"}, timeout=40)
-        r.raise_for_status()
-        if args.debug_html:
-            (html_dir / "ofertas.html").write_text(r.text, encoding="utf-8")
-        rows.extend(parse_product_cards_enriched(r.text, dep_id=999))
-    else:
-        dep_id = DEP_LACTEOS_ID
-        dep_name = DEP_LACTEOS_NOMBRE
+    while True:
+        if args.max_pages and pages_done >= args.max_pages:
+            break
 
-        for cat_id, cat_name in CATS_LACTEOS.items():
-            # 1) Categoría base: /productos.r?dep=4&cat=X
-            try:
-                cat_debug = (html_dir / f"dep_{dep_id}_cat_{cat_id}.html") if args.debug_html else None
-                html_cat = fetch_products_html(
-                    s,
-                    dep_id=dep_id,
-                    cat_id=cat_id,
-                    scat_id=None,
-                    save_debug=cat_debug,
-                )
-                cat_prods = parse_product_cards_enriched(
-                    html_cat,
-                    dep_id=dep_id,
-                    cat_id=cat_id,
-                    dep_name=dep_name,
-                    cat_name=cat_name,
-                    scat_id=None,
-                    scat_name=None,
-                )
-                print(f"[dep {dep_id} ({dep_name}) cat {cat_id} ({cat_name})] productos: {len(cat_prods)} (cat)")
-                rows.extend(cat_prods)
+        listado_url = listing_page_url(page)
+        print(f"[LISTADO] {listado_url}")
 
-                # 2) Buscar sub-subcategorías en ese HTML (sCat)
-                scats = parse_subsubcategorias_from_html(html_cat, dep_id, cat_id)
-                if scats:
-                    print(f"  ↳ sub-subcategorías encontradas en cat {cat_id}: {[s['id'] for s in scats]}")
-                for ssub in scats:
-                    s_id = ssub["id"]
-                    s_name = ssub["nombre"]
-                    try:
-                        scat_debug = (html_dir / f"dep_{dep_id}_cat_{cat_id}_scat_{s_id}.html") if args.debug_html else None
-                        html_scat = fetch_products_html(
-                            s,
-                            dep_id=dep_id,
-                            cat_id=cat_id,
-                            scat_id=s_id,
-                            save_debug=scat_debug,
-                        )
-                        scat_prods = parse_product_cards_enriched(
-                            html_scat,
-                            dep_id=dep_id,
-                            cat_id=cat_id,
-                            dep_name=dep_name,
-                            cat_name=cat_name,
-                            scat_id=s_id,
-                            scat_name=s_name,
-                        )
-                        print(f"    [dep {dep_id} cat {cat_id} scat {s_id} ({s_name})] productos: {len(scat_prods)}")
-                        rows.extend(scat_prods)
-                        time.sleep(args.sleep)
-                    except requests.RequestException as e:
-                        print(f"[dep {dep_id} cat {cat_id} scat {s_id}] error: {e}")
-                        continue
+        html = get_html_with_proxy_rotation(listado_url, timeout=25, validator=validator_listing,
+                                            max_identities=PROXY_ID_POOL_SIZE)
+        links = extract_product_links_from_listing(html)
 
-                time.sleep(args.sleep)
+        if not links:
+            empty_pages += 1
+            print(f"[WARN] Página {page} sin productos / html inválido. empty_pages={empty_pages}")
+            if empty_pages >= args.max_empty_pages:
+                print(f"[STOP] {empty_pages} páginas seguidas sin productos. Fin.")
+                break
+            page += 1
+            pages_done += 1
+            time.sleep(args.sleep + random.random() * 0.4)
+            continue
 
-            except requests.RequestException as e:
-                print(f"[dep {dep_id} cat {cat_id}] error: {e}")
-                continue
+        empty_pages = 0
+        print(f"  -> productos encontrados: {len(links)}")
 
-    if not rows:
-        print("No se extrajo ningún producto. Revisa cookies/sucursal o ajusta selectores.")
-        # imprimir consumo de datos igual
-        total = _BYTES_DOWN + _BYTES_UP
-        print(f"📡 Datos (aprox) DOWN={_fmt_mb(_BYTES_DOWN)} UP={_fmt_mb(_BYTES_UP)} TOTAL={_fmt_mb(total)}")
+        with ThreadPoolExecutor(max_workers=args.workers) as ex:
+            futures = [ex.submit(scrape_pdp, u, listado_url) for u in links]
+            for fut in as_completed(futures):
+                try:
+                    row = fut.result()
+                    if row:
+                        all_rows.append(row)
+                except Exception:
+                    pass
+
+        time.sleep(args.sleep + random.random() * 0.4)
+        page += 1
+        pages_done += 1
+
+    if not all_rows:
+        print("No se extrajo nada.")
         return
 
-    # ===== DataFrame + dedupe =====
-    df = pd.DataFrame(rows)
-    cols = [
-        "ean", "titulo", "precio_lista", "precio_oferta", "tipo_descuento",
-        "categoria_id", "categoria_nombre",
-        "subcategoria_id", "subcategoria_nombre",
-        "subsubcategoria_id", "subsubcategoria_nombre",
-        "url", "imagen", "plu", "precio_texto",
-    ]
-    df = df.reindex(columns=cols)
+    df = pd.DataFrame(all_rows).drop_duplicates(subset=["url"]).reset_index(drop=True)
+    df = df.sort_values(["producto", "sku"], na_position="last").reset_index(drop=True)
 
-    print(f"Filas brutas antes de dedupe: {len(df)}")
+    with pd.ExcelWriter(args.out, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="kilbel_lacteos")
 
-    # DEDUPE:
-    # - Si hay PLU: una fila por PLU (producto único).
-    # - Sin PLU: una fila por (ean, titulo).
-    if "plu" in df.columns:
-        df["plu_norm"] = df["plu"].replace("", np.nan)
-        mask_plu = df["plu_norm"].notna()
-
-        # Con PLU: dedupe por PLU
-        df_plu = df[mask_plu].copy()
-        df_plu = df_plu.drop_duplicates(subset=["plu_norm"], keep="first")
-
-        # Sin PLU: dedupe por (ean, titulo)
-        df_no_plu = df[~mask_plu].copy()
-        df_no_plu = df_no_plu.drop_duplicates(subset=["ean", "titulo"], keep="first")
-
-        df = pd.concat([df_plu, df_no_plu], ignore_index=True)
-        df = df.drop(columns=["plu_norm"])
-    else:
-        df = df.drop_duplicates(subset=["ean", "titulo"], keep="first")
-
-    print(f"Filas después de dedupe: {len(df)}")
-
-    # ===== Ingesta MySQL (vía túnel SSH) =====
-    if not args.no_mysql:
-        conn, cur = None, None
-        try:
-            conn, cur = open_db(use_ssh_proxy=args.ssh_proxy)
-            tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
-            capturado_en = datetime.now()
-
-            inserted = 0
-            for idx, r in df.iterrows():
-                rec = r.to_dict()
-                while True:
-                    try:
-                        producto_id = find_or_create_producto(cur, rec)
-                        pt_id = upsert_producto_tienda(cur, tienda_id, producto_id, rec)
-                        insert_historico(cur, tienda_id, pt_id, rec, capturado_en)
-
-                        inserted += 1
-                        if inserted % 50 == 0:
-                            conn.commit()
-                        break
-
-                    except mysql_errors.OperationalError as e:
-                        # 2006: MySQL server has gone away
-                        # 2013: Lost connection to MySQL server during query
-                        if getattr(e, "errno", None) in (2006, 2013):
-                            print(f"[fila {idx}] Conexión perdida ({e.errno}). Reintentando conexión...")
-                            try:
-                                if cur:
-                                    cur.close()
-                            except Exception:
-                                pass
-                            try:
-                                if conn:
-                                    conn.close()
-                            except Exception:
-                                pass
-                            conn, cur = open_db(use_ssh_proxy=args.ssh_proxy)
-                            tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
-                            continue
-                        else:
-                            raise
-
-            conn.commit()
-            print(f"✅ MySQL: {inserted} filas de histórico insertadas/actualizadas ({TIENDA_NOMBRE} / Lácteos).")
-
-        except Exception:
-            try:
-                if conn and conn.is_connected():
-                    conn.rollback()
-            except Exception:
-                pass
-            raise
-        finally:
-            try:
-                if cur:
-                    cur.close()
-            except Exception:
-                pass
-            try:
-                if conn:
-                    conn.close()
-            except Exception:
-                pass
-
-    # ===== Salidas locales opcionales =====
-    if args.out:
-        out_path = Path(args.out)
-        with pd.ExcelWriter(out_path, engine="openpyxl") as xw:
-            df.to_excel(xw, index=False, sheet_name="Productos")
-        print(f"📄 XLSX: {out_path.resolve()} (filas: {len(df)})")
-    if args.csv:
-        csv_path = Path(args.csv)
-        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
-        print(f"📄 CSV:  {csv_path.resolve()}")
-
-    # ===== Reporte de consumo de datos =====
-    total = _BYTES_DOWN + _BYTES_UP
-    print(f"📡 Datos (aprox) DOWN={_fmt_mb(_BYTES_DOWN)} UP={_fmt_mb(_BYTES_UP)} TOTAL={_fmt_mb(total)}")
+    print(f"\nOK -> {args.out}")
+    print(f"Filas: {len(df)}")
 
 
 if __name__ == "__main__":
