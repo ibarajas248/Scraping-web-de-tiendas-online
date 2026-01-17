@@ -54,7 +54,7 @@ BASE_URL = "https://www.comodinencasa.com.ar/golosinas-chocolates-y-snacks"
 
 
 TIENDA_CODIGO = "comodin"
-TIENDA_NOMBRE = "Comodín En Casa"
+TIENDA_NOMBRE = "Comodin"
 
 HEADLESS = True
 SCROLL_IDLE_ROUNDS = 3

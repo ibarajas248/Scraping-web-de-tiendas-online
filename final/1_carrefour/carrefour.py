@@ -5,6 +5,8 @@
 Carrefour AR (VTEX) — Scraper de todas las categorías con salida en:
 EAN, Código Interno, Nombre Producto, Categoría, Subcategoría, Marca,
 Fabricante, Precio de Lista, Precio de Oferta, Tipo de Oferta, URL
+
+→ Solo emite productos DISPONIBLES (IsAvailable verdadero, qty > 0 o tapón 99999 y precio > 0)
 """
 
 import re
@@ -16,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup  # (no imprescindible, puedes quitarlo si no lo usas)
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -38,6 +40,11 @@ DEPTH = 10              # profundidad del árbol de categorías
 CLEAN_HTML = False      # (dejado, pero NO lo usamos en la salida)
 SAVE_CSV = None         # si quieres CSV, pon un path. Ej: "carrefour.csv"
 SAVE_XLSX = "carrefour.xlsx"
+
+# --- Filtro de disponibilidad ---
+REQUIRE_IS_AVAILABLE = True        # exige commertialOffer.IsAvailable == True
+REQUIRE_QTY_POSITIVE = True        # además, exige AvailableQuantity > 0 (acepta 99999 como tapón)
+REQUIRE_PRICE_POSITIVE = True      # y que el precio sea > 0
 
 # Columnas finales y columnas de dinero para formatear
 COLS_FINAL = [
@@ -80,7 +87,8 @@ def tipo_de_oferta(offer: dict, list_price: float, price: float) -> str:
     try:
         dh = offer.get("DiscountHighLight") or []
         if dh and isinstance(dh, list):
-            name = (dh[0].get("Name") or "").strip()
+            # en muchas tiendas VTEX modernas viene "Name"; en otras, la key rara "<Name>k__BackingField"
+            name = (dh[0].get("Name") or dh[0].get("\u003CName\u003Ek__BackingField") or "").strip()
             if name:
                 return name
     except Exception:
@@ -105,11 +113,46 @@ def make_session() -> requests.Session:
 
 SESSION = make_session()
 
+# ------------------ Filtro de disponibilidad ------------------
+def pick_available_offer(items: List[dict]):
+    """
+    Devuelve (item, seller, commertialOffer) del primer seller disponible
+    según las reglas configuradas arriba. Si no hay disponible, retorna (None, None, None).
+    """
+    for it in (items or []):
+        for s in (it.get("sellers") or []):
+            co = s.get("commertialOffer") or {}
+            is_ok = True
+
+            if REQUIRE_IS_AVAILABLE:
+                is_ok = is_ok and bool(co.get("IsAvailable"))
+
+            if REQUIRE_QTY_POSITIVE:
+                qty = co.get("AvailableQuantity")
+                try:
+                    qty = int(qty)
+                except Exception:
+                    qty = 0
+                # algunos VTEX usan 99999 como “tapón” → lo aceptamos
+                is_ok = is_ok and (qty > 0 or qty == 99999)
+
+            if REQUIRE_PRICE_POSITIVE:
+                price = co.get("FullSellingPrice", co.get("Price", 0))
+                try:
+                    price = float(price or 0)
+                except Exception:
+                    price = 0.0
+                is_ok = is_ok and (price > 0)
+
+            if is_ok:
+                return it, s, co
+    return None, None, None
+
 # ------------------ Parseo de producto (solo columnas pedidas) ------------------
-def parse_product_min(p: Dict) -> Dict:
+def parse_product_min(p: Dict) -> Optional[Dict]:
     """
     Parser mínimo y robusto para VTEX (p = producto del endpoint /pub/products/search).
-    Retorna el dict con las columnas finales requeridas.
+    Retorna el dict con las columnas finales requeridas o None si no hay disponibilidad.
     """
     # ---- helpers locales ----
     def first_val(v, default=None):
@@ -120,24 +163,19 @@ def parse_product_min(p: Dict) -> Dict:
         return v
 
     def to_str(x):
-        if x is None:
-            return ""
-        # No casteamos a int para no romper EANs con ceros a la izquierda
-        return str(x).strip()
+        return "" if x is None else str(x).strip()
 
     def to_float(x, default=0.0):
         try:
             if isinstance(x, (int, float)):
                 return float(x)
             s = str(x).strip()
-            # Por si viniera formateado con $ o comas/puntos (no suele pasar en VTEX)
             s = s.replace("$", "").replace(" ", "").replace(".", "").replace(",", ".")
             return float(s)
         except Exception:
             return float(default)
 
     def split_cat_path(path: str) -> (str, str):
-        # VTEX suele dar paths tipo '/Almacen/Conservas/Vegetales/'
         if not isinstance(path, str):
             return "", ""
         parts = [seg for seg in path.split("/") if seg]
@@ -152,26 +190,22 @@ def parse_product_min(p: Dict) -> Dict:
         link = p.get("link") or ""
         if link_text:
             return f"{base_web.rstrip('/')}/{link_text}/p"
-        # si link ya es absoluto, lo devolvemos tal cual
         if isinstance(link, str) and (link.startswith("http://") or link.startswith("https://")):
             return link
-        # relativo → absolutizamos con base_web si está disponible
         if base_web and isinstance(link, str):
             return f"{base_web.rstrip('/')}/{link.lstrip('/')}"
         return to_str(link)
 
-    # ---- navegación segura por VTEX ----
+    # ---- elegir solo ofertas DISPONIBLES ----
     items = p.get("items") or []
-    item0 = items[0] if items else {}
-    sellers = item0.get("sellers") or []
-    seller0 = sellers[0] if sellers else {}
-    offer = seller0.get("commertialOffer") or {}
+    item0, seller0, offer = pick_available_offer(items)
+    if not offer:
+        # No hay disponibilidad → NO devolvemos nada
+        return None
 
     # ---- Identificadores ----
-    # EAN: priorizamos item.ean, luego p["EAN"] (que a veces es lista), luego referenceId (EAN/GTIN/RefId)
-    ean = item0.get("ean") or first_val(p.get("EAN"))
-    if not ean:
-        # referenceId suele ser lista de dicts: [{"Key": "EAN", "Value": "..."}, ...]
+    ean = (item0.get("ean") if item0 else None) or first_val(p.get("EAN"))
+    if not ean and item0:
         for rid in (item0.get("referenceId") or []):
             k = (rid.get("Key") or "").upper()
             if k in ("EAN", "EAN13", "GTIN", "REFID"):
@@ -180,7 +214,7 @@ def parse_product_min(p: Dict) -> Dict:
                     break
     ean = to_str(ean)
 
-    codigo_interno = to_str(item0.get("itemId") or p.get("productId"))
+    codigo_interno = to_str((item0 or {}).get("itemId") or p.get("productId"))
 
     # ---- Categoría / Subcategoría ----
     categories = p.get("categories") or []
@@ -189,37 +223,28 @@ def parse_product_min(p: Dict) -> Dict:
         cat, sub = split_cat_path(categories[0])
 
     # ---- URL ----
-    # Requiere que hayas definido BASE_WEB en tu módulo; si no, usa un fallback vacío
     base_web = globals().get("BASE_WEB", "")
     url_prod = build_url(p, base_web)
 
     # ---- Precios ----
-    # VTEX suele dar:
-    #   ListPrice, Price, PriceWithoutDiscount, teasers (descuentos por promo)
     list_price = offer.get("ListPrice")
     pwd = offer.get("PriceWithoutDiscount")
-    price = offer.get("FullSellingPrice")
+    price = offer.get("FullSellingPrice", offer.get("Price"))
 
-    # Fallbacks coherentes
     list_price = to_float(list_price) if list_price else (to_float(pwd) if pwd else to_float(price))
     price = to_float(price)
 
     # ---- Tipo de oferta ----
-    # Si tenés tu propio helper, lo usamos; sino, calculamos básico por %.
     tipo_oferta_str = ""
     try:
-        # Usa tu helper si existe
-        tipo_oferta_str = tipo_de_oferta(offer, list_price, price)  # noqa: F821
+        tipo_oferta_str = tipo_de_oferta(offer, list_price, price)  # usa helper de arriba
     except NameError:
-        # Cálculo básico si no hay helper: cuando price < list_price
-        if list_price > 0 and price >= 0 and price < list_price:
+        if list_price > 0 and 0 <= price < list_price:
             off = (1 - (price / list_price)) * 100.0
             tipo_oferta_str = f"-{round(off)}%"
 
-    # ---- Campos extra útiles (opcional) ----
     brand = p.get("brand")
     manufacturer = p.get("manufacturer") or ""
-
 
     return {
         "EAN": ean,
@@ -233,13 +258,7 @@ def parse_product_min(p: Dict) -> Dict:
         "Precio de Oferta": price,
         "Tipo de Oferta": tipo_oferta_str,
         "URL": url_prod,
-        # --- extras comentados (por si luego los querés usar) ---
-        # "AvailableQuantity": offer.get("AvailableQuantity"),
-        # "IsAvailable": offer.get("IsAvailable"),
-        # "PriceValidUntil": offer.get("PriceValidUntil"),
-        # "imageUrl": first_val(item0.get("images") or [], {}).get("imageUrl") if (item0.get("images")) else None,
     }
-
 
 # ------------------ Árbol de categorías ------------------
 def get_all_category_paths(depth: int = DEPTH) -> List[Tuple[str, str]]:
@@ -317,40 +336,45 @@ def fetch_category(cat_path: str, map_str: str, step: int = STEP) -> List[Dict]:
             continue
 
         empty_streak = 0
-        added = 0
+        added_this_page = 0
         for p in data:
             pid = p.get("productId")
-            if pid and pid not in seen:
-                seen.add(pid)
-                prod = parse_product_min(p)
-                rows.append(prod)
-                added += 1
+            if pid and pid in seen:
+                continue
+            prod = parse_product_min(p)
+            if not prod:
+                # no disponible → lo saltamos
+                continue
+            seen.add(pid)
+            rows.append(prod)
+            added_this_page += 1
 
-                # 👇 Mostrar en consola con ambos precios + URL
-                nombre = prod.get("Nombre Producto", "??")
-                ean = prod.get("EAN", "")
-                precio_lista = prod.get("Precio de Lista", "N/A")
-                precio_oferta = prod.get("Precio de Oferta", "N/A")
-                url = prod.get("URL", "N/A")
+            # 👇 Mostrar en consola con ambos precios + URL
+            nombre = prod.get("Nombre Producto", "??")
+            ean = prod.get("EAN", "")
+            precio_lista = prod.get("Precio de Lista", "N/A")
+            precio_oferta = prod.get("Precio de Oferta", "N/A")
+            urlp = prod.get("URL", "N/A")
 
-                print(f"→ {ean} | {nombre} | Lista: ${precio_lista} | Oferta: ${precio_oferta} | URL: {url}")
+            print(f"→ {ean} | {nombre} | Lista: ${precio_lista} | Oferta: ${precio_oferta} | URL: {urlp}")
 
         offset += step
         time.sleep(SLEEP_PAGE)
 
         # Si la página devolvió menos de 'step', probablemente no hay más
-        if added < step:
+        if added_this_page < step:
             continue
 
     return rows
 
 # ------------------ Guardado ------------------
 def save_csv(df: pd.DataFrame, path: str):
-    df.to_csv(path, index=False)
+    #df.to_csv(path, index=False)
     logging.info("💾 CSV guardado: %s (%d filas)", path, len(df))
 
 def save_xlsx(df: pd.DataFrame, path: str):
-    # ... (tu limpieza previa)
+    # Limpieza de celdas "sucias" para Excel
+    df = df.applymap(sanitize_for_excel)
 
     # 👉 Desactiva la conversión automática de URLs a hipervínculos
     with pd.ExcelWriter(
@@ -358,7 +382,7 @@ def save_xlsx(df: pd.DataFrame, path: str):
         engine="xlsxwriter",
         engine_kwargs={"options": {"strings_to_urls": False}}
     ) as writer:
-        df.to_excel(writer, index=False, sheet_name="productos")
+        #df.to_excel(writer, index=False, sheet_name="productos")
         wb = writer.book
         ws = writer.sheets["productos"]
 
@@ -374,6 +398,7 @@ def save_xlsx(df: pd.DataFrame, path: str):
             if c in col_idx: ws.set_column(col_idx[c], col_idx[c], 14, money)
         if "URL" in col_idx: ws.set_column(col_idx["URL"], col_idx["URL"], 46)
 
+    logging.info("📗 XLSX guardado: %s (%d filas)", path, len(df))
 
 # ------------------ Orquestación ------------------
 def fetch_all_categories(depth: int = DEPTH) -> pd.DataFrame:
@@ -401,6 +426,7 @@ def fetch_all_categories(depth: int = DEPTH) -> pd.DataFrame:
         return pd.DataFrame(columns=COLS_FINAL)
 
     df = pd.DataFrame(all_rows)
+
     # asegurar columnas y orden final
     for c in COLS_FINAL:
         if c not in df.columns:

@@ -51,7 +51,7 @@ DB_PORT = int(os.getenv("DB_PORT", "3306"))
 
 # =================== Config tienda ===================
 TIENDA_CODIGO = "laanonima"
-TIENDA_NOMBRE = "La Anónima"
+TIENDA_NOMBRE = "La Anonima"
 
 # =================== Rendimiento / robustez MySQL ===================
 BATCH_COMMIT = int(os.getenv("BATCH_COMMIT", "150"))  # commit cada N productos

@@ -31,7 +31,7 @@ from base_datos import get_conn  # <- tu conexión MySQL
 
 # --------- Config tienda ---------
 TIENDA_CODIGO = "https://www.carrefour.com.ar"
-TIENDA_NOMBRE = "Carrefour Argentina"
+TIENDA_NOMBRE = "Carrefour"
 
 # --------- Helpers numéricos ---------
 def safe_float(x) -> Optional[float]:

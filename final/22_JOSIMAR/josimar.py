@@ -46,7 +46,7 @@ from base_datos import get_conn  # <- tu conexión mysql.connector
 
 # ---------------- Config tienda ----------------
 TIENDA_CODIGO = "josimar"
-TIENDA_NOMBRE = "Josimar (VTEX)"
+TIENDA_NOMBRE = "Josimar"
 BASE_DEFAULT = "https://www.josimar.com.ar"
 CAT_TREE = "/api/catalog_system/pub/category/tree/50"
 SEARCH = "/api/catalog_system/pub/products/search"

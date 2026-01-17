@@ -38,7 +38,7 @@ INCLUDE_PREFIXES: List[str] = []  # si quieres filtrar por prefijos de ruta
 FALLBACK_THRESHOLD = 5
 
 TIENDA_CODIGO = "hiperlibertad"
-TIENDA_NOMBRE = "Hiper Libertad"
+TIENDA_NOMBRE = "Libertad"
 
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 

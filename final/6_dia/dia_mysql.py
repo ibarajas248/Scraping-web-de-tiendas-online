@@ -36,7 +36,7 @@ MAX_EMPTY = 2
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 TIENDA_CODIGO = "dia"
-TIENDA_NOMBRE = "DIA Argentina"
+TIENDA_NOMBRE = "Dia"
 
 # =============== Sesión HTTP con retries ===============
 def build_session() -> requests.Session:

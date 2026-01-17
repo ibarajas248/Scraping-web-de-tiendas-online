@@ -4,38 +4,145 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="13 enero_2026">
-      <change afterPath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/frescos_proxy_vps.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/tunnel_correcciones/congelados.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/tunnel_correcciones/frescos.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/24_kilbel/prueba_version_2_rehacer_todo_kilbel/kilbel_excel.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/24_kilbel/prueba_version_2_rehacer_todo_kilbel/kilbel_mysql_lacteos.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/final/28_elAbastecedor/abastecedor_mysql_vtex.py" afterDir="false" />
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="15 enero_2026_">
+      <change afterPath="$PROJECT_DIR$/auxiliares_data_entry/LArEINA/lareina_solo_lacteos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/0_depuraciondatabase/depuracion.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/14_la_reina/lareina_solo_lacteos.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/JugueteriaLibreria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/Mascotas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/almacen.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/atomo.xlsx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/atomo_detalle.xlsx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/bebida.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/carnesCongelados.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/con_maestro_mysql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/hogarBazar.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/lacteosFiambres.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/limpieza.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/mundoBebe.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/perfumeria.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/sinTac.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/15_atomo/atomo/suplementoDietetica.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/8_disco/definitivo_si_todo_ok_borrar_resto/disco_MySQL.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/8_disco/definitivo_si_todo_ok_borrar_resto/lacteos_para_vps_CABA.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/8_disco/definitivo_si_todo_ok_borrar_resto/lacteos_para_vps_cordoba.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/vps/app_museo.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/vps/scrips_auxiliares_de_cron_jobs/borra_cron_job_de_sabado.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/vps/scrips_auxiliares_de_cron_jobs/copiar_cron_de_viernes_a_sabado.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/kilbel/kilbel_aux.py" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/kilbel/kilbel_aux.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/auxiliares_data_entry/kilbel/kilbel_con_precios.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/auxiliares_data_entry/kilbel/kilbel_con_precios.xlsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/colombia/1_1_ANALITICA/img.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/colombia/1_1_ANALITICA/informe_mercado.py" beforeDir="false" afterPath="$PROJECT_DIR$/colombia/1_1_ANALITICA/informe_mercado.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/congelados.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/congelados.xlsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/lacteos.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/lacteos.xlsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/JugueteriaLibreria.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/Mascotas.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/almacen.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/bebida.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/carnesCongelados.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/hogarBazar.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/lacteosFiambres.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/limpieza.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/mundoBebe.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/perfumeria.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/sinTac.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/categorias/suplementoDietetica.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/con_maestro/atomo.xlsx" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/con_maestro/atomo_detalle.xlsx" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/con_maestro/con_maestro_excel.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/15_atomo/con_maestro/con_maestro_mysql.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/categorias/frescos_proxy.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/categorias/frescos_proxy.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/2_alvear/alvearMySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/2_alvear/alvearMySQL.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/jumboMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/10_jumbo/jumboMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/jumbo_excel.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/jumboMysql.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/prueba dos.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/pruebaapi.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/reporte_jumbo_vtex_20251106_214441.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/reporte_jumbo_vtex_20251117_192141.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/reporte_jumbo_vtex_20251117_212205.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/pruebas/reporte_jumbo_vtex_20251118_100532.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/reporte_jumbo_vtex_20251119_104346.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/selenium/Jumbo_Almacen_Selenium.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/selenium/Jumbo_Almacen_Selenium_FULL.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/selenium/jumboMysql.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/tunnel_correcciones/congelados.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/tunnel_correcciones/congelados.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/tunnel_correcciones/frescos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/11_anonima/Tunnel/tunnel_correcciones/tunnel_correcciones/frescos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/lacoopeencasa.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/lacoopemysql.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/categorias/almacen.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/categorias/bebida.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/categorias/casa_jardin.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/categorias/categorias_corregidas_aun_no_esta_ok/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/12_lacoopeEnCasa/almacen.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/categorias/categorias_corregidas_aun_no_esta_ok/frescos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/12_lacoopeEnCasa/frescos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/categorias/frescos.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/categorias/limpieza.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/categorias/perfumeria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/categorias/subcategorias/lacteos/lacteos.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/categorias/subcategorias/lacteos/leches.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/12_lacoopeEnCasa/pruebacope/pruebacopa.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/14_la_reina/correcciones/lareina_productos.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/14_la_reina/correcciones/reinaMysql.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/14_la_reina/reinaMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/14_la_reina/reinaMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/1_carrefour/carrefor_bandera_disponibilidad/carrefour.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/1_carrefour/carrefour.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/1_carrefour/carrefour.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/1_carrefour/carrefour_MySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/1_carrefour/carrefour_MySQL.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/22_JOSIMAR/correccion/josimar.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/22_JOSIMAR/josimar.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/22_JOSIMAR/josimar.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/23_masonline/correcciones/masonline.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/23_masonline/correcciones/masonline_full.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/23_masonline/correcciones/masonline_full.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/23_masonline/masonline.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/23_masonline/masonline.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/23_masonline/masonline_cluster.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/23_masonline/masonline_cluster.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/23_masonline/masonline_full.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/23_masonline/masonline_full.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/almacen.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/bebidas.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/carniceria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/congelados.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/almacen.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/bebidas.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/carniceria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/congelados.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/correccion_de_la_corregidera/delacorregidera_de_la_corregidera/lacteos.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/correccion_de_la_corregidera/lacteos.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/extendido/leches.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/extendido/quesos.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/extendido/yogur.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/ferreteria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/fiambreria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/lacteos.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/limpieza.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/mascotas.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/panificados.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/pastas.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/perfumeria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/rotiseria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/correciones/verduleria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/ferreteria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/fiambreria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/lacteos.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/limpieza.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/mascotas.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/panificados.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/pastas.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/perfumeria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/prueba_version_2_rehacer_todo_kilbel/kilbel_excel.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/prueba_version_2_rehacer_todo_kilbel/kilbel_mysql_lacteos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/24_kilbel/kilbel_mysql_lacteos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/rotiseria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/24_kilbel/verduleria.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/25_pinguino/proxi/pinguino.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/25_pinguino/proxi/pinguino_proxy_mauro.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/categorias/frescos_proxy.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/almacen.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/almacen.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/bebidas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/bebidas.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/comodin_items.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/congelados.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/congelados.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/correcciones/cremas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/cremas.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/correcciones/frescos.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/correcciones/lacteos.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/correcciones/leches.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/leches.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/correcciones/mantecas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/mantecas.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/correcciones/quesos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/quesos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/correcciones/yogures.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/yogures.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/electro.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/electro.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/frescos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/frescos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/golosinas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/golosinas.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/hogar.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/hogar.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/lacteos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/lacteos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/libreria.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/libreria.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/limpieza.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/limpieza.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/mascotas.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/mascotas.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/mundo-bebe.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/mundo-bebe.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/panaderia.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/panaderia.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/perfumeria.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/perfumeria.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/saludables.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/saludables.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/3_comodin/sin-gluten.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/3_comodin/sin-gluten.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/5_coto/cotoMysql2.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/5_coto/cotoMysql2.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/5_coto/coto_fresco.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/5_coto/prubascorreccion/cotoMysql2.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/6_dia/dia_mysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/6_dia/dia_mysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/9_hiperlibertad/hiperlibertad_Mysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/9_hiperlibertad/hiperlibertad_Mysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/Vtex/archivovtex.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/Vtex/archivovtex.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/Vtex/correccion/archivovtex.py" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -228,6 +335,7 @@
     "Python.lacteos_huevos_refrigerados_mysql.executor": "Run",
     "Python.lacteos_para_vps_CABA.executor": "Run",
     "Python.lacteos_para_vps_cordoba.executor": "Run",
+    "Python.lareina_solo_lacteos.executor": "Run",
     "Python.leches.executor": "Run",
     "Python.libreria.executor": "Run",
     "Python.localidadprueba.executor": "Run",
@@ -282,7 +390,7 @@
     "RunOnceActivity.git.unshallow": "true",
     "git-widget-placeholder": "master",
     "ignore.virus.scanning.warn.message": "true",
-    "last_opened_file_path": "C:/Users/David/PycharmProjects/scrapingTiendas/final/28_elAbastecedor",
+    "last_opened_file_path": "C:/Users/David/PycharmProjects/scrapingTiendas/vps/scrips_auxiliares_de_cron_jobs",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -293,11 +401,11 @@
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\vps\scrips_auxiliares_de_cron_jobs" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\28_elAbastecedor" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\24_kilbel\prueba_version_2_rehacer_todo_kilbel" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\11_anonima\Tunnel\tunnel_correcciones\tunnel_correcciones" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\11_anonima\Tunnel\tunnel_correcciones" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\colombia\1_1_ANALITICA" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\colombia\1_1_ANALITICA" />
@@ -307,7 +415,7 @@
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\15_atomo\con_maestro" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.main">
+  <component name="RunManager">
     <configuration name="genovesamysql" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="scrapingTiendas" />
       <option name="ENV_FILES" value="" />
@@ -383,14 +491,6 @@
       <workItem from="1759263773212" duration="6875000" />
       <workItem from="1759317937398" duration="10743000" />
       <workItem from="1759433674262" duration="305000" />
-    </task>
-    <task id="LOCAL-00001" summary="inicio">
-      <option name="closed" value="true" />
-      <created>1753805632159</created>
-      <option name="number" value="00001" />
-      <option name="presentableId" value="LOCAL-00001" />
-      <option name="project" value="LOCAL" />
-      <updated>1753805632160</updated>
     </task>
     <task id="LOCAL-00002" summary="inicio">
       <option name="closed" value="true" />
@@ -776,7 +876,15 @@
       <option name="project" value="LOCAL" />
       <updated>1768360370622</updated>
     </task>
-    <option name="localTasksCounter" value="50" />
+    <task id="LOCAL-00050" summary="15 enero_2026_">
+      <option name="closed" value="true" />
+      <created>1768521893167</created>
+      <option name="number" value="00050" />
+      <option name="presentableId" value="LOCAL-00050" />
+      <option name="project" value="LOCAL" />
+      <updated>1768521893168</updated>
+    </task>
+    <option name="localTasksCounter" value="51" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -794,7 +902,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="tiendas_1" />
     <MESSAGE value="2_9_2025 ok" />
     <MESSAGE value="10_09_2025" />
     <MESSAGE value="11_09_2025" />
@@ -819,7 +926,8 @@
     <MESSAGE value="2 enero_2026" />
     <MESSAGE value="8 enero_2026" />
     <MESSAGE value="13 enero_2026" />
-    <option name="LAST_COMMIT_MESSAGE" value="13 enero_2026" />
+    <MESSAGE value="15 enero_2026_" />
+    <option name="LAST_COMMIT_MESSAGE" value="15 enero_2026_" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$abastecedor_captcha_myslq.coverage" NAME="abastecedor_captcha_myslq Coverage Results" MODIFIED="1759003919584" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/elAbastecedor" />
