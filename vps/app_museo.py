@@ -22,6 +22,21 @@ except Exception:  # pragma: no cover
     TfidfVectorizer = None
     cosine_similarity = None
 
+# Optional deps (ML visión: CLIP para "buscar objetos" en imágenes)
+from io import BytesIO
+
+try:
+    import torch
+    from PIL import Image
+    import requests
+    from transformers import CLIPModel, CLIPProcessor
+except Exception:  # pragma: no cover
+    torch = None
+    Image = None
+    requests = None
+    CLIPModel = None
+    CLIPProcessor = None
+
 
 # -----------------------------
 # Config (SIN st.secrets)
@@ -36,7 +51,8 @@ st.set_page_config(
 MYSQL_HOST = "khushiconfecciones.com"
 MYSQL_PORT = 3306
 MYSQL_USER = "u506324710_artcom"
-MYSQL_PASSWORD = "l5OylqQ4O+:F"
+# Por seguridad NO repito contraseñas aquí: pega tu valor real o usa env var MYSQL_PASSWORD
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "PEGA_AQUI_TU_PASSWORD")
 MYSQL_DATABASE = "u506324710_museos"
 MYSQL_POOL_SIZE = 5
 
@@ -198,6 +214,146 @@ def clean_artist(s: str) -> str:
     # normalizaciones puntuales (ajusta a tu caso)
     s = s.replace("van gogh", "vangogh")
     return s
+
+
+# -----------------------------
+# ML Visión: búsqueda visual por texto (CLIP)
+# -----------------------------
+@st.cache_resource(show_spinner=False)
+def _get_clip_bundle():
+    if CLIPModel is None or CLIPProcessor is None or torch is None:
+        raise RuntimeError("Faltan dependencias de ML/visión (torch/transformers/PIL/requests).")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model_name = os.getenv("CLIP_MODEL_NAME", "openai/clip-vit-base-patch32")
+    model = CLIPModel.from_pretrained(model_name)
+    processor = CLIPProcessor.from_pretrained(model_name)
+    model.to(device)
+    model.eval()
+    return device, model, processor, model_name
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _download_image_bytes(url: str) -> Optional[bytes]:
+    if not url or requests is None:
+        return None
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        }
+        r = requests.get(url, headers=headers, timeout=12)
+        r.raise_for_status()
+        if len(r.content) > 12_000_000:  # evita cachear imágenes gigantes
+            return None
+        return r.content
+    except Exception:
+        return None
+
+
+def _bytes_to_pil(b: bytes):
+    if Image is None or not b:
+        return None
+    try:
+        return Image.open(BytesIO(b)).convert("RGB")
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def get_image_candidates(selected_sources: Tuple[str, ...], ys: int, ye: int, limit_imgs: int) -> pd.DataFrame:
+    where_sql, where_params = build_where(selected_sources, ys, ye)
+
+    # Intento 1: si existe image_full_url
+    sql1 = f"""
+    SELECT id, source, title, artist, year_start, year_end, technique,
+           COALESCE(image_full_url, image_url) AS img,
+           source_url
+    FROM obras_arte
+    {where_sql}
+      AND (image_full_url IS NOT NULL OR image_url IS NOT NULL)
+    ORDER BY updated_at DESC
+    LIMIT %s
+    """
+    try:
+        return run_query(sql1, where_params + (limit_imgs,))
+    except Exception:
+        # Fallback: solo image_url
+        sql2 = f"""
+        SELECT id, source, title, artist, year_start, year_end, technique,
+               image_url AS img,
+               source_url
+        FROM obras_arte
+        {where_sql}
+          AND image_url IS NOT NULL
+        ORDER BY updated_at DESC
+        LIMIT %s
+        """
+        return run_query(sql2, where_params + (limit_imgs,))
+
+
+def clip_text_image_search(
+    candidates: pd.DataFrame,
+    query_text: str,
+    topk: int = 12,
+    batch_size: int = 8,
+    prompt_mode: str = "Direct",
+    prompt_en: Optional[str] = None,
+) -> pd.DataFrame:
+    """Ranquea imágenes por similitud CLIP con un texto (ej: 'manzana')."""
+    device, model, processor, model_name = _get_clip_bundle()
+
+    query_text = (query_text or "").strip()
+    if not query_text or candidates is None or candidates.empty:
+        return pd.DataFrame()
+
+    if prompt_mode == "English template":
+        prompt = (prompt_en or "").strip() or f"a photo of {query_text}"
+    else:
+        prompt = query_text
+
+    out_rows = []
+    imgs = []
+    metas = []
+
+    def flush_batch():
+        nonlocal imgs, metas, out_rows
+        if not imgs:
+            return
+        texts = [prompt] * len(imgs)
+        inputs = processor(text=texts, images=imgs, return_tensors="pt", padding=True)
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        with torch.no_grad():
+            logits = model(**inputs).logits_per_image
+            scores = logits.diag().float().cpu().tolist()
+        for meta, sc in zip(metas, scores):
+            row = dict(meta)
+            row["clip_score"] = float(sc)
+            row["clip_prompt"] = prompt
+            row["clip_model"] = model_name
+            out_rows.append(row)
+        imgs, metas = [], []
+
+    for _, r in candidates.iterrows():
+        url = r.get("img")
+        b = _download_image_bytes(str(url)) if url else None
+        img = _bytes_to_pil(b) if b else None
+        if img is None:
+            continue
+
+        imgs.append(img)
+        metas.append({k: r.get(k) for k in candidates.columns})
+
+        if len(imgs) >= batch_size:
+            flush_batch()
+
+    flush_batch()
+
+    if not out_rows:
+        return pd.DataFrame()
+
+    res = pd.DataFrame(out_rows)
+    res = res.sort_values("clip_score", ascending=False).head(int(topk))
+    return res
 
 
 # -----------------------------
@@ -526,7 +682,7 @@ with tab3:
 
 
 # -----------------------------
-# TAB 4: Similitud (TF-IDF)
+# TAB 4: Similitud (TF-IDF) · 'Obras parecidas' + ML Visión (CLIP)
 # -----------------------------
 with tab4:
     st.subheader("Similitud semántica (TF-IDF) · 'Obras parecidas'")
@@ -617,6 +773,74 @@ with tab4:
                             )
                             if row.get("source_url"):
                                 st.link_button("Abrir fuente", row.get("source_url"))
+
+    st.divider()
+    st.subheader("🖼️ Machine Learning (Visión): encontrar objetos en imágenes (CLIP)")
+    st.caption("Escribe una palabra (ej: manzana) y el modelo ordena imágenes por probabilidad de que aparezca ese concepto.")
+
+    if CLIPModel is None or torch is None or requests is None:
+        st.warning(
+            "Para activar este módulo instala dependencias:\n\n"
+            "pip install torch transformers pillow requests\n\n"
+            "Luego reinicia Streamlit."
+        )
+    else:
+        c1, c2, c3 = st.columns([2, 1, 1])
+        with c1:
+            vision_query = st.text_input("Palabra / concepto a buscar en la imagen", value="manzana", key="vision_query")
+        with c2:
+            prompt_mode = st.selectbox("Prompt", ["Direct", "English template"], index=0, key="vision_prompt_mode")
+        with c3:
+            topk = st.slider("Top resultados", 3, 30, 12, key="vision_topk")
+
+        max_imgs = st.slider("Imágenes a evaluar (más = más lento)", 20, 600, 160, step=20, key="vision_max_imgs")
+
+        prompt_en = None
+        if prompt_mode == "English template":
+            prompt_en = st.text_input("Prompt en inglés (opcional)", value="", key="vision_prompt_en")
+
+        run_vis = st.button("Buscar en imágenes", key="vision_run")
+
+        if run_vis:
+            cand = get_image_candidates(sources_t, ys, ye, int(max_imgs))
+            if cand.empty:
+                st.info("No hay imágenes disponibles con los filtros actuales.")
+            else:
+                with st.spinner("Descargando imágenes y calculando similitud (CLIP)..."):
+                    res = clip_text_image_search(
+                        cand,
+                        vision_query,
+                        topk=int(topk),
+                        batch_size=8,
+                        prompt_mode=prompt_mode,
+                        prompt_en=prompt_en,
+                    )
+
+                if res.empty:
+                    st.info("No pude procesar imágenes (URLs caídas, bloqueadas o sin dependencias).")
+                else:
+                    show = ["id", "clip_score", "source", "title", "artist", "year_start", "year_end", "technique", "img", "source_url"]
+                    show = [c for c in show if c in res.columns]
+                    st.dataframe(res[show], use_container_width=True, height=340)
+
+                    with st.expander("Ver top con imágenes"):
+                        cols = st.columns(3)
+                        for i, (_, row) in enumerate(res.iterrows()):
+                            col = cols[i % 3]
+                            with col:
+                                if row.get("img"):
+                                    st.image(row.get("img"), use_container_width=True)
+                                st.markdown(f"**{row.get('title') or '(sin título)'}**")
+                                st.write(
+                                    {
+                                        "id": int(row["id"]) if row.get("id") is not None else None,
+                                        "score": float(row.get("clip_score", 0.0)),
+                                        "artista": row.get("artist"),
+                                        "fuente": row.get("source"),
+                                    }
+                                )
+                                if row.get("source_url"):
+                                    st.link_button("Abrir fuente", row.get("source_url"))
 
 
 # -----------------------------
