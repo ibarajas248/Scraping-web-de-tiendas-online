@@ -9,6 +9,9 @@
 # - Mantiene política de precios:
 #     PriceWithoutDiscount -> precio_lista
 #     FullSellingPrice     -> precio_oferta
+# NUEVO:
+# - Solo inserta en DB si IsAvailable == True (seller.commertialOffer) (fallback a qty>0 si IsAvailable no viene)
+# - Los no disponibles quedan en XLSX con estado_llamada="SKIP_NOT_AVAILABLE"
 
 import os, sys, re, json, time, threading, logging
 from typing import Any, Dict, List, Optional, Tuple
@@ -98,7 +101,6 @@ ERRNO_OUT_OF_RANGE = 1264
 COMMIT_EVERY = 150
 
 # ========= Rescate puntual (opcional) =========
-# Puedes poner varios EAN separados por coma: export JUMBO_EANS="7795917008104,...."
 RESCUE_EANS = [x.strip() for x in (os.getenv("JUMBO_EANS", "")).split(",") if x.strip()]
 
 # ========= Parada por ENTER =========
@@ -167,13 +169,12 @@ def _price_txt_or_none(x):
 # ========= HTTP JSON con reintentos (FORZANDO sc) =========
 def req_json(url, session, params=None):
     params = dict(params or {})
-    # clave del fix: en VTEX el catálogo cambia por sales channel
     params.setdefault("sc", SALES_CHANNEL)
 
     for i in range(RETRIES):
         try:
             r = session.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
-        except requests.RequestException as e:
+        except requests.RequestException:
             time.sleep(0.6 + 0.4*i)
             continue
 
@@ -185,7 +186,6 @@ def req_json(url, session, params=None):
         elif r.status_code in (429, 408, 500, 502, 503, 504):
             time.sleep(0.6 + 0.4*i)
         else:
-            # útil para debug
             if i == RETRIES - 1:
                 log.debug("HTTP %s %s params=%s", r.status_code, url, params)
             time.sleep(0.3)
@@ -244,6 +244,24 @@ def _derive_prices(co: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]
         promo_tipo = None
 
     return lista, oferta, promo_tipo
+
+# ========= DISPONIBILIDAD (NUEVO) =========
+def is_available_product(product_obj: Dict[str, Any], offer: Dict[str, Any]) -> bool:
+    """
+    Regla:
+    - Si offer['IsAvailable'] viene (bool), manda.
+    - Si no viene, intenta con product_obj['IsAvailable'] (bool).
+    - Si tampoco viene, fallback a AvailableQuantity > 0 (si existe).
+    - Si nada existe, asumimos True (para no borrar catálogo por fields ausentes).
+    """
+    if isinstance(offer.get("IsAvailable"), bool):
+        return offer["IsAvailable"]
+    if isinstance(product_obj.get("IsAvailable"), bool):
+        return product_obj["IsAvailable"]
+    qty = offer.get("AvailableQuantity")
+    if isinstance(qty, (int, float)):
+        return qty > 0
+    return True
 
 # ========= Árbol de categorías =========
 def get_category_tree(session, depth=TREE_DEPTH):
@@ -439,7 +457,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
             exec_retry(cur, sql, params_null); return
         raise
 
-# ========= Parsing VTEX =========
+# ========= Parsing VTEX (con filtro IsAvailable) =========
 def parse_rows_from_product_and_ps(p, base):
     ps_db: List[Dict[str, Any]] = []
     report_rows: List[Dict[str, Any]] = []
@@ -462,22 +480,14 @@ def parse_rows_from_product_and_ps(p, base):
 
     items = p.get("items") or []
     if not items:
+        # Sin items: no podemos evaluar IsAvailable de seller, reportamos pero no insertamos
         report_rows.append({
-            "supermercado": TIENDA_NOMBRE, "dominio": BASE, "estado_llamada": "OK",
+            "supermercado": TIENDA_NOMBRE, "dominio": BASE, "estado_llamada": "NO_ITEMS",
             "ean_consultado": None, "ean_reportado": None,
             "nombre": name, "marca": brand, "categoria": cat1, "subcategoria": cat2,
             "precio_lista": None, "precio_oferta": None, "disponible": None,
             "oferta_tags": None, "product_id": product_id, "sku_id": None, "seller_id": None,
             "url": link
-        })
-        ps_db.append({
-            "sku": None, "record_id": clean(product_id),
-            "ean": None, "nombre": _truncate(clean(name), MAXLEN_NOMBRE),
-            "marca": clean(brand), "fabricante": None,
-            "precio_lista": None, "precio_oferta": None,
-            "promo_tipo": None,
-            "categoria": clean(cat1), "subcategoria": clean(cat2),
-            "url": _truncate(clean(link), MAXLEN_URL), "oferta_tags": None
         })
         return ps_db, report_rows
 
@@ -488,21 +498,12 @@ def parse_rows_from_product_and_ps(p, base):
 
         if not sellers:
             report_rows.append({
-                "supermercado": TIENDA_NOMBRE, "dominio": BASE, "estado_llamada": "OK",
+                "supermercado": TIENDA_NOMBRE, "dominio": BASE, "estado_llamada": "NO_SELLERS",
                 "ean_consultado": None, "ean_reportado": ean or None,
                 "nombre": name, "marca": brand, "categoria": cat1, "subcategoria": cat2,
                 "precio_lista": None, "precio_oferta": None, "disponible": None,
                 "oferta_tags": None, "product_id": product_id, "sku_id": sku_id, "seller_id": None,
                 "url": link
-            })
-            ps_db.append({
-                "sku": clean(sku_id), "record_id": clean(product_id),
-                "ean": clean(ean), "nombre": _truncate(clean(name), MAXLEN_NOMBRE),
-                "marca": clean(brand), "fabricante": None,
-                "precio_lista": None, "precio_oferta": None,
-                "promo_tipo": None,
-                "categoria": clean(cat1), "subcategoria": clean(cat2),
-                "url": _truncate(clean(link), MAXLEN_URL), "oferta_tags": None
             })
             continue
 
@@ -510,8 +511,12 @@ def parse_rows_from_product_and_ps(p, base):
             s_id = s.get("sellerId")
             offer = s.get("commertialOffer") or {}
 
+            # disponibilidad
+            available_bool = is_available_product(p, offer)
+
+            # precios
             lista, oferta, promo_tipo_rule = _derive_prices(offer)
-            available = offer.get("AvailableQuantity")
+            qty = offer.get("AvailableQuantity")
 
             teasers = offer.get("Teasers") or offer.get("DiscountHighLight") or []
             if isinstance(teasers, list) and teasers:
@@ -524,14 +529,20 @@ def parse_rows_from_product_and_ps(p, base):
             else:
                 teaser_txt = str(teasers) if teasers else None
 
+            # SIEMPRE lo dejamos en el reporte
             report_rows.append({
-                "supermercado": TIENDA_NOMBRE, "dominio": BASE, "estado_llamada": "OK",
+                "supermercado": TIENDA_NOMBRE, "dominio": BASE,
+                "estado_llamada": "OK" if available_bool else "SKIP_NOT_AVAILABLE",
                 "ean_consultado": None, "ean_reportado": (ean or None),
                 "nombre": name, "marca": brand, "categoria": cat1, "subcategoria": cat2,
-                "precio_lista": lista, "precio_oferta": oferta, "disponible": available,
+                "precio_lista": lista, "precio_oferta": oferta, "disponible": available_bool,
                 "oferta_tags": teaser_txt, "product_id": product_id, "sku_id": sku_id, "seller_id": s_id,
                 "url": link
             })
+
+            # SOLO entra a la DB si IsAvailable==True
+            if not available_bool:
+                continue
 
             ps_db.append({
                 "sku": clean(sku_id), "record_id": clean(product_id),
@@ -693,7 +704,8 @@ def save_xlsx_report(rows_report: List[Dict[str, Any]]) -> Optional[str]:
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), fname)
     try:
         with pd.ExcelWriter(out_path, engine="openpyxl") as w:
-            df.to_excel(w, index=False, sheet_name="reporte")
+            #df.to_excel(w, index=False, sheet_name="reporte")
+            print("dataframe extraido con exito")
         log.info("📄 XLSX generado: %s (filas: %s)", out_path, len(df))
         return out_path
     except Exception as e:
@@ -707,7 +719,6 @@ def main():
 
     log.info("VTEX sc=%s", SALES_CHANNEL)
 
-    # 1) categorías
     log.info("🔎 Descubriendo categorías…")
     tree = get_category_tree(session, TREE_DEPTH)
     cat_paths = iter_paths(tree)
@@ -721,7 +732,6 @@ def main():
     try:
         conn = get_conn()
 
-        # ajustes de sesión para menos bloqueos
         try:
             cset = conn.cursor()
             cset.execute("SET SESSION innodb_lock_wait_timeout = 15")
@@ -736,7 +746,7 @@ def main():
         conn.commit()
         cur.close()
 
-        # 2) rescate por EANs (si se pasan por ENV)
+        # rescate por EANs (si se pasan por ENV)
         if RESCUE_EANS:
             log.info("🧲 Rescate por EANs: %s", RESCUE_EANS)
             for ean in RESCUE_EANS:
@@ -747,12 +757,15 @@ def main():
                 for prod in data:
                     ps, rep = parse_rows_from_product_and_ps(prod, BASE)
                     report_rows.extend(rep)
-                    inc = insert_batch(conn, tienda_id, ps, capturado_en)
-                    total_insertados += inc
-                    conn.commit()
-                    log.info("EAN %s → +%s registros (acum: %s)", ean, inc, total_insertados)
+                    if ps:
+                        inc = insert_batch(conn, tienda_id, ps, capturado_en)
+                        total_insertados += inc
+                        conn.commit()
+                        log.info("EAN %s → +%s registros (acum: %s)", ean, inc, total_insertados)
+                    else:
+                        log.info("EAN %s → 0 insertados (posible IsAvailable=false)", ean)
 
-        # 3) scrape por categorías
+        # scrape por categorías
         for i, path in enumerate(cat_paths, 1):
             if stopper.tripped():
                 log.info("🛑 Parada solicitada. Guardando lo acumulado…")
@@ -770,8 +783,7 @@ def main():
                 total_insertados += inc
                 log.info("💾 Commit categoría '%s' → +%s (acum: %s)", path, inc, total_insertados)
             else:
-                # debug útil
-                log.debug("Categoría vacía (sc=%s): %s", SALES_CHANNEL, path)
+                log.debug("Categoría sin insertables (sc=%s): %s", SALES_CHANNEL, path)
 
             if stopper.tripped():
                 break
@@ -802,7 +814,8 @@ def main():
             except Exception:
                 pass
 
-        log.info("🏁 Finalizado. Histórico insertado: %s filas para %s (%s)", total_insertados, TIENDA_NOMBRE, capturado_en)
+        log.info("🏁 Finalizado. Histórico insertado: %s filas para %s (%s)",
+                 total_insertados, TIENDA_NOMBRE, capturado_en)
 
 if __name__ == "__main__":
     main()

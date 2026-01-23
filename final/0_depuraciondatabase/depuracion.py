@@ -3,6 +3,38 @@
 
 # python3 depurar_historico_uno_por_dia.py --dry-run --from "2026-01-01" --to "2026-02-01"
 # python3 depurar_historico_uno_por_dia.py --apply   --from "2026-01-01" --to "2026-02-01"
+
+
+
+
+'''
+
+para correr, sin apply (simulacion)
+
+/home/intelligenceblue-scrap/.venvs/scrap/bin/python -u \
+/home/intelligenceblue-scrap/htdocs/scrap.intelligenceblue.com.ar/scrap_tiendas/pruebas/depuracion.py \
+--dry-run \
+--from "2026-01-01" \
+--to "2026-02-01"
+
+
+
+
+/home/intelligenceblue-scrap/.venvs/scrap/bin/python -u \
+/home/intelligenceblue-scrap/htdocs/scrap.intelligenceblue.com.ar/scrap_tiendas/pruebas/depuracion.py \
+--apply \
+--from "2025-08-01" \
+--to "2025-12-31"
+
+
+con apply
+
+
+
+
+
+
+'''
 import os
 import sys
 import argparse

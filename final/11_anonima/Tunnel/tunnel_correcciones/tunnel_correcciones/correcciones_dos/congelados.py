@@ -15,6 +15,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.webdriver import WebDriver as ChromeDriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -25,27 +26,22 @@ import mysql.connector
 from mysql.connector import Error as MySQLError
 
 # =================== Identificador script (para logs) ===================
-SCRIPT_TAG = "[LAANONIMA_BEBIDAS_513]"
+SCRIPT_TAG = "[LAANONIMA_CONGELADOS_513]"
 
 # =================== Config scraper ===================
-URL = "https://www.laanonima.com.ar/frescos/n1_516/"
+URL = "https://www.laanonima.com.ar/congelados/n1_766/"
 POSTAL_CODE = "8300"
-
-# Permite que cada instancia ponga su propio nombre de archivo por ENV
-OUT_XLSX = os.getenv("OUT_XLSX", "lacteos.xlsx")
-
-# Si quieres ver el navegador, ponlo en False. En servidor, True.
+OUT_XLSX = os.getenv("OUT_XLSX", "congelados.xlsx")
 HEADLESS = False
 
 # =================== Config SSH / MySQL ===================
-# RECOMENDACIÓN: pásalos por env vars en producción
 SSH_HOST = os.getenv("SSH_HOST", "scrap.intelligenceblue.com.ar")
 SSH_USER = os.getenv("SSH_USER", "scrap-ssh")
-SSH_PASS = os.getenv("SSH_PASS", "gLqqVHswm42QjbdvitJ0")
+SSH_PASS = os.getenv("SSH_PASS", "UY8rMSGcHUunSsyJE4c7")
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_USER = os.getenv("DB_USER", "userscrap")
-DB_PASS = os.getenv("DB_PASS", "UY8rMSGcHUunSsyJE4c7")
+DB_PASS = os.getenv("DB_PASS", "CHANGE_ME")
 DB_NAME = os.getenv("DB_NAME", "scrap")
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
 
@@ -54,12 +50,19 @@ TIENDA_CODIGO = "laanonima"
 TIENDA_NOMBRE = "La Anonima"
 
 # =================== Rendimiento / robustez MySQL ===================
-BATCH_COMMIT = int(os.getenv("BATCH_COMMIT", "150"))  # commit cada N productos
-MAX_DB_RETRIES = int(os.getenv("MAX_DB_RETRIES", "8"))  # reintentos por 1205/1213
-BASE_BACKOFF = float(os.getenv("BASE_BACKOFF", "0.8"))  # segundos
-SESSION_LOCK_WAIT_TIMEOUT = int(os.getenv("SESSION_LOCK_WAIT_TIMEOUT", "60"))  # seconds
+BATCH_COMMIT = int(os.getenv("BATCH_COMMIT", "50"))          # más chico = menos locks
+MAX_DB_RETRIES = int(os.getenv("MAX_DB_RETRIES", "8"))
+BASE_BACKOFF = float(os.getenv("BASE_BACKOFF", "0.8"))
+SESSION_LOCK_WAIT_TIMEOUT = int(os.getenv("SESSION_LOCK_WAIT_TIMEOUT", "60"))
 
-# =================== Bloqueo de recursos Selenium (CDP blocked urls) ===================
+# Lock cooperativo: evita 2 procesos escribiendo la misma tienda a la vez
+LOCK_TIMEOUT_S = int(os.getenv("LOCK_TIMEOUT_S", "8"))
+MYSQL_LOCK_NAME = os.getenv(
+    "MYSQL_LOCK_NAME",
+    f"scrap:{TIENDA_CODIGO}:congelados:{POSTAL_CODE}"
+)
+
+# =================== Bloqueo de recursos Selenium ===================
 BLOCK_URL_PATTERNS = [
     "*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp", "*.svg",
     "*.woff", "*.woff2", "*.ttf", "*.otf", "*.eot",
@@ -76,7 +79,6 @@ def log(msg: str):
     print(f"{SCRIPT_TAG} {msg}", flush=True)
 
 def clean(val):
-    """Normaliza texto: trim, colapsa espacios, filtra null-likes."""
     if val is None:
         return None
     s = str(val).strip()
@@ -84,14 +86,11 @@ def clean(val):
     return None if s.lower() in _NULLLIKE else s
 
 def parse_price(val) -> float:
-    """Parsea números con separadores locales; devuelve float o np.nan."""
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return np.nan
     if isinstance(val, (int, float)):
         return float(val)
     s = str(val).strip()
-
-
     if not s:
         return np.nan
     s = _price_clean_re.sub("", s)
@@ -105,21 +104,19 @@ def parse_price(val) -> float:
         return np.nan
 
 def parse_money_to_number(txt: str) -> Optional[float]:
-    """Convierte textos tipo '$ 1.234,56' / '1.234' / '1,234.56' a float."""
     if txt is None:
         return None
     txt = str(txt).strip()
     if not txt:
         return None
-
     t = re.sub(r"[^\d.,-]", "", txt)
     if not t:
         return None
 
     if "." in t and "," in t:
-        if t.rfind(",") > t.rfind("."):     # AR: 1.234,56
+        if t.rfind(",") > t.rfind("."):
             t = t.replace(".", "").replace(",", ".")
-        else:                               # US: 1,234.56
+        else:
             t = t.replace(",", "")
     elif "," in t:
         frac = t.split(",")[-1]
@@ -140,10 +137,6 @@ def parse_money_to_number(txt: str) -> Optional[float]:
 
 # =================== Conexión MySQL con túnel ===================
 def get_conn() -> Tuple[mysql.connector.connection.MySQLConnection, SSHTunnelForwarder]:
-    """
-    Devuelve una conexión a MySQL a través de un túnel SSH.
-    IMPORTANTE: cerrar conn y tunnel en el caller.
-    """
     log("🚂 Iniciando túnel SSH...")
     tunnel = SSHTunnelForwarder(
         (SSH_HOST, 22),
@@ -156,7 +149,7 @@ def get_conn() -> Tuple[mysql.connector.connection.MySQLConnection, SSHTunnelFor
     local_port = tunnel.local_bind_port
     log(f"🔐 Túnel SSH activo en localhost:{local_port} -> {DB_HOST}:{DB_PORT}")
 
-    log("🛰  Intentando conectar a MySQL a través del túnel...")
+    log("🛰  Conectando a MySQL a través del túnel...")
     conn = mysql.connector.connect(
         host="127.0.0.1",
         port=local_port,
@@ -165,24 +158,40 @@ def get_conn() -> Tuple[mysql.connector.connection.MySQLConnection, SSHTunnelFor
         database=DB_NAME,
         connection_timeout=20,
         autocommit=False,
-        # IMPORTANTE: buffered evita ciertos “Unread result found” y hace fetch consistente
         buffered=True,
     )
     log("✅ Conexión MySQL establecida.")
 
-    # Ajustes por sesión (no tocan el servidor global)
+    # Ajustes por sesión
+    cur = conn.cursor()
+    cur.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+    cur.execute(f"SET SESSION innodb_lock_wait_timeout = {int(SESSION_LOCK_WAIT_TIMEOUT)}")
+    cur.close()
+    return conn, tunnel
+
+def acquire_mysql_lock(conn, lock_name: str, timeout_s: int) -> None:
+    """
+    Lock cooperativo a nivel MySQL (por conexión).
+    Si ya hay otro proceso con el lock, este proceso no escribe (evita 1205 por solape).
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT GET_LOCK(%s, %s)", (lock_name, timeout_s))
+    row = cur.fetchone()
+    cur.close()
+    ok = (row and row[0] == 1)
+    if not ok:
+        raise RuntimeError(f"No se pudo adquirir GET_LOCK('{lock_name}') en {timeout_s}s. Probable cron solapado.")
+
+def release_mysql_lock(conn, lock_name: str) -> None:
     try:
         cur = conn.cursor()
-        cur.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
-        cur.execute(f"SET SESSION innodb_lock_wait_timeout = {int(SESSION_LOCK_WAIT_TIMEOUT)}")
+        cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
         cur.close()
     except Exception:
         pass
 
-    return conn, tunnel
-
 # =================== Selenium helpers ===================
-def setup_driver() -> webdriver.Chrome:
+def setup_driver() -> ChromeDriver:
     opts = Options()
     if HEADLESS:
         opts.add_argument("--headless=new")
@@ -223,7 +232,7 @@ def setup_driver() -> webdriver.Chrome:
 
     return driver
 
-def apply_postal_code(driver: webdriver.Chrome, wait: WebDriverWait, postal_code: str):
+def apply_postal_code(driver: ChromeDriver, wait: WebDriverWait, postal_code: str):
     try:
         cp_input = wait.until(EC.presence_of_element_located((By.ID, "idCodigoPostalUnificado")))
         cp_input.clear()
@@ -244,7 +253,6 @@ def apply_postal_code(driver: webdriver.Chrome, wait: WebDriverWait, postal_code
             pass
 
         sleep(1.0)
-
         log("🔄 Recargando la página para aplicar el código postal...")
         driver.refresh()
 
@@ -256,7 +264,7 @@ def apply_postal_code(driver: webdriver.Chrome, wait: WebDriverWait, postal_code
     except Exception as e:
         log(f"[AVISO] No se pudo interactuar con el modal de CP: {e}")
 
-def smart_infinite_scroll(driver: webdriver.Chrome, wait_css: str, pause=0.9, max_plateaus=5):
+def smart_infinite_scroll(driver: ChromeDriver, wait_css: str, pause=0.9, max_plateaus=5):
     WebDriverWait(driver, 25).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, wait_css))
     )
@@ -317,20 +325,20 @@ return Array.from(document.querySelectorAll('div.card a[data-codigo]')).map(a =>
 
 # =================== MySQL helpers ===================
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
-    cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
-    row = cur.fetchone()
-    if row:
-        return row[0]
-
-    cur.execute(
-        "INSERT IGNORE INTO tiendas (codigo, nombre) VALUES (%s, %s)",
-        (codigo, nombre)
-    )
-    cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
-    row = cur.fetchone()
-    return row[0]
+    """
+    Requiere UNIQUE(tiendas.codigo). Minimiza locks vs SELECT+INSERT.
+    """
+    cur.execute("""
+        INSERT INTO tiendas (codigo, nombre)
+        VALUES (%s, %s)
+        ON DUPLICATE KEY UPDATE
+          id = LAST_INSERT_ID(id),
+          nombre = VALUES(nombre)
+    """, (codigo, nombre))
+    return int(cur.lastrowid)
 
 def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
+    # Mantengo tu lógica (porque aquí ean viene None); lo importante es el lock cooperativo.
     ean = clean(p.get("ean"))
     if ean:
         cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
@@ -382,16 +390,9 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
         p.get("ean") or "", nombre, marca,
         p.get("fabricante") or "", p.get("categoria") or "", p.get("subcategoria") or ""
     ))
-    return cur.lastrowid
+    return int(cur.lastrowid)
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
-    """
-    Upsert que devuelve ID con LAST_INSERT_ID.
-    IMPORTANTE: NO actualiza producto_id si el registro ya existe (regla Kilbel).
-    Requiere UNIQUE KEY:
-      - (tienda_id, sku_tienda) cuando sku_tienda existe
-      - (tienda_id, record_id_tienda) si usas record_id como alternativa
-    """
     sku = clean(p.get("sku"))
     rec = clean(p.get("record_id"))
     url = p.get("url") or ""
@@ -409,7 +410,7 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
               url_tienda       = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda    = COALESCE(VALUES(nombre_tienda), nombre_tienda)
         """, (tienda_id, producto_id, sku, rec, url, nombre_tienda))
-        return cur.lastrowid
+        return int(cur.lastrowid)
 
     if rec:
         cur.execute("""
@@ -422,13 +423,13 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
               url_tienda    = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
         """, (tienda_id, producto_id, rec, url, nombre_tienda))
-        return cur.lastrowid
+        return int(cur.lastrowid)
 
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''))
     """, (tienda_id, producto_id, url, nombre_tienda))
-    return cur.lastrowid
+    return int(cur.lastrowid)
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, Any], capturado_en: datetime):
     def to_txt_or_none(x):
@@ -437,7 +438,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
         v = parse_price(x)
         if isinstance(v, float) and np.isnan(v):
             return None
-        return f"{round(float(v), 2)}"
+        return f"{float(v):.2f}"
 
     cur.execute("""
         INSERT INTO historico_precios
@@ -465,28 +466,36 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
 
 # =================== Retry wrapper para 1205/1213 ===================
 def is_retryable_mysql_error(e: MySQLError) -> bool:
-    # mysql.connector: e.errno suele ser int
     try:
         return int(getattr(e, "errno", -1)) in (1205, 1213)
     except Exception:
         return False
 
-def run_with_retry_db(fn, conn, *, max_retries=MAX_DB_RETRIES, base_backoff=BASE_BACKOFF):
+def run_with_retry_db(tx_fn, conn, *, max_retries=MAX_DB_RETRIES, base_backoff=BASE_BACKOFF):
     """
-    Ejecuta fn() dentro de una transacción.
-    Si hay 1205/1213: rollback, backoff, retry.
+    Ejecuta tx_fn(cur) en una transacción. Crea cursor nuevo por intento.
     """
     attempt = 0
     while True:
+        cur = conn.cursor(buffered=True)
         try:
-            return fn()
+            res = tx_fn(cur)
+            cur.close()
+            return res
         except MySQLError as e:
+            try:
+                cur.close()
+            except Exception:
+                pass
+
             if not is_retryable_mysql_error(e) or attempt >= max_retries:
                 raise
+
             try:
                 conn.rollback()
             except Exception:
                 pass
+
             sleep_s = base_backoff * (2 ** attempt) + random.uniform(0, 0.35)
             log(f"⏳ MySQL retryable ({getattr(e,'errno',None)}): {e}. Reintento en {sleep_s:.2f}s (attempt {attempt+1}/{max_retries})")
             sleep(sleep_s)
@@ -559,20 +568,6 @@ def main():
 
     # ---------- XLSX ----------
     df = pd.DataFrame(dedup)
-    prefer = [
-        "codigo", "titulo_card", "nombre_data", "marca", "modelo", "ruta_categorias",
-        "detalle_url", "img_url",
-        "precio_visible_txt", "precio_tachado_txt", "impuestos_nacionales_txt",
-        "precio_visible_num", "precio_tachado_num", "impuestos_sin_nacionales_num",
-        "data_precio", "data_precio_anterior", "data_precio_oferta",
-        "data_precio_desde", "data_precio_hasta", "data_precio_minimo", "data_precio_maximo",
-        "data_precio_num", "data_precio_anterior_num", "data_precio_oferta_num",
-        "data_precio_minimo_num", "data_precio_maximo_num",
-        "data_es_padre_matriz", "data_primer_hijo_stock",
-        "precio_lista", "precio_oferta",
-    ]
-    cols = [c for c in prefer if c in df.columns] + [c for c in df.columns if c not in prefer]
-    df = df[cols]
     df.to_excel(OUT_XLSX, index=False)
     log(f"✅ Capturados: {len(df)} productos")
     log(f"📄 XLSX: {OUT_XLSX}")
@@ -620,14 +615,19 @@ def main():
 
     conn = None
     tunnel = None
+    lock_taken = False
+
     try:
         conn, tunnel = get_conn()
-        cur = conn.cursor()
+
+        # ✅ CLAVE: evita solape con otros crons/scripts de la misma tienda/categoría
+        log(f"🔒 Intentando GET_LOCK: {MYSQL_LOCK_NAME} ...")
+        acquire_mysql_lock(conn, MYSQL_LOCK_NAME, LOCK_TIMEOUT_S)
+        lock_taken = True
+        log("🔒 Lock adquirido. Escribiendo en MySQL sin competencia...")
 
         log("📝 Upsert tienda...")
-        # Esto lo metemos en retry por si otro proceso está tocando tiendas
-        def tx_upsert_tienda():
-            nonlocal cur
+        def tx_upsert_tienda(cur):
             tienda_id_local = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
             conn.commit()
             return tienda_id_local
@@ -638,12 +638,11 @@ def main():
         total = len(productos)
         insertados = 0
 
-        # Procesar en lotes para acortar locks
         for start in range(0, total, BATCH_COMMIT):
-            batch = productos[start:start+BATCH_COMMIT]
+            batch = productos[start:start + BATCH_COMMIT]
             batch_num = (start // BATCH_COMMIT) + 1
 
-            def tx_batch():
+            def tx_batch(cur):
                 nonlocal insertados
                 for p in batch:
                     producto_id = find_or_create_producto(cur, p)
@@ -652,13 +651,15 @@ def main():
                     insertados += 1
                 conn.commit()
 
-            # Retry del lote completo si hubo lock timeout/deadlock
             run_with_retry_db(tx_batch, conn)
-
             log(f"💾 Batch {batch_num} OK → {min(start+BATCH_COMMIT, total)}/{total}")
 
         log(f"✅ Guardado en MySQL: {insertados} históricos para {TIENDA_NOMBRE} ({capturado_en})")
 
+    except RuntimeError as e:
+        # típico: no obtuvo GET_LOCK (cron solapado)
+        log(f"⚠️ {e}")
+        log("👉 Esto normalmente significa que ya hay otro proceso corriendo esta tienda. Este proceso sale sin escribir.")
     except MySQLError as e:
         try:
             if conn:
@@ -666,7 +667,7 @@ def main():
         except Exception:
             pass
         log(f"❌ Error MySQL: {e}")
-        log("👉 Si sigue pasando, es porque hay mucha concurrencia en cron o faltan UNIQUE/INDEX en producto_tienda/historico_precios.")
+        log("👉 Si aún pasa con GET_LOCK, revisa transacciones colgadas o índices UNIQUE faltantes.")
     except Exception as e:
         try:
             if conn:
@@ -675,11 +676,11 @@ def main():
             pass
         log(f"❌ Error general: {e}")
     finally:
+        if conn and lock_taken:
+            release_mysql_lock(conn, MYSQL_LOCK_NAME)
+            log("🔓 Lock liberado.")
+
         if conn:
-            try:
-                cur.close()
-            except Exception:
-                pass
             try:
                 conn.close()
                 log("🔌 Conexión MySQL cerrada.")

@@ -244,7 +244,7 @@ def duplicate_friday_to_saturday(lines: List[str]) -> Tuple[List[str], int, int,
         # crear copia exacta pero con DOW=6
 
         #aca cambio de dia_
-        new_ln = format_5field(p["m"], p["h"], p["dom"], p["mon"], "0", p["cmd"])
+        new_ln = format_5field(p["m"], p["h"], p["dom"], p["mon"], "4", p["cmd"])
 
         if new_ln in existing_set or new_ln in set(new_lines):
             skipped_dupe += 1

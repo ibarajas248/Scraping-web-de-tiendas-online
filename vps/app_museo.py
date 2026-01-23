@@ -1,6 +1,8 @@
 # app.py
 import os
 import re
+import gc
+import heapq
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple
 
@@ -51,7 +53,7 @@ st.set_page_config(
 MYSQL_HOST = "khushiconfecciones.com"
 MYSQL_PORT = 3306
 MYSQL_USER = "u506324710_artcom"
-# Por seguridad NO repito contraseñas aquí: pega tu valor real o usa env var MYSQL_PASSWORD
+# Usa variable de entorno para password (recomendado)
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "PEGA_AQUI_TU_PASSWORD")
 MYSQL_DATABASE = "u506324710_museos"
 MYSQL_POOL_SIZE = 5
@@ -232,7 +234,7 @@ def _get_clip_bundle():
     return device, model, processor, model_name
 
 
-@st.cache_data(show_spinner=False, ttl=3600)
+# SIN cache: evita llenar memoria cuando hay miles de imágenes
 def _download_image_bytes(url: str) -> Optional[bytes]:
     if not url or requests is None:
         return None
@@ -241,11 +243,12 @@ def _download_image_bytes(url: str) -> Optional[bytes]:
             "User-Agent": "Mozilla/5.0",
             "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
         }
-        r = requests.get(url, headers=headers, timeout=12)
+        r = requests.get(url, headers=headers, timeout=12, stream=True)
         r.raise_for_status()
-        if len(r.content) > 12_000_000:  # evita cachear imágenes gigantes
+        content = r.content
+        if len(content) > 12_000_000:  # evita imágenes gigantes
             return None
-        return r.content
+        return content
     except Exception:
         return None
 
@@ -295,11 +298,13 @@ def clip_text_image_search(
     candidates: pd.DataFrame,
     query_text: str,
     topk: int = 12,
-    batch_size: int = 8,
+    batch_size: int = 8,  # se mantiene por compatibilidad, pero NO se usa (1x1)
     prompt_mode: str = "Direct",
     prompt_en: Optional[str] = None,
 ) -> pd.DataFrame:
-    """Ranquea imágenes por similitud CLIP con un texto (ej: 'manzana')."""
+    """Ranquea imágenes por similitud CLIP con un texto (ej: 'manzana').
+    Versión memory-safe: evalúa 1x1 y solo guarda el TopK.
+    """
     device, model, processor, model_name = _get_clip_bundle()
 
     query_text = (query_text or "").strip()
@@ -311,49 +316,94 @@ def clip_text_image_search(
     else:
         prompt = query_text
 
-    out_rows = []
-    imgs = []
-    metas = []
+    # Tokeniza el texto UNA sola vez (ahorra RAM/CPU)
+    text_tok = processor(text=[prompt], return_tensors="pt", padding=True)
+    text_tok = {k: v.to(device) for k, v in text_tok.items()}
 
-    def flush_batch():
-        nonlocal imgs, metas, out_rows
-        if not imgs:
-            return
-        texts = [prompt] * len(imgs)
-        inputs = processor(text=texts, images=imgs, return_tensors="pt", padding=True)
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        with torch.no_grad():
-            logits = model(**inputs).logits_per_image
-            scores = logits.diag().float().cpu().tolist()
-        for meta, sc in zip(metas, scores):
-            row = dict(meta)
-            row["clip_score"] = float(sc)
-            row["clip_prompt"] = prompt
-            row["clip_model"] = model_name
-            out_rows.append(row)
-        imgs, metas = [], []
+    # Min-heap para guardar solo TopK: (score, meta_dict)
+    heap: List[Tuple[float, dict]] = []
+    n_seen = 0
 
     for _, r in candidates.iterrows():
+        n_seen += 1
+
         url = r.get("img")
-        b = _download_image_bytes(str(url)) if url else None
-        img = _bytes_to_pil(b) if b else None
+        if not url:
+            continue
+
+        b = _download_image_bytes(str(url))
+        if not b:
+            continue
+
+        img = _bytes_to_pil(b)
         if img is None:
             continue
 
-        imgs.append(img)
-        metas.append({k: r.get(k) for k in candidates.columns})
+        # Reduce tamaño en memoria (opcional)
+        try:
+            img.thumbnail((1024, 1024))
+        except Exception:
+            pass
 
-        if len(imgs) >= batch_size:
-            flush_batch()
+        try:
+            # Procesa UNA imagen
+            img_inputs = processor(images=img, return_tensors="pt")
+            img_inputs = {k: v.to(device) for k, v in img_inputs.items()}
 
-    flush_batch()
+            inputs = {}
+            inputs.update(text_tok)      # input_ids, attention_mask
+            inputs.update(img_inputs)    # pixel_values
 
-    if not out_rows:
+            with torch.inference_mode():
+                logits = model(**inputs).logits_per_image  # (1,1)
+                score = float(logits[0, 0].detach().cpu().item())
+
+            meta = {k: r.get(k) for k in candidates.columns}
+            meta["clip_score"] = score
+            meta["clip_prompt"] = prompt
+            meta["clip_model"] = model_name
+
+            if len(heap) < int(topk):
+                heapq.heappush(heap, (score, meta))
+            else:
+                if score > heap[0][0]:
+                    heapq.heapreplace(heap, (score, meta))
+
+        except Exception:
+            pass
+        finally:
+            # Libera memoria SIEMPRE
+            try:
+                img.close()
+            except Exception:
+                pass
+
+            # elimina referencias grandes
+            try:
+                del b, img
+            except Exception:
+                pass
+            try:
+                del img_inputs, inputs, logits
+            except Exception:
+                pass
+
+            # limpieza periódica
+            if n_seen % 25 == 0:
+                gc.collect()
+                if torch is not None and device == "cuda":
+                    try:
+                        torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+
+    if not heap:
         return pd.DataFrame()
 
-    res = pd.DataFrame(out_rows)
-    res = res.sort_values("clip_score", ascending=False).head(int(topk))
-    return res
+    # Ordena por score desc
+    best = sorted(heap, key=lambda x: x[0], reverse=True)
+    out_rows = [m for _, m in best]
+    return pd.DataFrame(out_rows)
 
 
 # -----------------------------
@@ -615,7 +665,10 @@ with tab2:
                 .sort_values("size", ascending=False)
                 .head(top_n)
             )
-            st.dataframe(top_art.rename(columns={"artist_clean": "artista_norm", "size": "obras"}), use_container_width=True)
+            st.dataframe(
+                top_art.rename(columns={"artist_clean": "artista_norm", "size": "obras"}),
+                use_container_width=True
+            )
         else:
             st.info("No existe la columna `artist` en el resultado.")
 
@@ -727,9 +780,9 @@ with tab4:
                 i = id_list.index(int(pick_id))
                 sims = cosine_similarity(X[i], X).flatten()
 
-                topk = 10
+                topk_sim = 10
                 idx = sims.argsort()[::-1]
-                idx = [j for j in idx if j != i][:topk]
+                idx = [j for j in idx if j != i][:topk_sim]
 
                 sim_ids = [int(id_list[j]) for j in idx]
                 sim_scores = [float(sims[j]) for j in idx]
@@ -806,12 +859,12 @@ with tab4:
             if cand.empty:
                 st.info("No hay imágenes disponibles con los filtros actuales.")
             else:
-                with st.spinner("Descargando imágenes y calculando similitud (CLIP)..."):
+                with st.spinner("Descargando imágenes y calculando similitud (CLIP) 1x1..."):
                     res = clip_text_image_search(
                         cand,
                         vision_query,
                         topk=int(topk),
-                        batch_size=8,
+                        batch_size=1,
                         prompt_mode=prompt_mode,
                         prompt_en=prompt_en,
                     )
