@@ -62,7 +62,7 @@ RETRY_BACKOFF = 1.5
 
 # Identidad de tienda en tu DB
 TIENDA_CODIGO = "vea"
-TIENDA_NOMBRE = "Vea Argentina"
+TIENDA_NOMBRE = "Vea"
 
 # =========================
 # Concurrencia MySQL (clave)

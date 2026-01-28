@@ -2,33 +2,38 @@
 # -*- coding: utf-8 -*-
 
 """
-DinoOnline (Endeca/ATG) – Listing HTML -> MySQL
+DinoOnline (Endeca/ATG) – Listing HTML -> MySQL (con EAN desde detalle)
 
-- Reutiliza tu scraper (requests + BeautifulSoup) para listar productos.
+CORREGIDO: parsing de precios (miles/decimales) para evitar casos como:
+  "4,699.00" -> 4.7   (MAL)
+y que quede:
+  "4,699.00" -> 4699.00 (BIEN)
+  "4.699,00" -> 4699.00 (BIEN)
+
+- Listing con requests + BeautifulSoup
+- Enriquecimiento opcional: visita el detalle del producto para intentar detectar EAN/GTIN
 - Inserta/actualiza:
   * tiendas (codigo='dinoonline')
-  * productos (EAN = NULL; match suave por nombre)
+  * productos (match por EAN si existe; si no, match suave por nombre)
   * producto_tienda (sku_tienda = prod_id, url_tienda = url)
   * historico_precios (precios como VARCHAR)
 
-Índices/UNIQUE sugeridos:
+Sugerencias UNIQUE:
   tiendas(codigo) UNIQUE
   producto_tienda(tienda_id, sku_tienda) UNIQUE
   -- opcional respaldo: producto_tienda(tienda_id, url_tienda) UNIQUE
-  historico_precios(tienda_id, producto_tienda_id, capturado_en) UNIQUE  [solo si buscas idempotencia]
 """
-import re
-from typing import Optional, Any
+
 import re
 import time
+import json
 from html import unescape
-from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import urljoin, urlparse, parse_qs, urlencode
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 import numpy as np
 import requests
-import pandas as pd
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -54,8 +59,18 @@ START_URL = (
 SLEEP_BETWEEN_PAGES = 0.6
 TIMEOUT = 25
 MAX_SEEN_PAGES = 1000
+
 TIENDA_CODIGO = "dinoonline"
-TIENDA_NOMBRE = "Dino Online"
+TIENDA_NOMBRE = "Super Dino"
+
+# === EAN desde detalle ===
+DETAIL_EAN_MODE = "sample"   # "off" | "sample" | "all"
+DETAIL_EAN_SAMPLE_N = 50     # si mode="sample", solo intenta EAN en los primeros N items
+SLEEP_BETWEEN_DETAILS = 0.15
+
+# Regex EAN/GTIN típicamente 13 dígitos (Argentina usualmente EAN-13)
+EAN13_RE = re.compile(r"(?<!\d)(\d{13})(?!\d)")
+
 
 # ================== Sesión ==================
 def make_session():
@@ -75,29 +90,158 @@ def make_session():
     s.mount("http://", HTTPAdapter(max_retries=retry))
     return s
 
-# ================== Utils ==================
-def clean_money(txt: str):
-    if not txt:
+
+# ================== Utils (PRECIOS) ==================
+def parse_price(txt: Any) -> Optional[float]:
+    """
+    Parsing robusto para precios con miles/decimales:
+      "4,699.00" -> 4699.00
+      "4.699,00" -> 4699.00
+      "4699"     -> 4699.00
+      "$ 4.699"  -> 4699.00
+      "$4,699"   -> 4699.00
+    """
+    if txt is None:
         return None
-    t = re.sub(r"[^\d,.\-]", "", txt)
-    if "," in t and "." in t:
-        t = t.replace(".", "").replace(",", ".")
-    elif "," in t:
-        t = t.replace(",", ".")
+
+    # ya numérico
+    if isinstance(txt, (int, float)):
+        try:
+            if isinstance(txt, float) and (txt != txt):  # NaN
+                return None
+            return float(txt)
+        except Exception:
+            return None
+
+    s = str(txt).strip()
+    if not s:
+        return None
+
+    # deja solo dígitos, separadores y signo
+    s = re.sub(r"[^\d,.\-]", "", s)
+    if not s or s in ("-", ".", ","):
+        return None
+
+    # Caso con ambos separadores: decide decimal por el ÚLTIMO separador
+    if "," in s and "." in s:
+        last_comma = s.rfind(",")
+        last_dot = s.rfind(".")
+        if last_dot > last_comma:
+            # 4,699.00 -> miles=',' dec='.'
+            s = s.replace(",", "")
+        else:
+            # 4.699,00 -> miles='.' dec=','
+            s = s.replace(".", "").replace(",", ".")
+    else:
+        # Solo comas
+        if "," in s:
+            # si parece decimal (1 coma y 1-2 dígitos al final) => decimal
+            if s.count(",") == 1 and len(s.split(",")[-1]) in (1, 2):
+                s = s.replace(",", ".")
+            else:
+                # si no, comas como miles
+                s = s.replace(",", "")
+
+        # Solo puntos
+        if "." in s:
+            # si parece miles (1 punto y 3 dígitos al final) => miles
+            if s.count(".") == 1 and len(s.split(".")[-1]) == 3:
+                s = s.replace(".", "")
+
     try:
-        return float(t)
+        return float(s)
     except Exception:
         return None
+
+
+def clean_money(txt: Optional[str]):
+    # ahora usa el parser robusto
+    return parse_price(txt)
+
+
+def price_to_varchar(x: Any) -> Optional[str]:
+    v = parse_price(x)
+    if v is None:
+        return None
+    return f"{v:.2f}"
+
 
 def text_or_none(el):
     return el.get_text(strip=True) if el else None
 
-def absolute_url(href: str):
+
+def absolute_url(href: Optional[str]):
     if not href:
         return None
     href = unescape(href)
     return urljoin(BASE, href)
 
+
+def normalize_ean(ean: Optional[str]) -> Optional[str]:
+    if not ean:
+        return None
+    e = re.sub(r"\D+", "", str(ean))
+    if len(e) == 13:
+        return e
+    return None
+
+
+# ================== EAN desde detalle ==================
+def parse_ean_from_detail_html(html_text: str) -> Optional[str]:
+    """
+    Intenta sacar EAN/GTIN de:
+    - JSON-LD (gtin13, gtin, productID, barcode)
+    - atributos data-ean/data-gtin/etc.
+    - texto visible (13 dígitos)
+    """
+    soup = BeautifulSoup(html_text, "html.parser")
+
+    # 1) JSON-LD
+    for s in soup.select('script[type="application/ld+json"]'):
+        raw = s.get_text(strip=True)
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+            items = data if isinstance(data, list) else [data]
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                for k in ("gtin13", "gtin", "productID", "barcode", "sku"):
+                    v = it.get(k)
+                    if isinstance(v, str):
+                        e = normalize_ean(v)
+                        if e:
+                            return e
+        except Exception:
+            pass
+
+    # 2) data-* attrs
+    for el in soup.select("[data-ean], [data-gtin], [data-gtin13], [data-barcode], [data-productid]"):
+        for attr in ("data-ean", "data-gtin", "data-gtin13", "data-barcode", "data-productid"):
+            v = el.get(attr)
+            e = normalize_ean(v)
+            if e:
+                return e
+
+    # 3) texto visible: busca 13 dígitos
+    txt = soup.get_text(" ", strip=True)
+    m = EAN13_RE.search(txt)
+    if m:
+        return normalize_ean(m.group(1))
+
+    return None
+
+
+def fetch_detail_ean(session: requests.Session, url: str) -> Optional[str]:
+    if not url:
+        return None
+    r = session.get(url, timeout=TIMEOUT)
+    r.raise_for_status()
+    return parse_ean_from_detail_html(r.text)
+
+
+# ================== Navegación ==================
 def find_next_url_by_icon(soup: BeautifulSoup):
     caret = soup.select_one("a i.fa.fa-angle-right, a i.fa-angle-right")
     if caret and caret.parent and caret.parent.name == "a":
@@ -108,14 +252,17 @@ def find_next_url_by_icon(soup: BeautifulSoup):
             return absolute_url(a.get("href"))
     return None
 
+
 def detect_nrpp_and_base(current_url: str, soup: BeautifulSoup, page_items_found: int):
     cand = find_next_url_by_icon(soup)
     if cand:
         p = urlparse(cand); q = parse_qs(p.query, keep_blank_values=True)
         nrpp = None
         if "Nrpp" in q and q["Nrpp"]:
-            try: nrpp = int(q["Nrpp"][0])
-            except Exception: pass
+            try:
+                nrpp = int(q["Nrpp"][0])
+            except Exception:
+                pass
         stable_params = {k: v[0] for k, v in q.items()}
         stable_params.pop("No", None)
         return (p.scheme + "://" + p.netloc + p.path, nrpp, stable_params)
@@ -123,14 +270,17 @@ def detect_nrpp_and_base(current_url: str, soup: BeautifulSoup, page_items_found
     p = urlparse(current_url); q = parse_qs(p.query, keep_blank_values=True)
     nrpp = None
     if "Nrpp" in q and q["Nrpp"]:
-        try: nrpp = int(q["Nrpp"][0])
-        except Exception: nrpp = None
+        try:
+            nrpp = int(q["Nrpp"][0])
+        except Exception:
+            nrpp = None
     if not nrpp:
         nrpp = page_items_found if page_items_found else 36
     stable_params = {k: v[0] for k, v in q.items()}
     stable_params.pop("No", None)
     base_path = p.scheme + "://" + p.netloc + p.path
     return base_path, nrpp, stable_params
+
 
 def next_url_by_no(base_path: str, nrpp: int, stable_params: dict, page_index: int):
     params = stable_params.copy()
@@ -139,6 +289,17 @@ def next_url_by_no(base_path: str, nrpp: int, stable_params: dict, page_index: i
         params["Nrpp"] = str(nrpp)
     query = urlencode(params, doseq=False)
     return f"{base_path}?{query}"
+
+
+def get_with_fix(session: requests.Session, url: str):
+    r = session.get(url, timeout=TIMEOUT)
+    if r.status_code == 404 and "&amp;" in url:
+        fixed = url.replace("&amp;", "&")
+        print(f"[WARN] 404 con &amp;, reintentando: {fixed}")
+        r = session.get(fixed, timeout=TIMEOUT)
+        return r, fixed
+    return r, url
+
 
 # ================== Parseo listing ==================
 def parse_items(soup: BeautifulSoup):
@@ -173,9 +334,11 @@ def parse_items(soup: BeautifulSoup):
         if pu_div:
             pu_text = pu_div.get_text(" ", strip=True)
             m1 = re.search(r"Precio\s*s/Imp.*?:\s*\$?\s*([\d\.,]+)", pu_text, re.I)
-            if m1: precio_sin_imp = clean_money(m1.group(1))
+            if m1:
+                precio_sin_imp = clean_money(m1.group(1))
             m2 = re.search(r"\bantes\s*\$?\s*([\d\.,]+)", pu_text, re.I)
-            if m2: precio_antes = clean_money(m2.group(1))
+            if m2:
+                precio_antes = clean_money(m2.group(1))
 
         descripcion_div = box.select_one(".description")
         nombre = text_or_none(descripcion_div) or img_alt
@@ -189,11 +352,12 @@ def parse_items(soup: BeautifulSoup):
                 precio_ref_val = clean_money(m3.group(1))
                 unidad_ref = m3.group(2).strip()
 
-        # Log rápido
-        print(f"🛒 {nombre} - ${precio_unidad if precio_unidad is not None else 'N/D'} - URL: {href}")
+        # Debug útil para verificar parsing
+        print(f"🛒 {nombre} - raw='{precio_unidad_txt}' parsed={precio_unidad} - URL: {href}")
 
         rows.append({
             "prod_id": prod_id,
+            "ean": None,  # se completa opcionalmente desde detalle
             "nombre": nombre,
             "precio_unidad": precio_unidad,
             "precio_sin_imp": precio_sin_imp,
@@ -210,15 +374,6 @@ def parse_items(soup: BeautifulSoup):
         })
     return rows, len(boxes)
 
-# ================== Navegación ==================
-def get_with_fix(session: requests.Session, url: str):
-    r = session.get(url, timeout=TIMEOUT)
-    if r.status_code == 404 and "&amp;" in url:
-        fixed = url.replace("&amp;", "&")
-        print(f"[WARN] 404 con &amp;, reintentando: {fixed}")
-        r = session.get(fixed, timeout=TIMEOUT)
-        return r, fixed
-    return r, url
 
 def scrape_all(start_url=START_URL, limit_pages=None):
     s = make_session()
@@ -275,21 +430,14 @@ def scrape_all(start_url=START_URL, limit_pages=None):
 
     return all_rows
 
+
 # ================== MySQL helpers ==================
 def clean_txt(x: Any) -> Optional[str]:
-    if x is None: return None
+    if x is None:
+        return None
     s = str(x).strip()
     return s if s else None
 
-def price_to_varchar(x: Any) -> Optional[str]:
-    if x is None: return None
-    try:
-        v = float(x)
-        if np.isnan(v): return None
-        return f"{round(v,2)}"
-    except Exception:
-        s = str(x).strip()
-        return s if s else None
 
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute(
@@ -300,70 +448,82 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
     return cur.fetchone()[0]
 
+
 def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
     """
-    No hay EAN → ean=NULL. Usamos match suave por 'nombre'.
-    Si más adelante cargas tabla de mapeo (prod_id → EAN), podrás actualizar.
+    - Si hay EAN válido: match por ean
+    - Si no hay EAN: match suave por nombre
+    - Inserta guardando ean si existe
+    - Si encontró por nombre y el registro tiene ean NULL, lo actualiza si ahora lo tenemos
     """
-    ean = None
+    ean = normalize_ean(r.get("ean"))
     nombre = clean_txt(r.get("nombre"))
-    marca = None  # el listing no trae marca confiable
 
-    if nombre:
-        cur.execute("SELECT id FROM productos WHERE nombre=%s LIMIT 1", (nombre,))
+    # 1) match por EAN
+    if ean:
+        cur.execute("SELECT id FROM productos WHERE ean=%s LIMIT 1", (ean,))
         row = cur.fetchone()
         if row:
             return row[0]
 
+    # 2) match por nombre
+    found_id = None
+    if nombre:
+        cur.execute("SELECT id, ean FROM productos WHERE nombre=%s LIMIT 1", (nombre,))
+        row = cur.fetchone()
+        if row:
+            found_id = row[0]
+            existing_ean = row[1]
+            if (not existing_ean) and ean:
+                cur.execute("UPDATE productos SET ean=%s WHERE id=%s", (ean, found_id))
+            return found_id
+
+    # 3) insertar nuevo
     cur.execute("""
         INSERT INTO productos (ean, nombre, marca, fabricante, categoria, subcategoria)
-        VALUES (NULL, NULLIF(%s,''), NULL, NULL, NULL, NULL)
-    """, (nombre or "",))
+        VALUES (NULLIF(%s,''), NULLIF(%s,''), NULL, NULL, NULL, NULL)
+    """, (ean or "", nombre or ""))
     return cur.lastrowid
 
+
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
-    """
-    Clave natural: (tienda_id, sku_tienda=prod_id) – viene como 'prod123456'.
-    Respaldo: UNIQUE por (tienda_id, url_tienda) si definís ese índice.
-    """
     sku = clean_txt(r.get("prod_id"))
     url = clean_txt(r.get("url"))
     nombre_tienda = clean_txt(r.get("nombre"))
 
     if sku:
         cur.execute("""
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, %s, NULL, %s, %s)
+            INSERT INTO producto_tienda
+              (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
+            VALUES
+              (%s, %s, %s, NULL, %s, %s)
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
-              producto_id = VALUES(producto_id),
+              -- NO tocar producto_id si ya existe el SKU
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
         """, (tienda_id, producto_id, sku, url, nombre_tienda))
         return cur.lastrowid
 
-    # Fallback sin sku: obliga a tener UNIQUE (tienda_id, url_tienda) si querés upsert real
+    # Fallback sin SKU: aquí sí puedes mantener producto_id actualizable si tu unique es por url
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
           id = LAST_INSERT_ID(id),
           producto_id = VALUES(producto_id),
-          nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
+          nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda),
+          url_tienda = COALESCE(VALUES(url_tienda), url_tienda)
     """, (tienda_id, producto_id, url, nombre_tienda))
     return cur.lastrowid
 
+
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en: datetime):
-    """
-    Map de precios:
-      - Si hay 'precio_antes' (tachado), lo usamos como 'precio_lista' y 'precio_unidad' como oferta.
-      - Si NO hay 'precio_antes', guardamos 'precio_unidad' como 'precio_lista' (sin oferta).
-      - 'precio_sin_imp' y refs quedan en comentarios para trazabilidad.
-    """
     precio_unidad = r.get("precio_unidad")
     precio_antes = r.get("precio_antes")
 
     if precio_antes is not None:
+        # oferta: antes = lista, unidad = oferta
         precio_lista = price_to_varchar(precio_antes)
         precio_oferta = price_to_varchar(precio_unidad)
         tipo_oferta = "OFERTA"
@@ -382,6 +542,9 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
     if r.get("cantbulto") is not None:
         comentarios_bits.append(f"cantbulto={r.get('cantbulto')}")
     comentarios = "; ".join(comentarios_bits) if comentarios_bits else None
+
+    # Debug de lo que se va a insertar
+    # print("DEBUG HIST:", r.get("nombre"), "=> lista:", precio_lista, "oferta:", precio_oferta, "raw:", r.get("precio_unidad_raw"))
 
     cur.execute("""
         INSERT INTO historico_precios
@@ -403,6 +566,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
         None, None, None, comentarios
     ))
 
+
 # ================== Main ==================
 def main():
     print("[INFO] Scrapeando Dino Online...")
@@ -410,6 +574,25 @@ def main():
     if not rows:
         print("[INFO] No se obtuvieron productos.")
         return
+
+    # Enriquecer EAN desde detalle (opcional)
+    if DETAIL_EAN_MODE != "off":
+        print(f"[INFO] Intentando EAN desde detalle (mode={DETAIL_EAN_MODE}) ...")
+        s = make_session()
+        n = len(rows) if DETAIL_EAN_MODE == "all" else min(len(rows), DETAIL_EAN_SAMPLE_N)
+        for i in range(n):
+            url = rows[i].get("url")
+            if not url:
+                continue
+            try:
+                ean = fetch_detail_ean(s, url)
+                rows[i]["ean"] = ean
+                if ean:
+                    print(f"✅ EAN {ean} | {rows[i].get('nombre')}")
+            except Exception:
+                # no abortar por un detalle
+                pass
+            time.sleep(SLEEP_BETWEEN_DETAILS)
 
     capturado_en = datetime.now()
 
@@ -432,13 +615,16 @@ def main():
         print(f"💾 Guardado en MySQL: {insertados} filas de histórico para {TIENDA_NOMBRE} ({capturado_en})")
 
     except MySQLError as e:
-        if conn: conn.rollback()
+        if conn:
+            conn.rollback()
         print(f"❌ Error MySQL: {e}")
     finally:
         try:
-            if conn: conn.close()
+            if conn:
+                conn.close()
         except Exception:
             pass
+
 
 if __name__ == "__main__":
     main()

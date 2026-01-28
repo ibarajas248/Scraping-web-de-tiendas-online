@@ -60,7 +60,7 @@ from base_datos import get_conn  # <- tu conexión MySQL
 # Config tienda
 # =========================
 TIENDA_CODIGO = "darentucasa"
-TIENDA_NOMBRE = "DAR en tu Casa"
+TIENDA_NOMBRE = "Supermercados Dar"
 
 URL  = "https://www.darentucasa.com.ar/login.asp"
 WAIT = 25  # segundos

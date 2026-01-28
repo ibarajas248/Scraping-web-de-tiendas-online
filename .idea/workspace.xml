@@ -4,9 +4,28 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="22_01_2026">
+    <list default="true" id="224dcb3e-4708-4663-b404-f722a883be7f" name="Changes" comment="23_01_2026">
+      <change afterPath="$PROJECT_DIR$/final/13_gallega/correccion/gallega1.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/13_gallega/correccion/test.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/1_carrefour/correcciones/correccion_de_la_correccion/carrefour.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/1_carrefour/correcciones/correccion_de_la_correccion/carrefour_MySQL.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/4_cordiez/correccion/cordiezMysql.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/8_disco/INTRODUCE_SIN_STOCK/lacteos_para_vps_CABA.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/final/8_disco/INTRODUCE_SIN_STOCK/lacteos_para_vps_cordoba.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/categorias/Productos_Pinguino_Lacteos.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/final/25_pinguino/tunel/correccion_tunel/correccion_de_la_correccion/categorias/Productos_Pinguino_Lacteos.xlsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/colombia/1_1_ANALITICA/TABLAPIVOT.py" beforeDir="false" afterPath="$PROJECT_DIR$/colombia/1_1_ANALITICA/TABLAPIVOT.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/colombia/1_1_ANALITICA/formato_1.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/colombia/1_1_ANALITICA/formato_1.xlsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/10_jumbo/correccion/jumboMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/10_jumbo/correccion/jumboMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/16_vea/correcciones/correccion_de_la_corregidera/veaMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/16_vea/correcciones/correccion_de_la_corregidera/veaMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/17_Toledo/correcciones/ToledoMySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/17_Toledo/correcciones/ToledoMySQL.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/buscador.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/buscador.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/darMysql.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/darMysql.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/input.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/input.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/lacteos.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/26_DAR_EN_TU_CASA/correcciones/lacteos.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/7_dino/dinoMySQL.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/7_dino/dinoMySQL.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/final/7_dino/dino_supermami.py" beforeDir="false" afterPath="$PROJECT_DIR$/final/7_dino/dino_supermami.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/correcciones/reporte.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/correcciones/reporte.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vps/reporte.py" beforeDir="false" afterPath="$PROJECT_DIR$/vps/reporte.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -154,6 +173,7 @@
     &quot;Python.exito_mysql_vtex.executor&quot;: &quot;Run&quot;,
     &quot;Python.exito_mysql_vtex_dos.executor&quot;: &quot;Run&quot;,
     &quot;Python.exito_tecnologia_mysql.executor&quot;: &quot;Run&quot;,
+    &quot;Python.falabella_excel_computadores.executor&quot;: &quot;Run&quot;,
     &quot;Python.frescos.executor&quot;: &quot;Run&quot;,
     &quot;Python.frescos_proxy.executor&quot;: &quot;Run&quot;,
     &quot;Python.frescos_proxy_vps.executor&quot;: &quot;Run&quot;,
@@ -243,6 +263,7 @@
     &quot;Python.solvercaptcha.executor&quot;: &quot;Run&quot;,
     &quot;Python.sql.executor&quot;: &quot;Run&quot;,
     &quot;Python.supermami.executor&quot;: &quot;Run&quot;,
+    &quot;Python.test.executor&quot;: &quot;Run&quot;,
     &quot;Python.toledo_aux.executor&quot;: &quot;Run&quot;,
     &quot;Python.tune_pinguino_corregido.executor&quot;: &quot;Run&quot;,
     &quot;Python.tunel.executor&quot;: &quot;Run&quot;,
@@ -255,7 +276,7 @@
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
     &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/David/PycharmProjects/scrapingTiendas/final/16_vea/correcciones/correccion_de_la_corregidera&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/David/PycharmProjects/scrapingTiendas/final/13_gallega/correccion&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -266,11 +287,11 @@
 }</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\13_gallega\correccion" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\16_vea\correcciones\correccion_de_la_corregidera" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\10_jumbo\jumbo_prueba_copia_carrefour" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\10_jumbo\correccion" />
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\1_carrefour\correcciones" />
-      <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\final\11_anonima\Tunnel\tunnel_correcciones\tunnel_correcciones\correcciones_dos" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\David\PycharmProjects\scrapingTiendas\colombia\1_1_ANALITICA" />
@@ -356,14 +377,6 @@
       <workItem from="1759263773212" duration="6875000" />
       <workItem from="1759317937398" duration="10743000" />
       <workItem from="1759433674262" duration="305000" />
-    </task>
-    <task id="LOCAL-00005" summary="2">
-      <option name="closed" value="true" />
-      <created>1754777022602</created>
-      <option name="number" value="00005" />
-      <option name="presentableId" value="LOCAL-00005" />
-      <option name="project" value="LOCAL" />
-      <updated>1754777022602</updated>
     </task>
     <task id="LOCAL-00006" summary="ajustes_bases_de_datos">
       <option name="closed" value="true" />
@@ -749,7 +762,15 @@
       <option name="project" value="LOCAL" />
       <updated>1769141719492</updated>
     </task>
-    <option name="localTasksCounter" value="54" />
+    <task id="LOCAL-00054" summary="23_01_2026">
+      <option name="closed" value="true" />
+      <created>1769176661060</created>
+      <option name="number" value="00054" />
+      <option name="presentableId" value="LOCAL-00054" />
+      <option name="project" value="LOCAL" />
+      <updated>1769176661061</updated>
+    </task>
+    <option name="localTasksCounter" value="55" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -767,7 +788,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="11_09_2025" />
     <MESSAGE value="11_09_2025_" />
     <MESSAGE value="11_09_2025_2" />
     <MESSAGE value="15_09_2025_2_" />
@@ -792,7 +812,8 @@
     <MESSAGE value="15 enero_2026_" />
     <MESSAGE value="16_01_2026" />
     <MESSAGE value="22_01_2026" />
-    <option name="LAST_COMMIT_MESSAGE" value="22_01_2026" />
+    <MESSAGE value="23_01_2026" />
+    <option name="LAST_COMMIT_MESSAGE" value="23_01_2026" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/Scraping_web_de_tiendas_online$abastecedor_captcha_myslq.coverage" NAME="abastecedor_captcha_myslq Coverage Results" MODIFIED="1759003919584" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/request/elAbastecedor" />

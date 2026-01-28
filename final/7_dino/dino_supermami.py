@@ -4,6 +4,12 @@
 """
 DinoOnline (Endeca/ATG) – Listing HTML -> MySQL (con EAN desde detalle)
 
+CORREGIDO: parsing de precios (miles/decimales) para evitar casos como:
+  "4,699.00" -> 4.7   (MAL)
+y que quede:
+  "4,699.00" -> 4699.00 (BIEN)
+  "4.699,00" -> 4699.00 (BIEN)
+
 - Listing con requests + BeautifulSoup
 - Enriquecimiento opcional: visita el detalle del producto para intentar detectar EAN/GTIN
 - Inserta/actualiza:
@@ -55,7 +61,7 @@ TIMEOUT = 25
 MAX_SEEN_PAGES = 1000
 
 TIENDA_CODIGO = "dinoonline"
-TIENDA_NOMBRE = "Dino Online"
+TIENDA_NOMBRE = "Super Dino"
 
 # === EAN desde detalle ===
 DETAIL_EAN_MODE = "sample"   # "off" | "sample" | "all"
@@ -85,28 +91,91 @@ def make_session():
     return s
 
 
-# ================== Utils ==================
-def clean_money(txt: Optional[str]):
-    if not txt:
+# ================== Utils (PRECIOS) ==================
+def parse_price(txt: Any) -> Optional[float]:
+    """
+    Parsing robusto para precios con miles/decimales:
+      "4,699.00" -> 4699.00
+      "4.699,00" -> 4699.00
+      "4699"     -> 4699.00
+      "$ 4.699"  -> 4699.00
+      "$4,699"   -> 4699.00
+    """
+    if txt is None:
         return None
-    t = re.sub(r"[^\d,.\-]", "", txt)
-    if "," in t and "." in t:
-        t = t.replace(".", "").replace(",", ".")
-    elif "," in t:
-        t = t.replace(",", ".")
+
+    # ya numérico
+    if isinstance(txt, (int, float)):
+        try:
+            if isinstance(txt, float) and (txt != txt):  # NaN
+                return None
+            return float(txt)
+        except Exception:
+            return None
+
+    s = str(txt).strip()
+    if not s:
+        return None
+
+    # deja solo dígitos, separadores y signo
+    s = re.sub(r"[^\d,.\-]", "", s)
+    if not s or s in ("-", ".", ","):
+        return None
+
+    # Caso con ambos separadores: decide decimal por el ÚLTIMO separador
+    if "," in s and "." in s:
+        last_comma = s.rfind(",")
+        last_dot = s.rfind(".")
+        if last_dot > last_comma:
+            # 4,699.00 -> miles=',' dec='.'
+            s = s.replace(",", "")
+        else:
+            # 4.699,00 -> miles='.' dec=','
+            s = s.replace(".", "").replace(",", ".")
+    else:
+        # Solo comas
+        if "," in s:
+            # si parece decimal (1 coma y 1-2 dígitos al final) => decimal
+            if s.count(",") == 1 and len(s.split(",")[-1]) in (1, 2):
+                s = s.replace(",", ".")
+            else:
+                # si no, comas como miles
+                s = s.replace(",", "")
+
+        # Solo puntos
+        if "." in s:
+            # si parece miles (1 punto y 3 dígitos al final) => miles
+            if s.count(".") == 1 and len(s.split(".")[-1]) == 3:
+                s = s.replace(".", "")
+
     try:
-        return float(t)
+        return float(s)
     except Exception:
         return None
 
+
+def clean_money(txt: Optional[str]):
+    # ahora usa el parser robusto
+    return parse_price(txt)
+
+
+def price_to_varchar(x: Any) -> Optional[str]:
+    v = parse_price(x)
+    if v is None:
+        return None
+    return f"{v:.2f}"
+
+
 def text_or_none(el):
     return el.get_text(strip=True) if el else None
+
 
 def absolute_url(href: Optional[str]):
     if not href:
         return None
     href = unescape(href)
     return urljoin(BASE, href)
+
 
 def normalize_ean(ean: Optional[str]) -> Optional[str]:
     if not ean:
@@ -163,6 +232,7 @@ def parse_ean_from_detail_html(html_text: str) -> Optional[str]:
 
     return None
 
+
 def fetch_detail_ean(session: requests.Session, url: str) -> Optional[str]:
     if not url:
         return None
@@ -182,14 +252,17 @@ def find_next_url_by_icon(soup: BeautifulSoup):
             return absolute_url(a.get("href"))
     return None
 
+
 def detect_nrpp_and_base(current_url: str, soup: BeautifulSoup, page_items_found: int):
     cand = find_next_url_by_icon(soup)
     if cand:
         p = urlparse(cand); q = parse_qs(p.query, keep_blank_values=True)
         nrpp = None
         if "Nrpp" in q and q["Nrpp"]:
-            try: nrpp = int(q["Nrpp"][0])
-            except Exception: pass
+            try:
+                nrpp = int(q["Nrpp"][0])
+            except Exception:
+                pass
         stable_params = {k: v[0] for k, v in q.items()}
         stable_params.pop("No", None)
         return (p.scheme + "://" + p.netloc + p.path, nrpp, stable_params)
@@ -197,14 +270,17 @@ def detect_nrpp_and_base(current_url: str, soup: BeautifulSoup, page_items_found
     p = urlparse(current_url); q = parse_qs(p.query, keep_blank_values=True)
     nrpp = None
     if "Nrpp" in q and q["Nrpp"]:
-        try: nrpp = int(q["Nrpp"][0])
-        except Exception: nrpp = None
+        try:
+            nrpp = int(q["Nrpp"][0])
+        except Exception:
+            nrpp = None
     if not nrpp:
         nrpp = page_items_found if page_items_found else 36
     stable_params = {k: v[0] for k, v in q.items()}
     stable_params.pop("No", None)
     base_path = p.scheme + "://" + p.netloc + p.path
     return base_path, nrpp, stable_params
+
 
 def next_url_by_no(base_path: str, nrpp: int, stable_params: dict, page_index: int):
     params = stable_params.copy()
@@ -213,6 +289,7 @@ def next_url_by_no(base_path: str, nrpp: int, stable_params: dict, page_index: i
         params["Nrpp"] = str(nrpp)
     query = urlencode(params, doseq=False)
     return f"{base_path}?{query}"
+
 
 def get_with_fix(session: requests.Session, url: str):
     r = session.get(url, timeout=TIMEOUT)
@@ -257,9 +334,11 @@ def parse_items(soup: BeautifulSoup):
         if pu_div:
             pu_text = pu_div.get_text(" ", strip=True)
             m1 = re.search(r"Precio\s*s/Imp.*?:\s*\$?\s*([\d\.,]+)", pu_text, re.I)
-            if m1: precio_sin_imp = clean_money(m1.group(1))
+            if m1:
+                precio_sin_imp = clean_money(m1.group(1))
             m2 = re.search(r"\bantes\s*\$?\s*([\d\.,]+)", pu_text, re.I)
-            if m2: precio_antes = clean_money(m2.group(1))
+            if m2:
+                precio_antes = clean_money(m2.group(1))
 
         descripcion_div = box.select_one(".description")
         nombre = text_or_none(descripcion_div) or img_alt
@@ -273,7 +352,8 @@ def parse_items(soup: BeautifulSoup):
                 precio_ref_val = clean_money(m3.group(1))
                 unidad_ref = m3.group(2).strip()
 
-        print(f"🛒 {nombre} - ${precio_unidad if precio_unidad is not None else 'N/D'} - URL: {href}")
+        # Debug útil para verificar parsing
+        print(f"🛒 {nombre} - raw='{precio_unidad_txt}' parsed={precio_unidad} - URL: {href}")
 
         rows.append({
             "prod_id": prod_id,
@@ -358,17 +438,6 @@ def clean_txt(x: Any) -> Optional[str]:
     s = str(x).strip()
     return s if s else None
 
-def price_to_varchar(x: Any) -> Optional[str]:
-    if x is None:
-        return None
-    try:
-        v = float(x)
-        if np.isnan(v):
-            return None
-        return f"{round(v, 2)}"
-    except Exception:
-        s = str(x).strip()
-        return s if s else None
 
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     cur.execute(
@@ -378,6 +447,7 @@ def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     )
     cur.execute("SELECT id FROM tiendas WHERE codigo=%s LIMIT 1", (codigo,))
     return cur.fetchone()[0]
+
 
 def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
     """
@@ -415,6 +485,7 @@ def find_or_create_producto(cur, r: Dict[str, Any]) -> int:
     """, (ean or "", nombre or ""))
     return cur.lastrowid
 
+
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, Any]) -> int:
     sku = clean_txt(r.get("prod_id"))
     url = clean_txt(r.get("url"))
@@ -422,31 +493,37 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, r: Dict[str, A
 
     if sku:
         cur.execute("""
-            INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
-            VALUES (%s, %s, %s, NULL, %s, %s)
+            INSERT INTO producto_tienda
+              (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
+            VALUES
+              (%s, %s, %s, NULL, %s, %s)
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
-              producto_id = VALUES(producto_id),
+              -- NO tocar producto_id si ya existe el SKU
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
         """, (tienda_id, producto_id, sku, url, nombre_tienda))
         return cur.lastrowid
 
+    # Fallback sin SKU: aquí sí puedes mantener producto_id actualizable si tu unique es por url
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, url_tienda, nombre_tienda)
         VALUES (%s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
           id = LAST_INSERT_ID(id),
           producto_id = VALUES(producto_id),
-          nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)
+          nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda),
+          url_tienda = COALESCE(VALUES(url_tienda), url_tienda)
     """, (tienda_id, producto_id, url, nombre_tienda))
     return cur.lastrowid
+
 
 def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, Any], capturado_en: datetime):
     precio_unidad = r.get("precio_unidad")
     precio_antes = r.get("precio_antes")
 
     if precio_antes is not None:
+        # oferta: antes = lista, unidad = oferta
         precio_lista = price_to_varchar(precio_antes)
         precio_oferta = price_to_varchar(precio_unidad)
         tipo_oferta = "OFERTA"
@@ -465,6 +542,9 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, r: Dict[str, 
     if r.get("cantbulto") is not None:
         comentarios_bits.append(f"cantbulto={r.get('cantbulto')}")
     comentarios = "; ".join(comentarios_bits) if comentarios_bits else None
+
+    # Debug de lo que se va a insertar
+    # print("DEBUG HIST:", r.get("nombre"), "=> lista:", precio_lista, "oferta:", precio_oferta, "raw:", r.get("precio_unidad_raw"))
 
     cur.execute("""
         INSERT INTO historico_precios
@@ -509,7 +589,7 @@ def main():
                 rows[i]["ean"] = ean
                 if ean:
                     print(f"✅ EAN {ean} | {rows[i].get('nombre')}")
-            except Exception as e:
+            except Exception:
                 # no abortar por un detalle
                 pass
             time.sleep(SLEEP_BETWEEN_DETAILS)
@@ -544,6 +624,7 @@ def main():
                 conn.close()
         except Exception:
             pass
+
 
 if __name__ == "__main__":
     main()

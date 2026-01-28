@@ -103,6 +103,16 @@ COMMIT_EVERY = 150
 # ========= Rescate puntual (opcional) =========
 RESCUE_EANS = [x.strip() for x in (os.getenv("JUMBO_EANS", "")).split(",") if x.strip()]
 
+
+
+def _as_bool(v):
+    if isinstance(v, bool): return v
+    if v is None: return None
+    if isinstance(v, (int, float)): return bool(int(v))
+    s = str(v).strip().lower()
+    if s in ("true","1","yes","y","si","sí"): return True
+    if s in ("false","0","no","n"): return False
+    return None
 # ========= Parada por ENTER =========
 class StopController:
     def __init__(self):
@@ -246,21 +256,19 @@ def _derive_prices(co: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]
     return lista, oferta, promo_tipo
 
 # ========= DISPONIBILIDAD (NUEVO) =========
-def is_available_product(product_obj: Dict[str, Any], offer: Dict[str, Any]) -> bool:
-    """
-    Regla:
-    - Si offer['IsAvailable'] viene (bool), manda.
-    - Si no viene, intenta con product_obj['IsAvailable'] (bool).
-    - Si tampoco viene, fallback a AvailableQuantity > 0 (si existe).
-    - Si nada existe, asumimos True (para no borrar catálogo por fields ausentes).
-    """
-    if isinstance(offer.get("IsAvailable"), bool):
-        return offer["IsAvailable"]
-    if isinstance(product_obj.get("IsAvailable"), bool):
-        return product_obj["IsAvailable"]
-    qty = offer.get("AvailableQuantity")
+def is_available_product(product_obj, offer) -> bool:
+    b = _as_bool(offer.get("IsAvailable", offer.get("isAvailable")))
+    if b is not None:
+        return b
+
+    b2 = _as_bool(product_obj.get("IsAvailable", product_obj.get("isAvailable")))
+    if b2 is not None:
+        return b2
+
+    qty = offer.get("AvailableQuantity", offer.get("availableQuantity"))
     if isinstance(qty, (int, float)):
         return qty > 0
+
     return True
 
 # ========= Árbol de categorías =========

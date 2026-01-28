@@ -11,7 +11,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 
 
 INPUT_XLSX = "formato_1.xlsx"                 # <- tu archivo
-OUTPUT_XLSX = "pivot_precios_heatmap1.xlsx"  # <- salida
+OUTPUT_XLSX = "pivot_computador.xlsx"  # <- salida
 
 
 def to_float(x):
