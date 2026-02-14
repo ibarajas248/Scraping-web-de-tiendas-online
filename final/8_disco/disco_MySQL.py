@@ -494,21 +494,25 @@ def _build_sku(row: dict) -> str:
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, row: dict) -> int:
     """
-    UPSERT usando UNIQUE (tienda_id, sku_tienda). Retorna id vía LAST_INSERT_ID.
+    UPSERT usando UNIQUE (tienda_id, sku_tienda).
+    Si ya existe el SKU, NO actualiza producto_id. Retorna id vía LAST_INSERT_ID.
     """
     sku  = _build_sku(row)
     url  = _s(row.get("URL"))
     name = _s(row.get("Nombre Producto"))
+
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
         VALUES (%s,%s,%s,%s,%s,%s)
         ON DUPLICATE KEY UPDATE
-            producto_id=VALUES(producto_id),
-            url_tienda=VALUES(url_tienda),
-            nombre_tienda=VALUES(nombre_tienda),
-            id=LAST_INSERT_ID(id)
+            -- NO tocar producto_id cuando ya existe el SKU
+            url_tienda   = COALESCE(NULLIF(VALUES(url_tienda), ''), url_tienda),
+            nombre_tienda= COALESCE(NULLIF(VALUES(nombre_tienda), ''), nombre_tienda),
+            id = LAST_INSERT_ID(id)
     """, (tienda_id, producto_id, sku, None, url, name))
+
     return cur.lastrowid
+
 
 def insert_historico_batch(cur, batch):
     cur.executemany("""

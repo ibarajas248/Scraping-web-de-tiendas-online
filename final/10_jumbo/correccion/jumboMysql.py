@@ -2,18 +2,16 @@
 # -*- coding: utf-8 -*-
 
 # Jumbo (VTEX) → MySQL (patrón "Coto" endurecido) + XLSX
-# FIXES:
-# - Fuerza sc=32 (sales channel) en TODAS las llamadas VTEX (listado por categorías + búsquedas)
-# - Añade "rescate por EAN" (productos que no aparecen en árbol/listings)
-# - Logging básico + debug de vacíos
-# - Mantiene política de precios:
-#     PriceWithoutDiscount -> precio_lista
-#     FullSellingPrice     -> precio_oferta
-# NUEVO:
-# - Solo inserta en DB si IsAvailable == True (seller.commertialOffer) (fallback a qty>0 si IsAvailable no viene)
-# - Los no disponibles quedan en XLSX con estado_llamada="SKIP_NOT_AVAILABLE"
+# - Igual mapeo de datos, pero AHORA precios así:
+#     - PriceWithoutDiscount  → precio_lista (siempre)
+#     - FullSellingPrice      → precio_oferta (siempre)
+# - NUEVO: si commertialOffer["IsAvailable"] != True -> NO insertar en MySQL (pero sí reportar en XLSX)
+#
+# FIX solicitado:
+#   - IsAvailable puede venir como booleano True/False o como string "true"/"false" (o variantes)
+#   - Además puede venir como isAvailable / isavailable
 
-import os, sys, re, json, time, threading, logging
+import os, sys, re, json, time, threading
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from urllib.parse import quote
@@ -28,13 +26,6 @@ from mysql.connector import Error as MySQLError, errors as myerr
 # ========= Conexión (usa TU helper) =========
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from base_datos import get_conn  # <- Debe retornar mysql.connector.connect(...)
-
-# ===================== LOGGING =====================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
-log = logging.getLogger("jumbo_vtex")
 
 # ========= MAPEO DE TABLAS/ COLUMNAS (ajustable) =========
 T_TAB_TIENDAS          = "tiendas"
@@ -75,14 +66,11 @@ T_COL_H_PROMO_COMENT   = "promo_comentarios"
 # ========= Config VTEX =========
 BASE = "https://www.jumbo.com.ar"
 TREE_DEPTH = 5
-STEP = 50
+STEP = 50                    # paginación VTEX: 0-49, 50-99, ...
 TIMEOUT = 25
 RETRIES = 3
 SLEEP_OK = 0.25
 MAX_EMPTY = 8
-
-# IMPORTANTE: tu JSON muestra sc=32 en addToCartLink
-SALES_CHANNEL = int(os.getenv("VTEX_SC", "32"))
 
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 
@@ -100,24 +88,12 @@ LOCK_ERRNOS = {1205, 1213}
 ERRNO_OUT_OF_RANGE = 1264
 COMMIT_EVERY = 150
 
-# ========= Rescate puntual (opcional) =========
-RESCUE_EANS = [x.strip() for x in (os.getenv("JUMBO_EANS", "")).split(",") if x.strip()]
-
-
-
-def _as_bool(v):
-    if isinstance(v, bool): return v
-    if v is None: return None
-    if isinstance(v, (int, float)): return bool(int(v))
-    s = str(v).strip().lower()
-    if s in ("true","1","yes","y","si","sí"): return True
-    if s in ("false","0","no","n"): return False
-    return None
 # ========= Parada por ENTER =========
 class StopController:
     def __init__(self):
         self._ev = threading.Event()
         self._t = threading.Thread(target=self._wait_enter, daemon=True)
+
     def _wait_enter(self):
         try:
             print("🛑 Presiona ENTER en cualquier momento para PARAR y guardar lo procesado…")
@@ -125,6 +101,7 @@ class StopController:
             self._ev.set()
         except Exception:
             pass
+
     def start(self): self._t.start()
     def tripped(self) -> bool: return self._ev.is_set()
 
@@ -150,7 +127,7 @@ def clean(val):
 
 def parse_price(val) -> float:
     if val is None or (isinstance(val, float) and np.isnan(val)): return np.nan
-    if isinstance(val, (int, float)): return float(val)
+    if isinstance(val, (int, float, np.integer, np.floating)): return float(val)
     s = str(val).strip()
     if not s: return np.nan
     s = _price_clean_re.sub("", s)
@@ -169,25 +146,48 @@ def _truncate(s, n):
     return s if len(s) <= n else s[:n]
 
 def _price_txt_or_none(x):
-    v = parse_price(x)
     if x is None:
         return None
+    v = parse_price(x)
     if isinstance(v, float) and np.isnan(v):
         return None
     return f"{round(float(v), 2)}"
 
-# ========= HTTP JSON con reintentos (FORZANDO sc) =========
-def req_json(url, session, params=None):
-    params = dict(params or {})
-    params.setdefault("sc", SALES_CHANNEL)
-
-    for i in range(RETRIES):
+# ========= IsAvailable robusto: bool + string + variantes de key =========
+def _truthy_bool(v) -> bool:
+    """
+    Interpreta IsAvailable cuando viene como:
+      - bool (True/False) o numpy.bool_
+      - string ("true"/"false", "True"/"False", etc.)
+      - números (1/0)
+    """
+    if isinstance(v, (bool, np.bool_)):
+        return bool(v)
+    if v is None:
+        return False
+    if isinstance(v, (int, float, np.integer, np.floating)):
         try:
-            r = session.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
-        except requests.RequestException:
-            time.sleep(0.6 + 0.4*i)
-            continue
+            return float(v) != 0.0
+        except Exception:
+            return False
+    s = str(v).strip().lower()
+    if s in ("false", "0", "no", "n", "off", "f", ""):
+        return False
+    if s in ("true", "1", "yes", "y", "on", "t", "si", "sí", "s", "ok"):
+        return True
+    return False
 
+def _get_is_available_raw(offer: Dict[str, Any]):
+    # VTEX a veces manda distintas keys / casing
+    for k in ("IsAvailable", "isAvailable", "isavailable"):
+        if k in offer:
+            return offer.get(k)
+    return None
+
+# ========= HTTP JSON con reintentos =========
+def req_json(url, session, params=None):
+    for i in range(RETRIES):
+        r = session.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
         if r.status_code == 200:
             try:
                 return r.json()
@@ -196,12 +196,10 @@ def req_json(url, session, params=None):
         elif r.status_code in (429, 408, 500, 502, 503, 504):
             time.sleep(0.6 + 0.4*i)
         else:
-            if i == RETRIES - 1:
-                log.debug("HTTP %s %s params=%s", r.status_code, url, params)
             time.sleep(0.3)
     return None
 
-# ========= EAN y precios =========
+# ========= EAN y precios (con la política que pediste) =========
 def _is_ean_candidate(s: str) -> bool:
     if not s: return False
     s = re.sub(r"\D", "", str(s))
@@ -232,6 +230,14 @@ def _fnum(x):
         return None
 
 def _derive_prices(co: Dict[str, Any]) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+    """
+    Política solicitada para Jumbo VTEX:
+      - PriceWithoutDiscount  → precio_lista
+      - FullSellingPrice      → precio_oferta
+    Siempre intentamos devolver AMBOS:
+      * si uno viene vacío, fallback a Price
+      * si no existe nada, None/None
+    """
     lista = _fnum(co.get("PriceWithoutDiscount"))
     oferta = _fnum(co.get("FullSellingPrice"))
     promo_tipo = None
@@ -254,22 +260,6 @@ def _derive_prices(co: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]
         promo_tipo = None
 
     return lista, oferta, promo_tipo
-
-# ========= DISPONIBILIDAD (NUEVO) =========
-def is_available_product(product_obj, offer) -> bool:
-    b = _as_bool(offer.get("IsAvailable", offer.get("isAvailable")))
-    if b is not None:
-        return b
-
-    b2 = _as_bool(product_obj.get("IsAvailable", product_obj.get("isAvailable")))
-    if b2 is not None:
-        return b2
-
-    qty = offer.get("AvailableQuantity", offer.get("availableQuantity"))
-    if isinstance(qty, (int, float)):
-        return qty > 0
-
-    return True
 
 # ========= Árbol de categorías =========
 def get_category_tree(session, depth=TREE_DEPTH):
@@ -309,7 +299,7 @@ def exec_retry(cur, sql, params=(), max_retries=5, base_sleep=0.5):
                 time.sleep(base_sleep * (2 ** att)); att += 1; continue
             raise
 
-# ========= Helpers MySQL =========
+# ========= Helpers MySQL (respetan el MAPEO) =========
 def upsert_tienda(cur, codigo: str, nombre: str) -> int:
     sql_ins = f"""
         INSERT INTO {T_TAB_TIENDAS} ({T_COL_TIENDA_CODIGO}, {T_COL_TIENDA_NOMBRE})
@@ -371,6 +361,7 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
         INSERT INTO {T_TAB_PRODUCTOS}
           ({T_COL_PROD_EAN},{T_COL_PROD_NOMBRE},{T_COL_PROD_MARCA},{T_COL_PROD_FAB},{T_COL_PROD_CAT},{T_COL_PROD_SUBCAT})
         VALUES (NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
+
     """
     exec_retry(cur, sql_ins, (ean or "", nombre, marca or "", fabricante or "", categoria or "", subcategoria or ""))
     return cur.lastrowid
@@ -386,10 +377,10 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
             INSERT INTO {T_TAB_PROD_TIENDA}
               ({T_COL_PT_TIENDA_ID},{T_COL_PT_PROD_ID},{T_COL_PT_SKU},{T_COL_PT_RECORD},{T_COL_PT_URL},{T_COL_PT_NOMBRE})
             VALUES (%s,%s,NULLIF(%s,''),NULLIF(%s,''),NULLIF(%s,''),NULLIF(%s,''))
+
             ON DUPLICATE KEY UPDATE
               {T_COL_PT_ID} = LAST_INSERT_ID({T_COL_PT_ID}),
               {T_COL_PT_PROD_ID} = VALUES({T_COL_PT_PROD_ID}),
-              {T_COL_PT_RECORD} = COALESCE(VALUES({T_COL_PT_RECORD}), {T_COL_PT_RECORD}),
               {T_COL_PT_URL} = COALESCE(VALUES({T_COL_PT_URL}), {T_COL_PT_URL}),
               {T_COL_PT_NOMBRE} = COALESCE(VALUES({T_COL_PT_NOMBRE}), {T_COL_PT_NOMBRE})
         """
@@ -401,6 +392,7 @@ def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, A
             INSERT INTO {T_TAB_PROD_TIENDA}
               ({T_COL_PT_TIENDA_ID},{T_COL_PT_PROD_ID},{T_COL_PT_SKU},{T_COL_PT_RECORD},{T_COL_PT_URL},{T_COL_PT_NOMBRE})
             VALUES (%s,%s,NULL,NULLIF(%s,''),NULLIF(%s,''),NULLIF(%s,''))
+
             ON DUPLICATE KEY UPDATE
               {T_COL_PT_ID} = LAST_INSERT_ID({T_COL_PT_ID}),
               {T_COL_PT_PROD_ID} = VALUES({T_COL_PT_PROD_ID}),
@@ -444,6 +436,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
            {T_COL_H_PRECIO_LISTA},{T_COL_H_PRECIO_OFERTA},{T_COL_H_TIPO_OFERTA},
            {T_COL_H_PROMO_TIPO},{T_COL_H_PROMO_TXT_REG},{T_COL_H_PROMO_TXT_DESC},{T_COL_H_PROMO_COMENT})
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+
         ON DUPLICATE KEY UPDATE
           {T_COL_H_PRECIO_LISTA}=VALUES({T_COL_H_PRECIO_LISTA}),
           {T_COL_H_PRECIO_OFERTA}=VALUES({T_COL_H_PRECIO_OFERTA}),
@@ -465,7 +458,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
             exec_retry(cur, sql, params_null); return
         raise
 
-# ========= Parsing VTEX (con filtro IsAvailable) =========
+# ========= Parsing VTEX → filas DB + filas de reporte =========
 def parse_rows_from_product_and_ps(p, base):
     ps_db: List[Dict[str, Any]] = []
     report_rows: List[Dict[str, Any]] = []
@@ -475,7 +468,6 @@ def parse_rows_from_product_and_ps(p, base):
     brand = p.get("brand")
     link_text = p.get("linkText")
     link = f"{base}/{link_text}/p" if link_text else (p.get("link") or "")
-
     categories = [c.strip("/") for c in (p.get("categories") or [])]
     cat1 = cat2 = None
     if categories:
@@ -488,12 +480,12 @@ def parse_rows_from_product_and_ps(p, base):
 
     items = p.get("items") or []
     if not items:
-        # Sin items: no podemos evaluar IsAvailable de seller, reportamos pero no insertamos
+        # SIN ITEMS: lo reportamos, pero NO insertamos (equivale a no disponible/stock desconocido)
         report_rows.append({
-            "supermercado": TIENDA_NOMBRE, "dominio": BASE, "estado_llamada": "NO_ITEMS",
+            "supermercado": TIENDA_NOMBRE, "dominio": BASE, "estado_llamada": "OK_SIN_STOCK",
             "ean_consultado": None, "ean_reportado": None,
             "nombre": name, "marca": brand, "categoria": cat1, "subcategoria": cat2,
-            "precio_lista": None, "precio_oferta": None, "disponible": None,
+            "precio_lista": None, "precio_oferta": None, "disponible": 0,
             "oferta_tags": None, "product_id": product_id, "sku_id": None, "seller_id": None,
             "url": link
         })
@@ -505,11 +497,12 @@ def parse_rows_from_product_and_ps(p, base):
         sellers = it.get("sellers") or []
 
         if not sellers:
+            # SIN SELLERS: reporta, pero NO inserta
             report_rows.append({
-                "supermercado": TIENDA_NOMBRE, "dominio": BASE, "estado_llamada": "NO_SELLERS",
+                "supermercado": TIENDA_NOMBRE, "dominio": BASE, "estado_llamada": "OK_SIN_STOCK",
                 "ean_consultado": None, "ean_reportado": ean or None,
                 "nombre": name, "marca": brand, "categoria": cat1, "subcategoria": cat2,
-                "precio_lista": None, "precio_oferta": None, "disponible": None,
+                "precio_lista": None, "precio_oferta": None, "disponible": 0,
                 "oferta_tags": None, "product_id": product_id, "sku_id": sku_id, "seller_id": None,
                 "url": link
             })
@@ -519,12 +512,18 @@ def parse_rows_from_product_and_ps(p, base):
             s_id = s.get("sellerId")
             offer = s.get("commertialOffer") or {}
 
-            # disponibilidad
-            available_bool = is_available_product(p, offer)
+            # === Stock: SOLO insertamos si IsAvailable == true (bool o string) ===
+            is_available_raw = _get_is_available_raw(offer)
+            is_available = _truthy_bool(is_available_raw)
 
-            # precios
+            available_qty = offer.get("AvailableQuantity")
+            try:
+                available_qty = int(available_qty) if available_qty is not None else 0
+            except Exception:
+                available_qty = 0
+
+            # === Precios: nueva política ===
             lista, oferta, promo_tipo_rule = _derive_prices(offer)
-            qty = offer.get("AvailableQuantity")
 
             teasers = offer.get("Teasers") or offer.get("DiscountHighLight") or []
             if isinstance(teasers, list) and teasers:
@@ -537,19 +536,20 @@ def parse_rows_from_product_and_ps(p, base):
             else:
                 teaser_txt = str(teasers) if teasers else None
 
-            # SIEMPRE lo dejamos en el reporte
+            # === Reporte SIEMPRE (aunque no haya stock) ===
             report_rows.append({
                 "supermercado": TIENDA_NOMBRE, "dominio": BASE,
-                "estado_llamada": "OK" if available_bool else "SKIP_NOT_AVAILABLE",
+                "estado_llamada": "OK" if is_available else "OK_SIN_STOCK",
                 "ean_consultado": None, "ean_reportado": (ean or None),
                 "nombre": name, "marca": brand, "categoria": cat1, "subcategoria": cat2,
-                "precio_lista": lista, "precio_oferta": oferta, "disponible": available_bool,
+                "precio_lista": lista, "precio_oferta": oferta,
+                "disponible": (available_qty if is_available else 0),
                 "oferta_tags": teaser_txt, "product_id": product_id, "sku_id": sku_id, "seller_id": s_id,
                 "url": link
             })
 
-            # SOLO entra a la DB si IsAvailable==True
-            if not available_bool:
+            # === DB: SOLO si hay stock ===
+            if not is_available:
                 continue
 
             ps_db.append({
@@ -564,7 +564,7 @@ def parse_rows_from_product_and_ps(p, base):
 
     return ps_db, report_rows
 
-# ========= Scrape por categoría (con sc) =========
+# ========= Scrape por categoría =========
 def fetch_category(session, cat_path, stopper: StopController):
     ps_all, report_all = [], []
     offset, empty_streak = 0, 0
@@ -573,18 +573,13 @@ def fetch_category(session, cat_path, stopper: StopController):
 
     while True:
         if stopper.tripped(): break
-
-        url = f"{BASE}/api/catalog_system/pub/products/search/{encoded_path}"
-        params = {"map": map_str, "_from": offset, "_to": offset + STEP - 1}
-        data = req_json(url, session, params=params)
+        url = f"{BASE}/api/catalog_system/pub/products/search/{encoded_path}?map={map_str}&_from={offset}&_to={offset+STEP-1}"
+        data = req_json(url, session)
 
         if not data:
             empty_streak += 1
-            if empty_streak >= MAX_EMPTY:
-                break
-            offset += STEP
-            time.sleep(SLEEP_OK)
-            continue
+            if empty_streak >= MAX_EMPTY: break
+            offset += STEP; time.sleep(SLEEP_OK); continue
 
         empty_streak = 0
         for p in data:
@@ -597,13 +592,6 @@ def fetch_category(session, cat_path, stopper: StopController):
         time.sleep(SLEEP_OK)
 
     return ps_all, report_all
-
-# ========= Rescate por EAN =========
-def fetch_by_ean(session, ean: str):
-    url = f"{BASE}/api/catalog_system/pub/products/search"
-    params = {"fq": f"alternateIds_Ean:{ean}"}
-    data = req_json(url, session, params=params) or []
-    return data
 
 # ========= Inserción incremental =========
 def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: datetime) -> int:
@@ -623,8 +611,7 @@ def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: d
 
     for p in ps:
         key = (p.get("sku"), p.get("record_id"), p.get("ean"), p.get("url"), p.get("precio_oferta"))
-        if key in seen:
-            continue
+        if key in seen: continue
         seen.add(key)
 
         for attempt in range(2):
@@ -634,10 +621,8 @@ def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: d
                 insert_historico(cur, tienda_id, pt_id, p, capturado_en)
                 total += 1; done_in_batch += 1
                 break
-
             except MySQLError as e:
                 errno = getattr(e, "errno", None)
-
                 if errno == 1205:
                     try: conn.rollback()
                     except Exception: pass
@@ -646,9 +631,8 @@ def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: d
                     except Exception: pass
                     cur = _new_cursor()
                     if attempt == 1:
-                        log.warning("[SKIP] Lock persistente (sku=%s rec=%s)", p.get("sku"), p.get("record_id"))
+                        print(f"[SKIP] Fila omitida por lock persistente (sku={p.get('sku')}, rec={p.get('record_id')}).")
                     continue
-
                 elif errno == ERRNO_OUT_OF_RANGE:
                     try: conn.rollback()
                     except Exception: pass
@@ -663,29 +647,25 @@ def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: d
                         try: conn.rollback()
                         except Exception: pass
                         break
-
                 else:
                     try: conn.rollback()
                     except Exception: pass
-                    log.warning("MySQL error errno=%s sku=%s rec=%s : %s", errno, p.get("sku"), p.get("record_id"), e)
                     break
 
         if done_in_batch >= COMMIT_EVERY:
             try:
-                conn.commit()
-                log.info("[mini-commit] +%s filas", done_in_batch)
+                conn.commit(); print(f"[mini-commit] +{done_in_batch} filas")
             except Exception as e:
-                log.warning("Commit mini-lote falló: %s; rollback…", e)
+                print(f"[WARN] Commit mini-lote falló: {e}; rollback…")
                 try: conn.rollback()
                 except Exception: pass
             done_in_batch = 0
 
     if done_in_batch:
         try:
-            conn.commit()
-            log.info("[mini-commit] +%s filas (final)", done_in_batch)
+            conn.commit(); print(f"[mini-commit] +{done_in_batch} filas (final)")
         except Exception as e:
-            log.warning("Commit final falló: %s; rollback…", e)
+            print(f"[WARN] Commit final falló: {e}; rollback…")
             try: conn.rollback()
             except Exception: pass
 
@@ -693,7 +673,7 @@ def insert_batch(conn, tienda_id: int, ps: List[Dict[str, Any]], capturado_en: d
     except Exception: pass
     return total
 
-# ========= XLSX =========
+# ========= XLSX (mismo layout de tu app VTEX) =========
 ORDER_COLS = [
     "supermercado","dominio","estado_llamada",
     "ean_consultado","ean_reportado",
@@ -712,12 +692,11 @@ def save_xlsx_report(rows_report: List[Dict[str, Any]]) -> Optional[str]:
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), fname)
     try:
         with pd.ExcelWriter(out_path, engine="openpyxl") as w:
-            #df.to_excel(w, index=False, sheet_name="reporte")
-            print("dataframe extraido con exito")
-        log.info("📄 XLSX generado: %s (filas: %s)", out_path, len(df))
+            df.to_excel(w, index=False, sheet_name="reporte")
+        print(f"📄 XLSX generado: {out_path} (filas: {len(df)})")
         return out_path
     except Exception as e:
-        log.warning("No se pudo escribir el XLSX: %s", e)
+        print(f"[WARN] No se pudo escribir el XLSX: {e}")
         return None
 
 # ========= Main =========
@@ -725,12 +704,10 @@ def main():
     stopper = StopController(); stopper.start()
     session = requests.Session()
 
-    log.info("VTEX sc=%s", SALES_CHANNEL)
-
-    log.info("🔎 Descubriendo categorías…")
+    print("🔎 Descubriendo categorías…")
     tree = get_category_tree(session, TREE_DEPTH)
     cat_paths = iter_paths(tree)
-    log.info("📁 Categorías detectadas: %s", len(cat_paths))
+    print(f"📁 Categorías detectadas: {len(cat_paths)}")
 
     conn = None
     capturado_en = datetime.now()
@@ -739,12 +716,10 @@ def main():
 
     try:
         conn = get_conn()
-
         try:
-            cset = conn.cursor()
-            cset.execute("SET SESSION innodb_lock_wait_timeout = 15")
-            cset.execute("SET SESSION transaction_isolation = 'READ-COMMITTED'")
-            cset.close()
+            with conn.cursor() as cset:
+                cset.execute("SET SESSION innodb_lock_wait_timeout = 15")
+                cset.execute("SET SESSION transaction_isolation = 'READ-COMMITTED'")
         except Exception:
             pass
 
@@ -752,78 +727,46 @@ def main():
         cur = conn.cursor()
         tienda_id = upsert_tienda(cur, TIENDA_CODIGO, TIENDA_NOMBRE)
         conn.commit()
-        cur.close()
 
-        # rescate por EANs (si se pasan por ENV)
-        if RESCUE_EANS:
-            log.info("🧲 Rescate por EANs: %s", RESCUE_EANS)
-            for ean in RESCUE_EANS:
-                data = fetch_by_ean(session, ean)
-                if not data:
-                    log.warning("EAN %s: sin resultados", ean)
-                    continue
-                for prod in data:
-                    ps, rep = parse_rows_from_product_and_ps(prod, BASE)
-                    report_rows.extend(rep)
-                    if ps:
-                        inc = insert_batch(conn, tienda_id, ps, capturado_en)
-                        total_insertados += inc
-                        conn.commit()
-                        log.info("EAN %s → +%s registros (acum: %s)", ean, inc, total_insertados)
-                    else:
-                        log.info("EAN %s → 0 insertados (posible IsAvailable=false)", ean)
-
-        # scrape por categorías
         for i, path in enumerate(cat_paths, 1):
             if stopper.tripped():
-                log.info("🛑 Parada solicitada. Guardando lo acumulado…")
+                print("🛑 Parada solicitada. Guardando lo acumulado…")
                 break
-
-            log.info("[%s/%s] %s", i, len(cat_paths), path)
+            print(f"[{i}/{len(cat_paths)}] {path}")
 
             ps, rep = fetch_category(session, path, stopper)
-            if rep:
-                report_rows.extend(rep)
+            if rep: report_rows.extend(rep)
 
             if ps:
                 inc = insert_batch(conn, tienda_id, ps, capturado_en)
                 conn.commit()
                 total_insertados += inc
-                log.info("💾 Commit categoría '%s' → +%s (acum: %s)", path, inc, total_insertados)
-            else:
-                log.debug("Categoría sin insertables (sc=%s): %s", SALES_CHANNEL, path)
+                print(f"💾 Commit categoría '{path}' → +{inc} registros (acum: {total_insertados})")
 
             if stopper.tripped():
                 break
             time.sleep(0.25)
 
     except KeyboardInterrupt:
-        log.info("🛑 Interrumpido por usuario (Ctrl+C). Guardando lo acumulado…")
+        print("🛑 Interrumpido por usuario (Ctrl+C). Guardando lo acumulado…")
         try:
             if conn: conn.commit()
         except Exception:
             pass
-
     except MySQLError as e:
-        if conn:
-            try: conn.rollback()
-            except Exception: pass
-        log.error("❌ Error MySQL: %s", e)
+        if conn: conn.rollback()
+        print(f"❌ Error MySQL: {e}")
         raise
-
     finally:
         try:
             save_xlsx_report(report_rows)
         except Exception as e:
-            log.warning("Error al generar XLSX: %s", e)
-
+            print(f"[WARN] Error al generar XLSX: {e}")
         if conn:
             try: conn.close()
             except Exception:
                 pass
-
-        log.info("🏁 Finalizado. Histórico insertado: %s filas para %s (%s)",
-                 total_insertados, TIENDA_NOMBRE, capturado_en)
+        print(f"🏁 Finalizado. Histórico insertado: {total_insertados} filas para {TIENDA_NOMBRE} ({capturado_en})")
 
 if __name__ == "__main__":
     main()

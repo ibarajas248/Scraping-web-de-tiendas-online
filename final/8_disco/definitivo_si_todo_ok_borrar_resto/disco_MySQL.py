@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from datetime import datetime
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional
 
 from mysql.connector import Error as MySQLError
 import sys, os
@@ -106,7 +106,6 @@ def normalize_url(u: Any) -> Optional[str]:
         p = urlparse(s)
         # Asegura host correcto; si viene ruta relativa, preserva tal cual
         if not p.scheme or not p.netloc:
-            # si es relativa, sólo normaliza path
             path = p.path.rstrip("/")
             return path.lower() or None
         path = p.path.rstrip("/")
@@ -132,6 +131,45 @@ def _norm_str(v: Any) -> str:
     except Exception:
         s = ""
     return s
+
+def _truthy_bool(v: Any) -> bool:
+    """
+    IsAvailable VTEX puede venir como:
+      - bool True/False
+      - string "true"/"false"
+      - números 1/0
+    Esta función intenta ambos.
+    """
+    if v is True:
+        return True
+    if v is False or v is None:
+        return False
+
+    if isinstance(v, (int, float)):
+        try:
+            return float(v) != 0.0
+        except Exception:
+            return False
+
+    s = str(v).strip().lower()
+    return s in ("true", "1", "yes", "y", "si", "sí", "ok")
+
+def _is_available_from_offer(offer: dict) -> bool:
+    """
+    Regla final:
+      1) Si IsAvailable existe, úsalo (acepta bool o texto).
+      2) Si IsAvailable NO existe, fallback: AvailableQuantity > 0.
+    """
+    raw = offer.get("IsAvailable", None)
+    if raw is not None:
+        return _truthy_bool(raw)
+
+    # fallback cuando VTEX no manda el campo
+    qty = offer.get("AvailableQuantity", None)
+    try:
+        return float(qty or 0) > 0
+    except Exception:
+        return False
 
 # ===================== HTTP session =====================
 def make_session():
@@ -196,7 +234,6 @@ def fetch_page_by_path(path_segments, offset, sleep_holder):
         except Exception:
             time.sleep(sleep_holder[0]); return []
     if r.status_code == 429:
-        # backoff adaptativo
         sleep_holder[0] = min(1.0, sleep_holder[0] + 0.2)
         time.sleep(sleep_holder[0]); return []
     if r.status_code in (500, 503):
@@ -205,7 +242,12 @@ def fetch_page_by_path(path_segments, offset, sleep_holder):
 
 # ===================== Parse de producto → filas =====================
 def rows_from_product(p: dict):
-    """Devuelve una lista de filas (una por SKU) mapeadas al formato final."""
+    """
+    Devuelve una lista de filas (una por SKU) mapeadas al formato final.
+    FILTRO STOCK:
+      - Si IsAvailable existe (bool o texto): debe ser True/true.
+      - Si NO existe: fallback AvailableQuantity > 0.
+    """
     rows = []
     categories = p.get("categories") or []
     cat, sub = ("","")
@@ -216,7 +258,6 @@ def rows_from_product(p: dict):
     base_url = f"{BASE}/{slug}/p" if slug else (p.get("link") or "")
 
     product_name = clean_text_fast(p.get("productName"))
-
     brand = clean_text_fast(p.get("brand"))
     manufacturer = _norm_str(p.get("manufacturer"))
 
@@ -225,6 +266,9 @@ def rows_from_product(p: dict):
         s0 = sellers[0] if sellers else {}
         offer = s0.get("commertialOffer") or {}
 
+        # ======= STOCK: intenta bool y texto, y fallback por qty =======
+        if not _is_available_from_offer(offer):
+            continue
 
         try:
             list_price = float(offer.get("PriceWithoutDiscount") or 0)
@@ -263,7 +307,7 @@ def scrape_category(segs):
     out = []
     offset = 0
     empty_streak = 0
-    sleep_holder = [SLEEP_BASE]  # mutable para backoff adaptativo
+    sleep_holder = [SLEEP_BASE]
 
     while True:
         data = fetch_page_by_path(segs, offset, sleep_holder)
@@ -305,16 +349,13 @@ def scrape_all(max_workers=MAX_WORKERS, max_depth=MAX_DEPTH):
             all_rows.extend(rows)
 
     df = pd.DataFrame(all_rows)
-    # Garantizar columnas/orden
     for c in COLS_FINAL:
         if c not in df.columns: df[c] = pd.NA
 
-    # Tipos
     df["EAN"] = df["EAN"].astype("string")
     for c in ["Precio de Lista","Precio de Oferta"]:
         df[c] = pd.to_numeric(df[c], errors="coerce").round(2)
 
-    # Orden final
     df = df[COLS_FINAL]
     return df
 
@@ -328,12 +369,10 @@ def dedupe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return df
 
-    # 1) Duplicados exactos
     before = len(df)
     df = df.drop_duplicates(keep="first")
     removed_exact = before - len(df)
 
-    # 2) Clave jerárquica normalizada
     ean_norm = df["EAN"].map(normalize_ean)
     item_norm = df["Código Interno"].map(normalize_item_id)
     url_norm = df["URL"].map(normalize_url)
@@ -347,7 +386,6 @@ def dedupe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     df["_k"] = key
 
-    # 3) Scoring para elegir la mejor fila por clave
     has_ean  = ean_norm.notna() & (ean_norm.astype(str).str.len() > 0)
     has_item = item_norm.notna() & (item_norm.astype(str).str.len() > 0)
     precio_o = pd.to_numeric(df["Precio de Oferta"], errors="coerce").fillna(0)
@@ -358,13 +396,11 @@ def dedupe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         + (precio_o > 0).astype(int) * 1
     )
 
-    # Ordenamos por clave y score desc + precio desc, y nos quedamos con la primera por clave
     df = df.sort_values(by=["_k", "_score", "Precio de Oferta"], ascending=[True, False, False])
     before2 = len(df)
     df = df.drop_duplicates(subset=["_k"], keep="first")
     removed_key = before2 - len(df)
 
-    # Limpieza columnas auxiliares
     df = df.drop(columns=["_k", "_score"], errors="ignore")
 
     print(f"🧹 Dedupe DataFrame: -{removed_exact} exactos, -{removed_key} por clave → {len(df)} filas")
@@ -494,20 +530,23 @@ def _build_sku(row: dict) -> str:
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, row: dict) -> int:
     """
-    UPSERT usando UNIQUE (tienda_id, sku_tienda). Retorna id vía LAST_INSERT_ID.
+    UPSERT usando UNIQUE (tienda_id, sku_tienda).
+    Si ya existe el SKU, NO actualiza producto_id. Retorna id vía LAST_INSERT_ID.
     """
     sku  = _build_sku(row)
     url  = _s(row.get("URL"))
     name = _s(row.get("Nombre Producto"))
+
     cur.execute("""
         INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
         VALUES (%s,%s,%s,%s,%s,%s)
         ON DUPLICATE KEY UPDATE
-            producto_id=VALUES(producto_id),
-            url_tienda=VALUES(url_tienda),
-            nombre_tienda=VALUES(nombre_tienda),
-            id=LAST_INSERT_ID(id)
+            -- NO tocar producto_id cuando ya existe el SKU
+            url_tienda   = COALESCE(NULLIF(VALUES(url_tienda), ''), url_tienda),
+            nombre_tienda= COALESCE(NULLIF(VALUES(nombre_tienda), ''), nombre_tienda),
+            id = LAST_INSERT_ID(id)
     """, (tienda_id, producto_id, sku, None, url, name))
+
     return cur.lastrowid
 
 def insert_historico_batch(cur, batch):

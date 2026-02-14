@@ -49,7 +49,7 @@ from mysql.connector import Error as MySQLError
 # Import conexión MySQL (tu helper)
 # =========================
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-from base_datos_local import get_conn  # <- tu conexión MySQL
+from base_datos import get_conn  # <- tu conexión MySQL
 
 
 # =========================

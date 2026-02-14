@@ -348,20 +348,17 @@ def find_or_create_producto(cur, p: Dict[str, Any]) -> int:
     return cur.lastrowid
 
 def upsert_producto_tienda(cur, tienda_id: int, producto_id: int, p: Dict[str, Any]) -> int:
-    """Upsert que devuelve ID con LAST_INSERT_ID para evitar SELECT extra."""
     sku = clean(p.get("sku"))
     rec = clean(p.get("record_id"))
     url = p.get("url") or ""
     nombre_tienda = p.get("nombre") or ""
 
-    # Preferimos clave única por SKU si existe
     if sku:
         cur.execute("""
             INSERT INTO producto_tienda (tienda_id, producto_id, sku_tienda, record_id_tienda, url_tienda, nombre_tienda)
             VALUES (%s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))
             ON DUPLICATE KEY UPDATE
               id = LAST_INSERT_ID(id),
-              producto_id = VALUES(producto_id),
               record_id_tienda = COALESCE(VALUES(record_id_tienda), record_id_tienda),
               url_tienda = COALESCE(VALUES(url_tienda), url_tienda),
               nombre_tienda = COALESCE(VALUES(nombre_tienda), nombre_tienda)

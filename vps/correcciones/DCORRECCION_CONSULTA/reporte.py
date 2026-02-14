@@ -1,6 +1,6 @@
-# app.py
+# reporte.py (o tu módulo actual)
 # Retail Analytics – Streamlit (conexión directa)
-# Ejecutar en el VPS (conexión directa, sin túnel):
+# Ejecutar en el VPS:
 #   streamlit run app.py --server.address 127.0.0.1 --server.port 8090 --server.headless true
 
 def iniciaReporte():
@@ -56,13 +56,22 @@ def iniciaReporte():
             return pd.read_sql(text(q), conn, params=params)
 
     # ---------- Helpers ----------
+    # ✅ Precio efectivo: si hay oferta y base NULL/0 => usar oferta
+    # ✅ Si hay oferta y hay base => usar oferta solo si es menor
     EFFECTIVE_PRICE_EXPR = """
     CASE
       WHEN h.precio_oferta IS NOT NULL
            AND h.precio_oferta > 0
+           AND (h.precio_lista IS NULL OR h.precio_lista = 0)
+        THEN h.precio_oferta
+
+      WHEN h.precio_oferta IS NOT NULL
+           AND h.precio_oferta > 0
            AND h.precio_lista IS NOT NULL
+           AND h.precio_lista > 0
            AND h.precio_oferta < h.precio_lista
         THEN h.precio_oferta
+
       ELSE h.precio_lista
     END
     """
@@ -109,6 +118,23 @@ def iniciaReporte():
                 seen.add(v)
                 out.append(v)
         return out
+
+    # ✅ NUEVO: elimina filas sin ningún precio (PRECIO_LISTA y PRECIO_OFERTA vacíos/0)
+    def drop_rows_without_prices(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return df
+
+        if "PRECIO_LISTA" in df.columns:
+            pl = pd.to_numeric(df["PRECIO_LISTA"], errors="coerce").fillna(0)
+        else:
+            pl = pd.Series(0, index=df.index, dtype="float64")
+
+        if "PRECIO_OFERTA" in df.columns:
+            po = pd.to_numeric(df["PRECIO_OFERTA"], errors="coerce").fillna(0)
+        else:
+            po = pd.Series(0, index=df.index, dtype="float64")
+
+        return df[(pl > 0) | (po > 0)].copy()
 
     # -------- Aliases de columnas del MAESTRO (acepta variantes) --------
     MASTER_ALIAS = {
@@ -222,12 +248,13 @@ def iniciaReporte():
         return ",".join([f":{prefix}{i}" for i in range(n)])
 
     def _params_list(prefix: str, values: List[str]) -> Dict:
-        return {f"{prefix}{i}": v for i, v in enumerate(values)}
+        out = {}
+        for i, v in enumerate(values):
+            vv = _clean_code_value(v)
+            out[f"{prefix}{i}"] = None if vv is None else str(vv)
+        return out
 
     def match_cte_sql(ph: str) -> str:
-        """
-        CTE que devuelve (producto_id, ean_match) usando índices separados (sin OR).
-        """
         return f"""
         WITH matches AS (
           SELECT p.id AS producto_id, p.ean AS ean_match
@@ -240,15 +267,10 @@ def iniciaReporte():
           FROM productos p
           WHERE p.ean_auxiliar IN ({ph})
         ),
-        m_dedup AS (
-          SELECT producto_id, ean_match,
-                 ROW_NUMBER() OVER (PARTITION BY producto_id ORDER BY ean_match) AS rn
-          FROM matches
-        ),
         m AS (
-          SELECT producto_id, ean_match
-          FROM m_dedup
-          WHERE rn = 1
+          SELECT producto_id, MIN(ean_match) AS ean_match
+          FROM matches
+          GROUP BY producto_id
         )
         """
 
@@ -307,6 +329,12 @@ def iniciaReporte():
             "end_dt": datetime.combine(end_date, datetime.max.time()),
         }
 
+        # ✅ EXCLUIR: precio_lista > 0 y precio_lista < 400
+        # (mantiene filas con precio_lista NULL o 0, y filas >= 400)
+        where_parts.append(
+            f"({base_alias}.precio_lista IS NULL OR {base_alias}.precio_lista = 0 OR {base_alias}.precio_lista >= 400)"
+        )
+
         if tiendas_sel_ids:
             ids = ",".join(str(int(i)) for i in tiendas_sel_ids)
             where_parts.append(f"{base_alias}.tienda_id IN ({ids})")
@@ -331,36 +359,45 @@ def iniciaReporte():
 
     # ---------- Consultas reutilizables (cacheadas) ----------
     @st.cache_data(ttl=300, show_spinner=False)
-    def get_daily_avg(where_str: str, params: dict, effective: bool, eans: List[str]):
+    def get_daily_avg(where_str: str, params: dict, effective: bool, eans: List[str]) -> pd.DataFrame:
         if not eans:
             return pd.DataFrame(columns=["d", "tienda", "precio_promedio"])
 
         price_expr = EFFECTIVE_PRICE_EXPR if effective else "h.precio_lista"
         ph = _placeholders("ean", len(eans))
+
         p = params.copy()
-        p.update(_params_list("ean", eans))
+        p.update(_params_list("ean", eans))  # IMPORTANTE: que convierta a str y limpie
 
         q = f"""
         {match_cte_sql(ph)}
         , ult AS (
-          SELECT DATE(h.capturado_en) AS d, h.tienda_id, h.producto_tienda_id, MAX(h.capturado_en) AS maxc
-          FROM historico_precios h
-          JOIN producto_tienda pt ON pt.id = h.producto_tienda_id
-          JOIN productos p ON p.id = pt.producto_id
-          JOIN m ON m.producto_id = p.id
+          SELECT
+            DATE(h.capturado_en) AS d,
+            h.tienda_id,
+            h.producto_tienda_id,
+            MAX(h.capturado_en) AS maxc
+          FROM m
+          JOIN producto_tienda pt FORCE INDEX (idx_pt_producto)
+            ON pt.producto_id = m.producto_id
+          JOIN historico_precios h FORCE INDEX (idx_hist_pt_tienda_capt)
+            ON h.producto_tienda_id = pt.id
+          JOIN productos p
+            ON p.id = pt.producto_id
           WHERE {where_str}
           GROUP BY DATE(h.capturado_en), h.tienda_id, h.producto_tienda_id
         )
-        SELECT u.d, t.nombre AS tienda, AVG({price_expr}) AS precio_promedio
+        SELECT
+          u.d,
+          t.nombre AS tienda,
+          AVG({price_expr}) AS precio_promedio
         FROM ult u
-        JOIN historico_precios h
+        JOIN historico_precios h FORCE INDEX (idx_hist_pt_tienda_capt)
           ON h.tienda_id = u.tienda_id
          AND h.producto_tienda_id = u.producto_tienda_id
          AND h.capturado_en = u.maxc
-        JOIN tiendas t ON t.id = u.tienda_id
-        JOIN producto_tienda pt ON pt.id = u.producto_tienda_id
-        JOIN productos p ON p.id = pt.producto_id
-        WHERE {where_str}
+        JOIN tiendas t
+          ON t.id = u.tienda_id
         GROUP BY u.d, t.nombre
         ORDER BY u.d, t.nombre
         """
@@ -390,10 +427,14 @@ def iniciaReporte():
           SELECT u.d, u.tienda_id, u.producto_tienda_id,
                  h.precio_lista, h.precio_oferta,
                  {EFFECTIVE_PRICE_EXPR} AS precio_efectivo,
-                 (h.precio_oferta IS NOT NULL
-                  AND h.precio_oferta>0
-                  AND h.precio_lista IS NOT NULL
-                  AND h.precio_oferta < h.precio_lista) AS en_oferta
+                 (
+                   h.precio_oferta IS NOT NULL AND h.precio_oferta > 0
+                   AND (
+                        h.precio_lista IS NULL
+                     OR h.precio_lista = 0
+                     OR h.precio_oferta < h.precio_lista
+                   )
+                 ) AS en_oferta
           FROM ult u
           JOIN historico_precios h
             ON h.tienda_id=u.tienda_id
@@ -410,7 +451,7 @@ def iniciaReporte():
         """
         return read_df(q, p)
 
-    # ✅ OPTIMIZADO: canasta SIN OR, primero matchea productos, luego busca último snapshot solo para esos productos
+    # ✅ OPTIMIZADO: canasta SIN OR
     @st.cache_data(ttl=300, show_spinner=False)
     def get_basket(eans: List[str], where_str: str, params: Dict, effective: bool):
         if not eans:
@@ -463,7 +504,7 @@ def iniciaReporte():
         """
         return read_df(q, p)
 
-    # ✅ OPTIMIZADO: detalle SIN OR (usa match CTE + join por producto_id)
+    # ✅ DETALLE: ahora incluye filas con oferta aunque base sea NULL
     @st.cache_data(ttl=300, show_spinner=False)
     def get_detail(where_str: str, params: Dict, effective: bool, limit: int, ean_list_for_match: List[str]):
         if not ean_list_for_match:
@@ -484,17 +525,22 @@ def iniciaReporte():
           p.fabricante AS FABRICANTE,
           p.marca AS MARCA,
           h.precio_lista AS PRECIO_LISTA,
+
           CASE
-            WHEN h.precio_oferta IS NULL THEN NULL
-            WHEN h.precio_lista  IS NULL THEN h.precio_oferta
-            WHEN (h.tipo_oferta IS NULL AND h.precio_oferta = h.precio_lista OR h.tipo_oferta like '%Precio regular%') THEN NULL
-            ELSE h.precio_oferta
+            WHEN h.precio_oferta IS NULL OR h.precio_oferta = 0 THEN NULL
+            WHEN h.precio_lista  IS NULL OR h.precio_lista  = 0 THEN h.precio_oferta
+            WHEN h.precio_oferta < h.precio_lista THEN h.precio_oferta
+            ELSE NULL
           END AS PRECIO_OFERTA,
+
           CASE
             WHEN h.tipo_oferta LIKE '%Precio%regular%' THEN NULL
             ELSE h.tipo_oferta
           END AS TIPO_OFERTA,
+
           DATE(h.capturado_en) AS FECHA,
+          h.capturado_en AS CAPTURADO_EN,
+
           t.ref_tienda AS ID_BANDERA,
           t.nombre AS BANDERA,
           pt.url_tienda AS URLs
@@ -504,8 +550,10 @@ def iniciaReporte():
         JOIN historico_precios h ON h.producto_tienda_id = pt.id
         JOIN tiendas t          ON t.id  = h.tienda_id
         WHERE {where_str}
-          AND h.precio_lista IS NOT NULL
-          AND h.precio_lista <> 0
+          AND (
+                (h.precio_lista  IS NOT NULL AND h.precio_lista  <> 0)
+             OR (h.precio_oferta IS NOT NULL AND h.precio_oferta <> 0)
+          )
         ORDER BY t.nombre, EAN, h.capturado_en
         LIMIT {int(limit)}
         """
@@ -513,7 +561,8 @@ def iniciaReporte():
 
     # ---------- Navegación "tabs" ----------
     VISTAS = ["Reporte", "jobs", "ean", "reporte rapido aux", "tiendas", "cargar maestro"]
-    vista = st.radio("Secciones", VISTAS, horizontal=True, key="vista_actual")
+    # ✅ key único para no chocar con otros módulos
+    vista = st.radio("Secciones", VISTAS, horizontal=True, key="reporte_vista_actual")
 
     def sidebar_reporte():
         st.sidebar.header("Filtros")
@@ -532,7 +581,7 @@ def iniciaReporte():
             value=(default_start, max_d),
             min_value=datetime(2000, 1, 1).date(),
             max_value=datetime(2100, 12, 31).date(),
-            key="rango_fechas_v2"
+            key="reporte_rango_fechas_v2"
         )
 
         if isinstance(date_range, tuple):
@@ -546,19 +595,19 @@ def iniciaReporte():
             return sorted([x for x in series.fillna("").astype(str).str.strip().unique().tolist() if x])
 
         provincias_opts = _opts(tiendas_df["provincia"])
-        provincias_sel  = st.sidebar.multiselect("Provincias", provincias_opts, default=[])
+        provincias_sel  = st.sidebar.multiselect("Provincias", provincias_opts, default=[], key="reporte_provincias")
         df1 = tiendas_df if not provincias_sel else tiendas_df[tiendas_df["provincia"].isin(provincias_sel)]
 
         sucursales_opts = _opts(df1["sucursal"])
-        sucursales_sel  = st.sidebar.multiselect("Sucursales", sucursales_opts, default=[])
+        sucursales_sel  = st.sidebar.multiselect("Sucursales", sucursales_opts, default=[], key="reporte_sucursales")
         df2 = df1 if not sucursales_sel else df1[df1["sucursal"].isin(sucursales_sel)]
 
         refs_opts = _opts(df2["ref_tienda"])
-        refs_sel  = st.sidebar.multiselect("Ref. tienda", refs_opts, default=[])
+        refs_sel  = st.sidebar.multiselect("Ref. tienda", refs_opts, default=[], key="reporte_refs")
         df3 = df2 if not refs_sel else df2[df2["ref_tienda"].isin(refs_sel)]
 
         nombres_opts = df3["nombre"].tolist()
-        tiendas_sel_nombres = st.sidebar.multiselect("Tiendas", nombres_opts, default=nombres_opts)
+        tiendas_sel_nombres = st.sidebar.multiselect("Tiendas", nombres_opts, default=nombres_opts, key="reporte_tiendas")
 
         tiendas_sel_ids = (
             df3.loc[df3["nombre"].isin(tiendas_sel_nombres), "id"]
@@ -567,16 +616,16 @@ def iniciaReporte():
         )
 
         cats_df = get_categorias()
-        cats_sel = st.sidebar.multiselect("Categorías", cats_df["categoria"].tolist(), default=[])
+        cats_sel = st.sidebar.multiselect("Categorías", cats_df["categoria"].tolist(), default=[], key="reporte_cats")
 
         subs_df = get_subcategorias(cats_sel) if cats_sel else pd.DataFrame(columns=["subcategoria"])
-        subs_sel = st.sidebar.multiselect("Subcategorías", subs_df["subcategoria"].tolist(), default=[])
+        subs_sel = st.sidebar.multiselect("Subcategorías", subs_df["subcategoria"].tolist(), default=[], key="reporte_subs")
 
         marcas_df = get_marcas()
-        marcas_sel = st.sidebar.multiselect("Marcas", marcas_df["marca"].tolist(), default=[])
+        marcas_sel = st.sidebar.multiselect("Marcas", marcas_df["marca"].tolist(), default=[], key="reporte_marcas")
 
-        ean_input = st.sidebar.text_area("Códigos/EANs (coma, salto de línea)", "")
-        ean_file = st.sidebar.file_uploader("Subir códigos (.txt, .csv, .xlsx, .xls)", type=["txt", "csv", "xlsx", "xls"])
+        ean_input = st.sidebar.text_area("Códigos/EANs (coma, salto de línea)", "", key="reporte_ean_input")
+        ean_file = st.sidebar.file_uploader("Subir códigos (.txt, .csv, .xlsx, .xls)", type=["txt", "csv", "xlsx", "xls"], key="reporte_ean_file")
 
         ean_list = to_list_str(ean_input)
         master_attrs_df = None
@@ -599,8 +648,8 @@ def iniciaReporte():
 
         st.sidebar.caption(f"Códigos cargados: **{len(ean_list)}**")
 
-        use_effective = st.sidebar.toggle("Usar precio efectivo (oferta si válida)", value=True)
-        sample_limit = st.sidebar.number_input("Límite de filas para vistas tabulares", 1000, 200000, 5000, step=500)
+        use_effective = st.sidebar.toggle("Usar precio efectivo (oferta si válida)", value=True, key="reporte_use_effective")
+        sample_limit = st.sidebar.number_input("Límite de filas para vistas tabulares", 1000, 200000, 5000, step=500, key="reporte_sample_limit")
 
         return {
             "start_date": start_date,
@@ -638,6 +687,9 @@ def iniciaReporte():
         if not kpis.empty:
             c1.metric("Observaciones", int(kpis.loc[0, "observaciones"]))
             c2.metric("Precio medio", f"${kpis.loc[0, 'precio_medio']:.2f}" if pd.notna(kpis.loc[0, "precio_medio"]) else "—")
+            c3.metric("Productos distintos", int(kpis.loc[0, "productos_distintos"]) if pd.notna(kpis.loc[0, "productos_distintos"]) else 0)
+            c4.metric("Share oferta", f"{(float(kpis.loc[0, 'share_oferta']) * 100):.1f}%" if pd.notna(kpis.loc[0, "share_oferta"]) else "—")
+            c5.metric("Desc. promedio", f"{(float(kpis.loc[0, 'descuento_promedio']) * 100):.1f}%" if pd.notna(kpis.loc[0, "descuento_promedio"]) else "—")
         else:
             st.info("Sin datos para los filtros seleccionados.")
 
@@ -707,11 +759,22 @@ def iniciaReporte():
         st.subheader("Tabla Reporte (todas las capturas en el rango)")
         detail = get_detail(where_str, where_params, f["use_effective"], f["sample_limit"], f["ean_list"])
 
-        detail = detail.drop_duplicates(subset=["EAN", "BANDERA", "FECHA"], keep="last").reset_index(drop=True)
+        # ✅ NUEVO: no mostrar filas sin PRECIO_LISTA ni PRECIO_OFERTA
+        detail = drop_rows_without_prices(detail)
+
+        if not detail.empty:
+            # ✅ Dedupe priorizando filas con oferta (para no “pisarlas”)
+            detail["__has_offer__"] = detail["PRECIO_OFERTA"].notna()
+            detail = (
+                detail.sort_values(["EAN", "BANDERA", "FECHA", "__has_offer__", "CAPTURADO_EN"])
+                      .drop_duplicates(subset=["EAN", "BANDERA", "FECHA"], keep="last")
+                      .drop(columns="__has_offer__")
+                      .reset_index(drop=True)
+            )
 
         # Maestro (opcional)
         m = f.get("master_attrs_df")
-        if m is not None and isinstance(m, pd.DataFrame) and not m.empty:
+        if m is not None and isinstance(m, pd.DataFrame) and not m.empty and not detail.empty:
             detail["EAN"] = detail["EAN"].map(_clean_code_value)
             m = m.copy()
             m["EAN"] = m["EAN"].map(_clean_code_value)
@@ -725,19 +788,28 @@ def iniciaReporte():
 
             detail = m.merge(extras, on="EAN", how="left").sort_values(["__ord__", "FECHA"]).drop(columns="__ord__")
 
-        desired_prefix = ["COD", "EAN", "PRODUCTO", "CATEGORIA", "SUBCATEGORIA", "MARCA", "FABRICANTE"]
-        visible = [c for c in desired_prefix if c in detail.columns]
-        rest = [c for c in detail.columns if c not in visible]
-        detail = detail[visible + rest].drop_duplicates(keep="first").reset_index(drop=True)
+            # ✅ NUEVO: por si el LEFT merge creó filas sin precios (EAN del maestro sin match)
+            detail = drop_rows_without_prices(detail)
+
+        if not detail.empty:
+            desired_prefix = ["COD", "EAN", "PRODUCTO", "CATEGORIA", "SUBCATEGORIA", "MARCA", "FABRICANTE"]
+            visible = [c for c in desired_prefix if c in detail.columns]
+            rest = [c for c in detail.columns if c not in visible]
+            detail = detail[visible + rest].drop_duplicates(keep="first").reset_index(drop=True)
 
         st.dataframe(detail, use_container_width=True, height=350)
-        st.download_button("⬇️ Descargar detalle (CSV)",
-                           detail.to_csv(index=False).encode("utf-8"),
-                           file_name="detalle_snapshots.csv", mime="text/csv")
-        st.download_button("⬇️ Descargar detalle (XLSX)",
-                           df_to_excel_bytes(detail),
-                           file_name="detalle_snapshots.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(
+            "⬇️ Descargar detalle (CSV)",
+            detail.to_csv(index=False).encode("utf-8"),
+            file_name="detalle_snapshots.csv",
+            mime="text/csv"
+        )
+        st.download_button(
+            "⬇️ Descargar detalle (XLSX)",
+            df_to_excel_bytes(detail),
+            file_name="detalle_snapshots.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     def vistaCron():
         import cron_manager
@@ -775,11 +847,9 @@ ALTER TABLE productos ADD INDEX idx_productos_ean_aux (ean_auxiliar);
 
 ALTER TABLE producto_tienda ADD INDEX idx_pt_producto (producto_id);
 
--- historico: el más útil para tus joins por producto_tienda + max(capturado_en)
 ALTER TABLE historico_precios
   ADD INDEX idx_hist_pt_tienda_capt (producto_tienda_id, tienda_id, capturado_en);
 
--- opcional (si filtras mucho por tienda + fecha)
 ALTER TABLE historico_precios
   ADD INDEX idx_hist_tienda_capt (tienda_id, capturado_en);
 """

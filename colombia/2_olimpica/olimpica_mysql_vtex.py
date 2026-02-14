@@ -27,7 +27,7 @@ import sys, os
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )
-from base_datos_local import get_conn  # <- tu conexión MySQL
+from base_datos import get_conn  # <- tu conexión MySQL
 
 # --------- Config tienda ---------
 TIENDA_CODIGO = "https://www.olimpica.com"
@@ -218,7 +218,8 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
         v = safe_float(x)
         if v is None:
             return None
-        return f"{round(float(v), 2)}"
+        # fijo a 2 decimales como texto
+        return f"{float(v):.2f}"
 
     precio_lista_txt  = to_txt_or_none(p.get("precio_lista"))
     precio_oferta_txt = to_txt_or_none(p.get("precio_oferta"))
@@ -238,7 +239,7 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
         promo_desc  = clean(p.get("precio_descuento"))
         promo_comm  = clean(p.get("comentarios_promo"))
 
-    cur.execute("""
+    sql = """
         INSERT INTO historico_precios
           (tienda_id, producto_tienda_id, capturado_en,
            precio_lista, precio_oferta, tipo_oferta,
@@ -252,11 +253,39 @@ def insert_historico(cur, tienda_id: int, producto_tienda_id: int, p: Dict[str, 
           promo_texto_regular = VALUES(promo_texto_regular),
           promo_texto_descuento = VALUES(promo_texto_descuento),
           promo_comentarios = VALUES(promo_comentarios)
-    """, (
+    """
+
+    params = (
         tienda_id, producto_tienda_id, capturado_en,
         precio_lista_txt, precio_oferta_txt,
         tipo_oferta, promo_tipo, promo_reg, promo_desc, promo_comm
-    ))
+    )
+
+    try:
+        cur.execute(sql, params)
+
+    except MySQLError as e:
+        # 1264 = Out of range
+        if getattr(e, "errno", None) == 1264:
+            # Log mínimo para luego depurar
+            print(f"⚠️ 1264 out-of-range: sku={p.get('sku')} ean={p.get('ean')} "
+                  f"precio_lista={precio_lista_txt} precio_oferta={precio_oferta_txt} -> guardo NULL y sigo")
+
+            # Reintenta con NULL en oferta (y si falla, también lista)
+            p2 = list(params)
+            p2[4] = None  # precio_oferta
+
+            try:
+                cur.execute(sql, tuple(p2))
+                return
+            except MySQLError:
+                p2[3] = None  # precio_lista
+                p2[4] = None  # precio_oferta
+                cur.execute(sql, tuple(p2))
+                return
+
+        # otros errores sí los propagas
+        raise
 
 # ================== Pipeline: DF de Carrefour → MySQL ==================
 def persist_carrefour_df_to_mysql(df: pd.DataFrame):

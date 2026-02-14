@@ -35,7 +35,7 @@ BASE = "https://www.exito.com"
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 )
-from base_datos_local import get_conn  # <- tu conexión MySQL
+from base_datos import get_conn  # <- tu conexión MySQL
 
 TIENDA_CODIGO = "exito"
 TIENDA_NOMBRE = "Exito"

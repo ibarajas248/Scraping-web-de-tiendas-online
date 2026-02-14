@@ -98,7 +98,7 @@ SEARCH_TERMS = [
     "light",
     "ilolay",
     "flan",
-    "QUESO CR.CASANCREM",  # <-- FIX: faltaba coma antes de "yogur"
+    "QUESO CR.CASANCREM",
     "yogur",
     "yogurisimo",
     "sachet",

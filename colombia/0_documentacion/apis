@@ -6,3 +6,94 @@ jumbo: https://www.jumbocolombia.com/api/catalog_system/pub/products/search?ft=m
 olimpica: https://www.olimpica.com/api/catalog_system/pub/products/search?ft=arroz
 larebaja: https://www.larebajavirtual.com/api/catalog_system/pub/products/search?ft=acetaminofen
 tugo: https://www.tugo.co/api/catalog_system/pub/products/search?ft=mesa
+asics colombia:  https://www.asics.com.co/api/catalog_system/pub/products/search?ft=tenis
+totto: https://co.totto.com/api/catalog_system/pub/products/search?ft=morral
+naf_naf: https://www.nafnaf.com.co/api/catalog_system/pub/products/search?ft=vestido
+cuerosvelez: https://www.velez.com.co/api/catalog_system/pub/products/search?ft=morral
+
+les_tres_elefantes: https://www.lostreselefantes.com.co/api/catalog_system/pub/products/search?ft=barbie
+cohcerrini: https://www.boccherini.com.co/api/catalog_system/pub/products/search?ft=ducha
+jen s.a = https://www.jensa.com.co/api/catalog_system/pub/products/search?ft=taladro
+util.com.co: https://www.util.com.co/api/catalog_system/pub/products/search?ft=bosch
+senthia: https://www.senthia.com/api/catalog_system/pub/products/search?ft=perfume
+marquis: https://www.marquis.com.co/api/catalog_system/pub/products/search?ft=chaqueta
+compra_cierta_colombia: https://www.compracierta.com.co/api/catalog_system/pub/products/search?ft=batidora
+auteco: https://www.auteco.com.co/api/catalog_system/pub/products/search?ft=kit
+chevignon: https://www.chevignon.com.co/api/catalog_system/pub/products/search?ft=camisa
+bosi: https://www.bosi.com.co/api/catalog_system/pub/products/search?ft=zapato
+mario hernandez: https://www.mariohernandez.com.co/api/catalog_system/pub/products/search?ft=billetera
+
+regged: https://www.ragged.com.co/api/catalog_system/pub/products/search?ft=blusa
+girnaud: https://www.girbaud.com.co/api/catalog_system/pub/products/search?ft=jean
+
+
+Éxito — https://www.exito.com/io/api/catalog_system/pub/products/search?ft=arroz
+
+Carulla — https://www.carulla.com/io/api/catalog_system/pub/products/search?ft=leche
+
+Jumbo Colombia — https://www.jumbocolombia.com/api/catalog_system/pub/products/search?ft=arroz
+
+Tiendas Jumbo — https://www.tiendasjumbo.co/api/catalog_system/pub/products/search?ft=arroz
+
+Olímpica — https://www.olimpica.com/api/catalog_system/pub/products/search?ft=arroz
+
+Mercacentro — https://www.mercacentro.com/api/catalog_system/pub/products/search?ft=arroz
+
+Los Tres Elefantes — https://www.lostreselefantes.com/api/catalog_system/pub/products/search?ft=arroz
+
+La Rebaja Virtual — https://www.larebajavirtual.com/api/catalog_system/pub/products/search?ft=acetaminofen
+
+Ventas Empresariales Éxito — https://ventasempresariales.exito.com/io/api/catalog_system/pub/products/search?ft=cafe
+
+Tienda Chocolate Corona — https://tienda.chocolatecorona.com/api/catalog_system/pub/products/search?ft=chocolate
+
+Vélez — https://www.velez.com.co/api/catalog_system/pub/products/search?ft=maleta
+
+Auteco Mobility — https://www.autecomobility.com/api/catalog_system/pub/products/search?ft=casco
+
+Boutique Auteco Mobility — https://boutique.autecomobility.com/api/catalog_system/pub/products/search?ft=guantes
+
+Tennis — https://www.tennis.com.co/api/catalog_system/pub/products/search?ft=camiseta
+
+Agaval — https://www.agaval.com/api/catalog_system/pub/products/search?ft=tenis
+
+Medipiel — https://www.medipiel.com.co/api/catalog_system/pub/products/search?ft=protector
+
+Mercedes Campuzano — https://www.mercedescampuzano.com/api/catalog_system/pub/products/search?ft=bolso
+
+OFFCORSS — https://www.offcorss.com/api/catalog_system/pub/products/search?ft=chaqueta
+
+Bata Colombia — https://www.bata.com.co/api/catalog_system/pub/products/search?ft=tenis
+
+
+# 1) Somos La Despensa (mercado/panadería)
+GET https://somosladespensadc.com/search/suggest.json?q=arroz&resources[type]=product&resources[limit]=10
+# (también funciona en el dominio .myshopify.com)
+GET https://somosladespensa.myshopify.com/search/suggest.json?q=arroz&resources[type]=product&resources[limit]=10
+
+# 2) Granel Gourmet (despensa/mercado a granel)
+GET https://www.granelgourmet.co/search/suggest.json?q=almendra&resources[type]=product&resources[limit]=10
+
+# 3) Mercado Vital (tienda saludable, Bogotá)
+GET https://mercadovital.co/search/suggest.json?q=leche&resources[type]=product&resources[limit]=10
+
+# 4) VeriAlimenti (frutas/verduras a domicilio, Cali)
+GET https://www.verialimenti.com/search/suggest.json?q=tomate&resources[type]=product&resources[limit]=10
+
+# 5) La Despensa Natural (domicilios, Cali)
+GET https://despensanatural.com/search/suggest.json?q=pan&resources[type]=product&resources[limit]=10
+
+# 6) Global Gourmet Market (gourmet market)
+GET https://www.globalgourmetmarket.com/search/suggest.json?q=pasta&resources[type]=product&resources[limit]=10
+
+# 7) La Caucana (tienda con catálogo en Shopify)
+GET https://www.lacaucana.com/search/suggest.json?q=leche&resources[type]=product&resources[limit]=10
+
+
+SuperMU → https://supermu.com/search/suggest.json?q=leche&resources[type]=product&resources[limit]=10
+
+Merkapp → https://www.merkapp.com/search/suggest.json?q=arroz&resources[type]=product&resources[limit]=10
+
+La Cestería → https://lacesteria.co/search/suggest.json?q=aceite&resources[type]=product&resources[limit]=10
+
+Eatsy Market → https://eatsymarket.co/search/suggest.json?q=leche&resources[type]=product&resources[limit]=10

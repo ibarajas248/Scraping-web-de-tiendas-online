@@ -11,8 +11,8 @@ import streamlit as st
 # =========================
 # Config (puedes sobreescribir por variables de entorno)
 # =========================
-APP_USER = os.getenv("APP_USER", "scrap@intelligenceblue.com.ar")
-APP_PASS = os.getenv("APP_PASS", "scraptiendas")  # Solo usado para login normal
+APP_USER = os.getenv("APP_USER", "admin")
+APP_PASS = os.getenv("APP_PASS", "admin")  # Solo usado para login normal
 
 # SMTP principal (tu hosting)
 SMTP_HOST = os.getenv("SMTP_HOST", "mail.intelligenceblue.com.ar")
